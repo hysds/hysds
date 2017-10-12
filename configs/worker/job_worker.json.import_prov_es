@@ -1,0 +1,15 @@
+{
+  "root_work_dir": "/data/work",
+  "webdav_port": 8085,
+  "configs": [
+    {
+      "type": "import_prov_es",
+      "command": {
+        "path": "/home/ops/verdi/ops/user_rules_dataset/scripts/import_prov_es.sh",
+        "options": [],
+        "arguments": ["$prod_url"],
+        "env": []
+      }
+    }
+  ]
+} 

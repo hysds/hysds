@@ -1,0 +1,3690 @@
+commit 880664dbd9a0ca1128d3c1d8d794191ab1bd7950
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 5 15:24:12 2017 +0000
+
+    expand env vars in docker mappings
+
+commit 42ff0ff0a5cf952fe0a28e933bfcf3348cc15c52
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 20 00:25:52 2017 +0000
+
+    override celeryconfig.py and datasets.json using environment vars
+    
+    HYSDS_CELERY_CFG and HYSDS_DATASETS_CFG, respectively.
+
+commit 5b652c30b3e73da69e0d8ea45bb11eef09c239eb
+Merge: 2542650 f609dcc
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 19 17:22:07 2017 -0700
+
+    Merge pull request #15 from hysds-org/mstarch
+    
+    mstarch: preventing collision with datasets.json or celeryconfig.py
+
+commit f609dccfcdda4c2c0092460c49fbb5bf47822525
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 19 17:04:39 2017 -0700
+
+    mstarch: preventing collision with datasets.json or celeryconfig.py in case of manual override
+
+commit 254265030afc403c929e5acd43263d78570c2257
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 31 16:03:09 2017 +0000
+
+    croak with explicit error on docker load failures
+
+commit 6555b05b838cc1074c595d31a5397eba0bd7d63d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 31 14:39:10 2017 +0000
+
+    track instance ID
+
+commit 22a692b92da9c96b36cfe7818b9687a628c11a36
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 28 23:14:15 2017 +0000
+
+    remove redundant publish of browse image
+
+commit bf4668570dc4c9097a1c492efe0add4c58b101d8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 21 21:37:46 2017 +0000
+
+    update metrics logstash indexer for elk5
+
+commit d8a607bbf71896bfadf89e9de2292c811a29d59a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 21 21:14:35 2017 +0000
+
+    fix path to verdi
+
+commit f76810a8b46f22647b15d4115789a2cf8aefc533
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 21 20:04:12 2017 +0000
+
+    update generalized templates
+
+commit 2f50f0fa30e477beb14e8846191fe92ab4316b7a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 21 19:32:16 2017 +0000
+
+    generalize to template ops user home dir
+
+commit a853290194c04617aa74717bf97cf45ea68f5886
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 14 21:26:46 2017 +0000
+
+    add script for spot termination detection and event log submission
+    
+    https://github.jpl.nasa.gov/hysds-org/general/issues/452
+
+commit 4e22bb927eb4700f410fe022f82084f694d44050
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 14 20:12:39 2017 +0000
+
+    add HySDS custom event logging of setting/unsetting of keep-alives and termination
+    
+    https://github.jpl.nasa.gov/hysds-org/general/issues/451
+    Update documentation.
+
+commit 4322d226109e47664293aa1c00c0fde3690f7f4e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 14 18:44:41 2017 +0000
+
+    expose hostname arg for log_custom_event()
+
+commit 83f797110abb10d594dc297fd9dce3cb1058efb4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 14 16:33:00 2017 +0000
+
+    return uuid of custom log event
+
+commit ec39ffd9d55b5d5b9f7ea9fd2faa526debe2c6d8
+Merge: e346bd0 7d94571
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 17:10:00 2017 -0700
+
+    Merge pull request #13 from hysds-org/verdi-events
+    
+    update verdi to handle new event stream to redis on mozart
+
+commit 7d94571a3e7d20453061b51fed7d8d7024ce8b1e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 23:49:49 2017 +0000
+
+    disable clobbering of datasets using noclobber option in osaka
+
+commit e051227e5a6a8c3708b7821c028f5979b4e80d9e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 23:29:20 2017 +0000
+
+    use fail_job() and lower time allowed for shutdown to come through
+
+commit d5eb42c2b88cae85e45f6fcc1cbfcc7980b8b451
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 22:49:12 2017 +0000
+
+    log job drain as custom event
+
+commit 26193b73e468a16bb2f2be83e5f26a765d8d30db
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 22:33:35 2017 +0000
+
+    use logger
+
+commit 27809454e38f66823c889bcdaa0a8dad9dcb5ac6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 22:27:31 2017 +0000
+
+    fix redis pool connection for events; add exponential backoff mitigation
+
+commit a4e11fbb641a5ab047d1fa94124f3bf4d3d4ed63
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 22:07:36 2017 +0000
+
+    initial implementation of custom event streaming
+
+commit 3ab9b399f6581d18cca3fa983b0ca48cf7e9d1e6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 21:27:00 2017 +0000
+
+    track worker's pid to ensure unique job drain detection session
+
+commit 94121666aba4e59155aa6433065165f6f232d836
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 17:16:33 2017 +0000
+
+    remove job detector before shutdown and give time for remote control to propagate
+
+commit e346bd044943724761eec45b4d1fea5bbc838a12
+Merge: 8dc2019 71e3f28
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 09:19:36 2017 -0700
+
+    Merge pull request #12 from hysds-org/verdi-events
+    
+    verdi job drain detection
+
+commit 71e3f2804d73348a6f0e7d18fcfdecc2d7015743
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 15:59:32 2017 +0000
+
+    cleanup job drain detector after worker shutdown
+    
+    Prevent previous job drain detection from affecting restarted workers.
+
+commit d63f21b2c513a8babdc7e4c6262e7c5ae0ff2642
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 15:41:43 2017 +0000
+
+    remove job drain detection from process_events
+
+commit 41fc22ac87162323022b97961f97fbd720b6069e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 15:29:38 2017 +0000
+
+    fix bug accessing job failure thresholds
+
+commit 14a30432cd3264fe720dbb5fb280367577f70e09
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 11 14:26:19 2017 +0000
+
+    initial implementation of verdi job drain detector
+
+commit 8dc20199ff724579f9c19c4becc382d4ba0ca7cb
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 3 14:58:16 2017 -0700
+
+    update doc string and add color to prompt
+
+commit 39569d4b24a2313c1f37d7b3151e727695637175
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 3 14:46:53 2017 -0700
+
+    add offliner script to sync job state when it may be desynchronized
+
+commit 61918af62e2c879edc30bfe801091befd285ded6
+Merge: 3d8a756 66bba64
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 31 19:03:52 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+    
+    Conflicts:
+    	scripts/sync_ec2_job_metric.py
+
+commit 66bba6490ade669cfa27a550e388947aa06cdca1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 31 19:24:36 2017 +0000
+
+    format string not integer
+
+commit 22ffcc869f39c9a62b5f38f6317d47e501e2cee1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 31 17:04:00 2017 +0000
+
+    update verdi to clean out successfult work dirs first
+    
+    https://github.jpl.nasa.gov/hysds-org/general/issues/439
+
+commit 09b72672e526b709941063bc7f4a53deb875f206
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 31 16:57:05 2017 +0000
+
+    allow specification of cloudwatch metrics namespace
+
+commit 3d8a75617fe1f925f6afde68b48335f8e693b374
+Merge: 9712dec 63e264f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 17:03:53 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit 63e264f254072398a9d84044112de0506971be38
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 15:31:10 2017 +0000
+
+    add idempotent makedirs() function to handle race conditions between concurrent workers
+
+commit 032afaca9fa333a1a96b3e0383c1fc0b1bfe6701
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 14:45:59 2017 +0000
+
+    merge spot fleet capability to harikiri.py
+
+commit 7c5ff85a1cceecf0bb69ec173e42cef230d988de
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 14:42:20 2017 +0000
+
+    restore sleeps; add logging of response from spot fleet API calls
+
+commit 9acc4b2b3e889d70a6467ec5fe43bd2ceb0f1672
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 14:35:22 2017 +0000
+
+    remove dryrun flag
+
+commit 37266e759455c10fecea2d5804fd7925064c9dab
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 27 14:24:18 2017 +0000
+
+    cancel spot fleet request if target capacity is less than 1
+
+commit 32754c2cebd33de2d270f841e64dc8b3f450574c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 26 18:57:23 2017 +0000
+
+    implement decrement of spot fleet's target capacity
+    
+    Get error though:
+    
+    (ClientError: An error occurred (InvalidParameterValue) when calling
+    the ModifySpotFleetRequest operation: 1 validation error detected:
+    Value '0' at 'targetCapacity' failed to satisfy constraint: Member
+    must have value greater than or equal to 1)
+
+commit e5a9d548f511892bc6a400aeb40edc0688c5545f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 26 17:41:22 2017 +0000
+
+    initial implementation of spot fleet support in harikiri
+
+commit 9712dec4255f4d2a6963f85e7bb1f48f0ff1cfc1
+Merge: b45a853 f4a3df0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 16:21:59 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit f4a3df042e59d604791c762a6d88b4c5cf147842
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 15:51:03 2017 +0000
+
+    fix bad log message
+
+commit 93ea7bdb07a95a0be982663c5535f131c3b284ca
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 15:27:09 2017 +0000
+
+    undo percolator for user_rules_job
+
+commit d11c6d38abfbffe3718c567bc617bcf58eaac06d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 15:01:23 2017 +0000
+
+    enable query update always; fix final query call; better logging
+
+commit 0f9996bbddd151464f0393901fccc6ca94afb69d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 01:20:49 2017 +0000
+
+    query .percolator types
+
+commit 2f412d7930e0ce49aabfcdef0d15d4a8098304bf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 25 01:13:55 2017 +0000
+
+    undo percolator for user_rules_datasets
+
+commit b45a853cab654330b27f7c16c762dabca7d38c25
+Merge: 4a211b4 1ee874f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jul 14 11:48:56 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit 1ee874fa2ff67f518ce66da426d895281243c2d0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 13 02:32:39 2017 +0000
+
+    track username as PROV-ES softwareAgent role
+
+commit 08ef8f1769150a1fe4e44f259f53a5d5697ccc6d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 12 00:09:04 2017 +0000
+
+    add hysds core packages
+
+commit e46f8d57cbaaadb7920d8f631041c480bcd10e47
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 11 16:20:38 2017 +0000
+
+    update description
+
+commit 3e621d41951c493cc5caa8a93b96766265d64f2b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 11 16:17:29 2017 +0000
+
+    add requirements.txt; add installation instructions
+
+commit db8788b2da7227a62644fbe617b250d6555aa854
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 11 15:54:02 2017 +0000
+
+    add third party software dependencies
+
+commit 4a211b4b55ba0489bb1ec7b1ebc5208e2a0f34ff
+Merge: 9ce5d89 38baeef
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jul 5 14:17:11 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit 38baeef07b9959a57f1349e2a8afdd1d3bf42c05
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 5 18:23:49 2017 +0000
+
+    add read-write capability to user-specified docker mount
+    
+    Add blacklist parameters to limit user-specified docker mounts.
+
+commit 9ce5d89ee501226f6cc1949a242e20c51ed89ff8
+Merge: 3984ae8 03ba42b
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Sat Jul 1 01:34:19 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit 03ba42b6bd5dd9c07da8d09a122f433b7b3027cf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jul 1 06:55:46 2017 +0000
+
+    use command start/end times for proV:processStep
+
+commit 3984ae8c5e1b59ee73aa0680da1cc3c1b1155f36
+Merge: 41fe4d5 f181ce1
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Fri Jun 30 09:41:38 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit f181ce16e101f7ad97b35c16e058b632d9ea092c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 29 21:21:32 2017 +0000
+
+    add command execution params to template
+
+commit 315b390f63246c336c6a5dcdc2b2725eff001611
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 29 20:57:30 2017 +0000
+
+    track command execution time and total job execution time separately
+
+commit 41fe4d5924982b5d47d4e026ced2920185c98f64
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Tue Jun 27 10:22:09 2017 -0700
+
+    allow specification of rabbitmq creds
+
+commit 21465292543f7e6c6c25be88b3176b796bdf1e47
+Merge: b12e7c8 dbf11d2
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Tue Jun 20 11:38:26 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit dbf11d22650100460b2dbd7169498e18d00351c2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 19 23:10:11 2017 +0000
+
+    remove trailing period from dedup log message
+
+commit ef1d1fe41ae7fb3d343b6328fe89c1ab69bb969a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 19 22:41:54 2017 +0000
+
+    fix handling of failed vs. dedup job status
+
+commit b9be9c1cd27130d421406fb6a292b0b955a3fa00
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 19 22:29:16 2017 +0000
+
+    save dedup message not as an error or traceback
+
+commit b12e7c86e014426498c452feb344b67e1343b839
+Merge: 8c2f15e 4d67567
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Tue Jun 6 13:01:29 2017 -0700
+
+    Merge branch 'master' into oco2-improvements
+
+commit 4d6756721ecfefa0c10b35ef68558a5d13211894
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 6 14:31:18 2017 +0000
+
+    filter for needed info for job metrics to prevent ES MapperParsingExceptions
+
+commit 8c2f15e5cce5a4cf938937e16e2aa9767f507d04
+Author: Hysds Ops <hysdsops@oco2-mozart.jpl.nasa.gov>
+Date:   Tue May 30 12:42:36 2017 -0700
+
+    mstarch: updating rabbitmq config to include user/password
+
+commit 7694f69ad31c5f059935b3dcd8456f8587eaa5b7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 20:43:23 2017 +0000
+
+    update error template and message for figaro friendliness
+
+commit a0bdccc082d8041eba808fcc3e70ac27d2e39504
+Merge: 5dece64 5420e17
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 15:26:29 2017 +0000
+
+    Merge branch 'dev'
+
+commit 5dece64ef4e6a6fb52811654ebcfdb3a8804429e
+Merge: a481505 f380f3d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 15:25:52 2017 +0000
+
+    Merge branch 'master' of https://github.jpl.nasa.gov/hysds-org/hysds
+
+commit 5420e17f9e353116f88e47a4d698c6e06cc4f0f1
+Merge: 2f330e3 0ec762c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 15:24:26 2017 +0000
+
+    Merge branch 'dev' of https://github.jpl.nasa.gov/hysds-org/hysds into dev
+
+commit 2f330e364210e5c566c39a0693168510e15e5795
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 15:16:28 2017 +0000
+
+    raise error immediately upon failed match of dataset
+
+commit 0ec762c31900851ed3525ef4a541597d9a4e325c
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 15:16:28 2017 +0000
+
+    raise error immediately upon failed match of dataset
+
+commit 9ef110c87e9529301994ea9ee784b3ed10985b2b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 14:52:56 2017 +0000
+
+    allow specification of states to query; do verdi dedup check up front
+    
+    Don't trigger dedup in verdi on jobs queued that snuck in after queued
+
+commit 07b155229cf086455fb1dd4173d825687f34a21c
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 14:52:56 2017 +0000
+
+    allow specification of states to query; do verdi dedup check up front
+    
+    Don't trigger dedup in verdi on jobs queued that snuck in after queued
+
+commit cf18ef863eaa3d0b886c4dbf6d679ab7b6072e69
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 14:31:40 2017 +0000
+
+    set dedup job to be oldest queued job
+
+commit 6fac6703870dde2e173264897c854d12c9f09ccd
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 14:31:40 2017 +0000
+
+    set dedup job to be oldest queued job
+
+commit 50fa0ec9b6550cae4814223155f0061e33a22780
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 03:16:33 2017 +0000
+
+    update job_status template for context propagation
+
+commit 11678421cc17465fdaa1f55aaadfa9a874b0cf87
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 03:16:33 2017 +0000
+
+    update job_status template for context propagation
+
+commit 2557787ae26525d39f24cfd35158d6d5c26a1dda
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 02:48:42 2017 +0000
+
+    remove non job-related params from payload hash calculation
+
+commit 5cf0f85ae0b67ff5006e00898250f448611bbb70
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 02:48:42 2017 +0000
+
+    remove non job-related params from payload hash calculation
+
+commit 8e4b2f9ea54d8d8184b764b80008c8105698108a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 23 00:12:19 2017 +0000
+
+    list dedup jobs when detected
+
+commit ad7cce4d9b20d441355338a4ee585a4f311bcc5d
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Tue May 23 00:12:19 2017 +0000
+
+    list dedup jobs when detected
+
+commit 4ff2612be73819cf00d155c82272d3af1e25774e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 22 23:42:21 2017 +0000
+
+    fix dedup detection
+
+commit ca08f20f889aa2650c7909679f51b6a4c0bc93bc
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Mon May 22 23:42:21 2017 +0000
+
+    fix dedup detection
+
+commit 6a939b9c894f8fc92fa6463ad77e447fcb0a3caf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 22 21:11:42 2017 +0000
+
+    handle when job_status-current doesn't exist
+
+commit 8c08c42158648484c5438efde72793e9956a0ad5
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Mon May 22 21:11:42 2017 +0000
+
+    handle when job_status-current doesn't exist
+
+commit 9d41f3dd28f60e3ac9e47d48f7b28298f399785c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 22 20:59:12 2017 +0000
+
+    import json lib
+
+commit 76ea8536041bde6acd4282246e2545490bac18a6
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Mon May 22 20:59:12 2017 +0000
+
+    import json lib
+
+commit c5d65fb19f8380c73151bc84932b11f289aca8a6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 22 20:41:54 2017 +0000
+
+    initial implementation of job dedup
+
+commit 22d8100a3a9fc379fb079d9b6bbda4644ff71ffd
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Mon May 22 20:41:54 2017 +0000
+
+    initial implementation of job dedup
+
+commit a48150502ae131f04e76dff1329673795759579e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Apr 13 20:28:49 2017 +0000
+
+    set job_name with dataset ID included similar to on-demand jobs
+
+commit f380f3d080ac5ecce17b9a48faf08c2e28d88a79
+Author: jlinick <Justin.P.Linick@jpl.nasa.gov>
+Date:   Thu Apr 13 20:28:49 2017 +0000
+
+    set job_name with dataset ID included similar to on-demand jobs
+
+commit 0fb5eb7cb464266f413a3e1f6285d7b6492b7eba
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Mar 24 16:23:24 2017 +0000
+
+    update backoff decorated calls to boto3
+
+commit 5af30c455c2a1a79d246014af06c2efffef11efb
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Mar 24 14:24:48 2017 +0000
+
+    update to use boto3; add more informative logging
+
+commit 6d0e19a4906ecc7deb80641537403a5d69f71f43
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Mar 23 23:08:07 2017 +0000
+
+    handle non-existence of monitored queue
+
+commit 0bc7e94717199f8a67b85dd202440e343e383410
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Mar 23 17:25:49 2017 +0000
+
+    graceful shutdown of docker containers when committing seppuku
+
+commit cd82a18a77b53e8834132c03f241598b751046d5
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Mar 23 16:43:54 2017 +0000
+
+    better logging for harikiri
+
+commit 0b5387406aef05f382c9bdf881cb5ed43ddecaad
+Merge: 9a023cd f5aff30
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Mar 14 15:03:55 2017 +0000
+
+    Merge branch 'v2' into merge-v2
+    
+    Conflicts:
+    	hysds/container_utils.py
+
+commit f5aff3018f968dbc13a6e4beb9f05b09f384d0c6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Mar 13 15:53:24 2017 +0000
+
+    add TOSCA_URL config
+
+commit 092c9607935b11b77509d2e80653df3c01e4527f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Mar 10 19:32:35 2017 +0000
+
+    remove deprecated id_template from sample datasets.json
+
+commit 168c517a51d2371229a7411dab60eb170087b1ee
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Mar 10 18:05:56 2017 +0000
+
+    remove teeing of stdout/stderr to task log and remove using task-specific work dir with signal files
+    
+    Fix bug in calling metadata service.
+
+commit 0b35e262d34900dbbe2f5166666d82ed84facd3c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Mar 6 15:12:16 2017 +0000
+
+    allow configuration of hard/soft celery task time limits
+
+commit 57a9f871cf8893aec73508c20b8efe5cc175b03e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 28 19:24:51 2017 +0000
+
+    update user_rules_* task workers to submit jobs via celery
+
+commit 6d62e51260258cf7e2751934d85819b5f5eb1800
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 28 14:46:57 2017 +0000
+
+    log task worker result and return task url
+
+commit 16c275f9b43029340ebe8e61dc2fd61820871432
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 28 05:12:28 2017 +0000
+
+    write task log to task work dir
+    
+    Automatically clean up old task work dirs as space is needed.
+
+commit fc29dde3e0374f252f03b81cd4544499436380e8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Feb 27 21:12:15 2017 +0000
+
+    add do_submit_task() wrapper function with jitter
+
+commit bc19e4c05075b2dd88c0a5fd8e0250fa57e58885
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 23 20:01:34 2017 +0000
+
+    normalize path so that ingest_dataset.py can ingest products specified with trailing slashes
+
+commit 22829aa51ff834e0ec1a48bb0592928ceb0c00f9
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 21 20:25:27 2017 +0000
+
+    add supervisor config for figaro
+
+commit 24db8b51827ffe7323628cea8a8bf46f4f1ed86e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 21 17:19:04 2017 +0000
+
+    add optional dataset.json field: creation_timestamp
+
+commit 66afe0c692ee99c6ca5a69dc292a8847f8c8ee88
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 14 23:01:29 2017 +0000
+
+    conform to v2 ES index template
+
+commit af966b4c2285f3976d30195118e9a80d6d0f12e9
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 14 17:03:38 2017 +0000
+
+    restore building of correctly structured query for user_rules_dataset
+
+commit 688c74e97c2426e89b19976f56400c4040f03921
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Feb 13 18:40:50 2017 +0000
+
+    pass rabbitmq extensions onto celery task
+    
+    Add priority extension and placeholder for queue expiration.
+
+commit 824207d67911bdc6fa8ccc54eb8966ddcaf5a40e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Feb 10 20:37:47 2017 +0000
+
+    use lightweight task to decouple rule triggering from rule evaluation and provide bottleneck bypass
+    
+    Utilize lightweight task to do job submission of triggered dataset and jobs rules.
+    Utilize hysds_commons in job submission task to ensure wiring is consistent.
+    Clean out legacy worker configs from supervisord configs.
+
+commit ca4f29ae96cda3841a3c13e57bf16596a67ee80e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 9 18:32:28 2017 +0000
+
+    roll back celery v4 updates; v4.0.2 results in slow submit_job() execution on the order hundredths of a second per job submission
+
+commit 80569634e16ed573d9be590c772a3eebd444c770
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Feb 8 15:06:59 2017 +0000
+
+    keep hysds core highly performant and independent of REST API sitting above it
+
+commit b8f222e586ba8d8cc7b4382df9c8a767c685dbec
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 7 20:30:44 2017 +0000
+
+    handle celery v4 update of celery event args
+
+commit 77a9fdc4f8c9295eded1c110bb07323b9eae5a03
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Feb 7 18:36:15 2017 +0000
+
+    handle new Request interface in celery v4
+
+commit b7e9bd9c8627ff518db81d63f0c44ceeb6e91ec4
+Merge: a1c0218 b395026
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Mon Feb 6 23:06:54 2017 +0000
+
+    Merge branch 'v2' of https://github.jpl.nasa.gov/hysds-org/hysds into v2
+
+commit 9a023cdf21a0f76c7b43516bf1b8277fa22e9f3b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 2 21:01:48 2017 +0000
+
+    propagate UID/GID of job worker to container user executing job
+    
+    Can run any container anywhere without regard for host's UID & GID mapping to
+    container's UID & GID.
+
+commit b39502622c25a493d821391d8564981c1476dc03
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 2 20:32:11 2017 +0000
+
+    propagate UID/GID of job worker to container user executing job
+    
+    Can run any container anywhere without regard for host's UID & GID mapping to
+    container's UID & GID.
+
+commit 6c1cf50fdddac1f15b5503577ab3c386eebf41d1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 30 22:16:54 2017 +0000
+
+    parse AWS profile name from datasets.json and use that for osaka creds
+    
+    Fix issue where browse creds would use publish creds.
+
+commit a1c0218b4a92181d5d4ee7e917ebd771345c4d05
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Mon Jan 30 19:40:05 2017 +0000
+
+    mstarch: adding in import
+
+commit 6be7df9f7d0525c5d92ac3a49266ed372445ed80
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Mon Jan 30 18:45:19 2017 +0000
+
+    mstarch: fixing user_rules_job for proper submission
+
+commit 61d1b777a0ad4644f6505897ae25ccdc2f13e307
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 26 23:09:16 2017 +0000
+
+    upgrade celery to v4.0.2
+
+commit 05397543668b57b41af0cd016619c5ceb47180ba
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 23 23:11:21 2017 +0000
+
+    clean up hysds tag in version
+
+commit 5cd5fb677a8bae7b0876191b9b18d0373a265e39
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 23 19:52:23 2017 +0000
+
+    add celeryconfig.py and datasets.json as default container mounts into job dir
+
+commit fde43098e90db56e8d8a0da52ea39f9d5c12a371
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 19 17:35:41 2017 +0000
+
+    mount image mappings as read-only
+
+commit 82c2b44a54ff1e843f59a25993055cf099ba6f03
+Merge: 59e541e ae723aa
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 08:05:50 2017 +0000
+
+    Merge branch 'v2' of https://github.jpl.nasa.gov/hysds-org/hysds into v2
+
+commit 59e541ed0b5e52c2dc1fac83680916d7f92e5953
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 08:05:45 2017 +0000
+
+    mstarch: replacing colons in job_name to prevent work dir erros
+
+commit ae723aa5c43745bcf5ae55698d55a4d98b50df19
+Merge: 1e5b56b 23ace8b
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 08:04:27 2017 +0000
+
+    Merge branch 'v2' of https://github.jpl.nasa.gov/hysds-org/hysds into v2
+
+commit 1e5b56b99a1d2ac8cf8ecfebec9430a96ffaeca1
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 08:04:19 2017 +0000
+
+    mstarch: making user_rulse_dataset run
+
+commit 23ace8b25a77ae22171eb8696f5e3747212f2f97
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 03:32:14 2017 +0000
+
+    mstarch: adding container_mappings to orchestrator pass-through
+
+commit 14fc20c14d954c2e70f7c37088dd5ecd84ef17e8
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 19 03:31:16 2017 +0000
+
+    mstarch: adding .iteritems()
+
+commit e7acca6d8d5e2807542f2a12fb57ccdd8df60bc4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 19 00:18:04 2017 +0000
+
+    handle absolute and relative mount points
+
+commit 94a2bcb47a2a5e4e79e0a08c135e615d1e2bb084
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 18 20:38:38 2017 +0000
+
+    mstarch: cleaning up hysds package
+
+commit d0bea172540fe2e2677cea0a879abd222740405a
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 18 20:36:49 2017 +0000
+
+    mstarch: pointing to the REST submission libraries
+
+commit 4cf89c125a933554d8837c59a76cc1d24c4bcca9
+Merge: b67a3c9 5b22fbd
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 18 20:13:11 2017 +0000
+
+    Merge branch 'v2' of https://github.jpl.nasa.gov/hysds-org/hysds into v2
+
+commit 5b22fbdc0c16a033b3c1aca21e25cfa9d8f5c511
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jan 18 18:58:26 2017 +0000
+
+    add capability to pass in mappings for mounting files/dirs into containers
+
+commit 3d861244e9eebcd0e1ddd6ba87cd31161335910d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jan 18 14:53:58 2017 +0000
+
+    remove AOI filtering feature from v1
+
+commit 48a61260198569dc4fa84bf27c32abbbf7f45d1a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 12 21:03:27 2017 +0000
+
+    remove v1 feature for specifying explicit queue name in job type
+    
+    Needed to track job spec type correctly in facets.
+
+commit 3b21bdc0c2a6d9fdc288276a73aa5a2e32f9004d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 12 16:29:40 2017 +0000
+
+    add script to clean out job_specs and containers indices on reset.sh
+
+commit 5209e40bdd49443f33ad9243d833be5c0151b023
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 12 16:27:56 2017 +0000
+
+    allow override of job_queue from job json config
+
+commit b67a3c975f7fc8963b5f6e577fd6a2c4e20b8d82
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 11 17:53:45 2017 +0000
+
+    mstarch: fixing version
+
+commit c0588357f67040769fe0c531185911f3eb4750a3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jan 7 19:27:07 2017 +0000
+
+    specify resource id label for custom metric to be properly used for GCP autoscaling
+
+commit 5ab2a78d0bca5bad6ad22d0562c7f6d389be1260
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jan 7 18:35:54 2017 +0000
+
+    add reqs for google cloud monitoring
+    
+    Update references to EC2 to with GCP.
+
+commit 9e1e3ad6e3dc333e30b9e701e0be6778af8e825a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jan 7 18:29:07 2017 +0000
+
+    job count syncer script for google stackdriver custom metric
+
+commit 345c82cdb313c2695588a0663faaedc46c52c390
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu Jan 5 22:02:53 2017 +0000
+
+    msatrch: fixing data printout
+
+commit 16513dcfcafed18bcbee0959c770787160c4df13
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 4 22:11:44 2017 +0000
+
+    mstarch: minor bug fixes
+
+commit 9a3a0101c3031f9518fcee925fae5cb4b5cffa0e
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 4 22:00:58 2017 +0000
+
+    mstarch: adding logging and verify functionality to request_utils
+
+commit 94b9f2c186fda70822621296baa83e76413e8203
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jan 4 20:36:00 2017 +0000
+
+    mstarch: adding in common HySDS libraries
+
+commit 7832934d2a5a098f1d21814fa38eb8ae1b63c5f4
+Merge: 2179eab 6ea8262
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Dec 20 22:03:18 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 6ea82622f77bd48ac0e9414f8bf946d3f67ac7a7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Dec 20 22:00:49 2016 +0000
+
+    write .done file for revoked jobs (harikiri fails to shut down instances that have revoked jobs)
+
+commit db6fa8213802f0379a43eac96721208575764064
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Dec 13 16:13:35 2016 +0000
+
+    update harikiri.py from v2 death valley torture tests
+
+commit 2179eab4a50c37f712bff525ca1a3b79944290dd
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Dec 8 07:45:14 2016 +0000
+
+    re-enable using AWS creds from datasets.json when publishing/unpublish datasets
+
+commit f04ede11214c07526b37557e3e450c5d07cd7676
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 17 19:27:40 2016 +0000
+
+    return celery task result
+
+commit 716c8733e0895ba669b51f70182db9c4d0b6a3a4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 17 18:03:30 2016 +0000
+
+    add back workers for dataset notification action
+
+commit 1ed4835855adfaa17c260e76b5f6ce506e2d4839
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 17 17:37:50 2016 +0000
+
+    send dataset_info in body of post request
+
+commit 971bf4085d288b50ec361a9190b4c433b84a2be3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 17 17:19:38 2016 +0000
+
+    update call to GRQ dataset index to conform to swagger API
+
+commit 55fcebe021ce9fb5c70a3047f040c5f5d8b5553a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 17 15:40:19 2016 +0000
+
+    add configs for MOZART_REST_URL and GRQ_REST_URL
+
+commit d60d57f7daa6b0fdd274fed09e5dd442781b6d1f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Nov 16 22:12:46 2016 +0000
+
+    point to new dataset index endpoint
+
+commit a5ae67f05d551a2289f7fa4df234d46858363ca0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Nov 9 02:09:14 2016 +0000
+
+    increase backoff max value and retries
+
+commit ac2fb0befef227af630e75e296e30737123178c0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Nov 9 02:01:44 2016 +0000
+
+    disambiguate function names to avoid clashing
+
+commit bdc396a6bba9131c80051a0040f2eccb276f45f4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 20:30:44 2016 +0000
+
+    replace payload type value with task type
+
+commit d9c4eb73d4e95256219b641246c1936d6759ec76
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 19:39:45 2016 +0000
+
+    remove assumption on localhost and use arg
+
+commit 1042bce624fc4cd03b1a57287aa1f79de4c633ab
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 19:26:07 2016 +0000
+
+    perform graceful shutdown in a tight loop
+
+commit 8b318fc9474faf74c5adedcf649a4ec8114f6e9f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 17:57:38 2016 +0000
+
+    pull infrastructure hosts from celery config
+
+commit 5b559d94d2c5ae5bffb17640e9ef2a742a2daada
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 15:52:42 2016 +0000
+
+    generalize templates for trinity
+
+commit d3183e1029148ec38d0ea52c26b54f69711d1bce
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 8 14:46:00 2016 +0000
+
+    make task worker only run python functions; commmand line payloads should be jobs
+
+commit 245ba2ad3ce5128ef392902a35ea26ef9a9963c2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 23:42:58 2016 +0000
+
+    ensure harikiri seppuku() function runs through once it passes ASG determination
+
+commit 3be1f584f9219cf00eab42cc77ca3224d80faa0f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 19:29:27 2016 +0000
+
+    initial implementation of nomenclature change from "product" to "dataset"
+
+commit f5597d4e95fd7ed9aa296afd7f0a461115940aa8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 17:42:50 2016 +0000
+
+    add disabled config for EC2 metrics sync script
+
+commit 475a928d760a053b9307d48574e40fe79b080928
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 17:38:08 2016 +0000
+
+    add watchdog scripts to mozart supervisord config
+
+commit e7e6329f28828777291e0bca397d9fc4468a7a4c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 17:31:40 2016 +0000
+
+    add watchdog script for timeout tagging of worker-heartbeats not sent within a threshold
+
+commit c83055831389ecaf29251fdc5b07e965a4acc9f1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Nov 7 17:17:34 2016 +0000
+
+    add watchdog script for timeout tagging of task-started tasks
+    
+    Fix docstring.
+
+commit edba2f8a5606839f03145f326c33c95a149fde99
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 22:44:24 2016 +0000
+
+    set jobs stuck in job-started with task-failed task status to job-failed
+
+commit 9da303b5e9c1f1f304c6b995e8444b098b4b9aa3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 21:37:07 2016 +0000
+
+    add watchdog script for timeout tagging of job-started/job-offline jobs
+
+commit 58f8ab0c8aa966e9d1d114efe3c8eb907d926878
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 19:52:14 2016 +0000
+
+    overhaul user_rules_product subsystem to lightweight tasks as user_rules_dataset
+    
+    Remove user_rules_product as legacy job workers and added them as task workers.
+
+commit b2b84dc5142077f863fa5ff9bb04f88a491d3579
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 18:48:53 2016 +0000
+
+    fix docstring
+
+commit 1b0a8c0b966abb0e5b29224e83ead1167bb3cb7d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 18:39:34 2016 +0000
+
+    generalized task_worker run_task() to be able to run arbitrary functions or commands
+    
+    Updated user_rules_job to use this generalized feature.
+
+commit d22da0646a28d41d8ea69c680c212ed7ca802d43
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 04:11:31 2016 +0000
+
+    overhaul user_rules_job subsystem to lightweight tasks
+    
+    Remove user_rules_job as legacy job workers and added them as task workers.
+
+commit 17bc30a2280d889667db1657b35c0d70bc239e15
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 4 00:21:34 2016 +0000
+
+    rename worker.py to job_worker.py
+
+commit b6d8b9e65cfd650c2791f1291b430b4f088a68e9
+Merge: 10f9575 22cee1a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 23:38:19 2016 +0000
+
+    Merge branch 'dev' into v2
+
+commit 22cee1abe0166751428cfa8f8b5c94de075af854
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 23:36:33 2016 +0000
+
+    disk_usage value in legacy job_worker.json takes precedence over value in payload
+
+commit 10f95751eaea95f26af5d78a8d8a9c569bed8e54
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 22:45:53 2016 +0000
+
+    extend harikiri jitter to 600 seconds per Joe Hsieh's recommendation
+
+commit 176642067f66d20416b7ecbd150cc11497259952
+Merge: 07558af 38ee4d1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 21:04:31 2016 +0000
+
+    Merge branch 'dev' into v2-test-merge
+    
+    Conflicts:
+    	hysds/worker.py
+
+commit 38ee4d15858fe0122e7fe1712a1e396c5e050112
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 20:09:16 2016 +0000
+
+    fix bug assigning worker config for root work dir, etc.
+
+commit bc103f00e44de3a96c93dbc8846cc8e945512448
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Nov 3 19:58:37 2016 +0000
+
+    implement "job configuration"-free verdi worker
+    
+    Allow explicit specification of job queue
+
+commit 07558af150c3fa9cd26330dd1c763fa1031fbccb
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Nov 2 20:31:34 2016 +0000
+
+    introduce randomized sleep time at beginning of seppuku
+    
+    Run shutdown bomb with a 1-hour timer to run detach_instance() and explicitly shutdown.
+
+commit f3fa2e0bdb36c0a10a94108b859d3f76c8f9e9de
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Nov 2 15:57:14 2016 +0000
+
+    use backoff for full jitter of AWS API calls in harikiri
+    
+    Add shutdown bomb if termination is not immediate.
+
+commit 74beced9b3d8e27f76d87d07ce6a2d04bf3f41e2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 1 19:34:15 2016 +0000
+
+    update to query all jobs ran by a celery worker and retrieve status from redis job state
+
+commit a8eea464773dec16da4513c65a9136da816055dd
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 1 19:25:10 2016 +0000
+
+    implement "full jitter" exponential backoff retries for redis, rabbitmq, and elasticsearch API calls
+
+commit 6a16eb18c8dac4938228407e79ec0d835b9fd46f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 28 07:04:09 2016 +0000
+
+    randomize sleep time when errors occur during seppuku
+
+commit 2aa8b61f92c1556873aaaa668fc78c52b23c8bf1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 28 06:32:39 2016 +0000
+
+    use terminate_instance() which handles decrement of autoscale group
+    
+    Additionally, catch errors in seppuku which would result in harikiri
+    dying. This will alleviate lingering ASG instances because they may
+    encounter AWS API limit errors and harikiri will exit.
+
+commit 9dfe389169b9eb03917d11ffb28003c9e8a2ea44
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 28 06:10:53 2016 +0000
+
+    handle failed disk usage calculation
+
+commit 98dd1c95736ff791acec422c6115cb3fadae0183
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 27 14:31:08 2016 +0000
+
+    handle job dedup race condition between process_events and worker
+
+commit e1ede0299641ff7de982cb29ab5830472ed7bc8e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 26 21:14:56 2016 +0000
+
+    check real-time job status to handle logstash lagging in updating ES
+
+commit cb6d740542155db3dfc5fddbca18bef38e6ed014
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Oct 24 18:13:48 2016 +0000
+
+    generalize bookkeeping of resource, type, and tags for faceting
+
+commit 1ed0d5da0e9ad64627c1e4cf570a261edef2cd7b
+Merge: 70adfe6 a920b8d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Oct 24 14:23:11 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit a920b8d3afe52a44e6731fd19f369d500729f5dc
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Oct 24 14:22:24 2016 +0000
+
+    update to celery 3.1.25.
+
+commit 70adfe67d67614aee5caed38492abf1e979e11ad
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 21 19:19:36 2016 +0000
+
+    handle redelivered job deduplication
+
+commit 9250c341c650a2ad4ef133a1b0b2f097f740bff8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 21 01:42:32 2016 +0000
+
+    set jobs running on an offline worker to job-offline
+
+commit 7bef23cc514f339f7d16aa6e98a7d968add41ab3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 16:17:34 2016 +0000
+
+    use . as a separator in worker name
+
+commit 9817b629d8c25b96a871e6d6fee24d9089164da4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 15:55:32 2016 +0000
+
+    remove "job_worker-" prefix from names
+
+commit 475405932c7ae17ba60ed6aa7fc5da163d576fae
+Merge: 39942dd b809cd6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 15:17:37 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit b809cd650e553978b4b9ada5fa29b0724d521e29
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 15:16:01 2016 +0000
+
+    handle signum of revoked task that was queued but not running
+
+commit 39942dd6c1d9d70020ac0d9cb7870026211be56c
+Merge: 6fc984e bd77fa7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 14:43:21 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit bd77fa7eb75c311754845925c5fc3ba55f64e25c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 14:39:30 2016 +0000
+
+    enable/disable hysds signal handling via celeryconfig.py
+    
+    Disabled by default.
+    Enabling HYSDS_HANDLE_SIGNALS will have the following observed behavior:
+    https://github.jpl.nasa.gov/hysds-org/general/issues/33
+
+commit 6fc984e918f309dd8dd10a4045788074904cd070
+Merge: 4165b55 9dc87bc
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 02:28:29 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 9dc87bca3ca2fb28047ad50025165a082984c79a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 02:27:37 2016 +0000
+
+    track signum
+
+commit 4165b5513bb87010e60e7715f80fce036ea5ad07
+Merge: b924c0d 80c40c4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 02:25:48 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 80c40c4e4938f284ab8dd9ab64ca896ad7609767
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 20 02:22:43 2016 +0000
+
+    add signal handler to run_job() to propagate job status
+    
+    Create signal-specific job statuses.
+
+commit b924c0da046680436c73571a2e79adfe0da4acdd
+Merge: 0cc13ea de7bdd1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 21:30:10 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit de7bdd19e1ee2bb4280665fe0af3c83e86c70c52
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 21:29:22 2016 +0000
+
+    add signum to job_status template
+
+commit 0cc13eaecebf0992a509814a1301b4650650c609
+Merge: f5e4be4 5b0a11b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 21:27:38 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 5b0a11b56b7011e6fa54ae76ee941a8a59878b44
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 21:26:05 2016 +0000
+
+    add job-level handling of task-revoked
+
+commit f5e4be40263e68dddb839b21ca2937c4f6f2662a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 14:36:55 2016 +0000
+
+    update job_status template with new fields
+
+commit 807357ecd0ba0267b3187fb22b54cd8e049733f0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 19 14:24:22 2016 +0000
+
+    add metadata on published products to be stored on mozart ES
+    
+    Rename _products.json to _datasets.json.
+
+commit a3fba8b31d1dba416f820007164013e764c331d4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 18 19:36:47 2016 +0000
+
+    save metadata on published products to JSON file _products.json
+
+commit 93378010f34feb6b7c41982322fa43204bbe2765
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 18 18:55:06 2016 +0000
+
+    prefix hysds files with _
+
+commit 745d76a9508ac502f7e4bb4aebe5de3123c68362
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Oct 17 18:12:21 2016 +0000
+
+    remove pyes req
+
+commit 41a3f5a7339c095382bc2ca18c96042377679502
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 13 16:03:56 2016 +0000
+
+    disable unlinking of small browse image on ingest
+
+commit 7c4b46296e65f26649e1c3048fb7eecead217f56
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 13 16:02:18 2016 +0000
+
+    increment hysds version
+    
+    Update source code url to github
+
+commit e08765b944ef8a6e58c76acf0881a1ad581b9fb0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 13 15:44:21 2016 +0000
+
+    set empty metadata if not *.met.json exists since it's now optional
+
+commit 1d07de0a218116c71cfb546421444acc6f299330
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 12 21:46:53 2016 +0000
+
+    update to handle explicit setting of objectid and version
+
+commit e17bb0703fdb6f91a57e667b58a544491accb18e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 12 19:58:05 2016 +0000
+
+    update update_json with dataset info
+
+commit 70fef3670fa3fc18764e111b05774a30c26185ee
+Merge: de03017 3e6af82
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 12 19:07:41 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 3e6af82fd90f943b70f46f104c4a351334bb68a7
+Author: M Starch <Michael.D.,Starch@jpl.nasa.gov>
+Date:   Mon Oct 10 18:29:19 2016 +0000
+
+    mstarch: cleaning up cancel queues script
+
+commit 35b54190ef00912277b841a4e1d5b5fac2b0422f
+Author: M Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Mon Oct 10 18:24:27 2016 +0000
+
+    mstarch: adding a script to cancel queue consumption and (optionally) wait for job drain
+
+commit de0301784d766e25c9b122eb78c92e73d0f90de0
+Merge: 1c68a2b 51aabf3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 7 18:20:54 2016 +0000
+
+    Merge branch 'master' into v2
+
+commit 51aabf342e096658c30fa68e3fba46a0d5207f44
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 7 16:40:03 2016 +0000
+
+    update celery to v3.1.24 (transition version to upcoming v4.0.0)
+
+commit 1c68a2b5f85fc502505feccfa051af605cffc67b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 6 17:56:44 2016 +0000
+
+    trigger off of *.dataset.json
+
+commit a233282e725edefba2c16f4dc9f42fc1aec164dc
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 5 14:25:26 2016 +0000
+
+    submit job queued status after generating task uuid
+
+commit 8e9d53f5264f44a31512e231a646df93e4fcef22
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Sep 19 13:52:11 2016 +0000
+
+    handle SoftTimeLimitExceeded exception
+
+commit 4416b4ddd1598ffa6d3faf284b9a62bfde3ffe83
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 16 18:06:02 2016 +0000
+
+    generate done file after logging job status and info; reduce telemetry data volume
+    
+    Handle edge case when harikiri kills a worker after the worker has
+    created the done signal file but is still waiting for job status to
+    be pushed to redis on mozart.
+    Reduce telemetry data volume by returning a bare-bones result for
+    run_job() since the full job status JSON is already transmitted to
+    logstash on mozart.
+
+commit 76deeb4ecd88fb9aafaba8a8edd4bc28625ccf8b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 19 15:02:35 2016 +0000
+
+    disable celery task error emails
+    
+    Can cause "bounce rate too high" issue when sending to email list.
+
+commit bb4fca9c73375091cf04796a5def48a49bd53ea0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Aug 9 01:04:14 2016 +0000
+
+    add container image override in worker configuration
+
+commit bcf165368b4913219074ad82b85b0b79e195cf9a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jul 22 15:46:43 2016 +0000
+
+    fix bug in redis pool allocation of job failures; refactor to use single redis pool
+
+commit 8191527fa50be9022b6d42142bb0d2bf58ff4200
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 20 13:51:33 2016 +0000
+
+    update docker command template to conform to the standard docker-entrypoint.sh convention
+
+commit 3d8aa6b8628dfe924357790a51a0f1f1b1dd091d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 21 16:14:27 2016 +0000
+
+    remove deposit of .done file after product publishing
+
+commit a7f15784010017465306cff040555ea301b8b704
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 15 22:32:06 2016 +0000
+
+    ldang: Added colors to monitor_queues.sh
+
+commit 861eb929cbf0d6586513495f74a1259f04fae5ed
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 13 14:21:01 2016 +0000
+
+    add strategy to reserve space for exit code file to handle no disk space issue
+
+commit 3b8227dd469ad85dc5b4cb84b83faa8c4bbcf0f5
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 26 13:02:42 2016 +0000
+
+    add strategy to reserve space for done file to handle no disk space issue
+
+commit bc27b8338f41c2ca7861cd9253267d5a65c51145
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 25 18:07:32 2016 +0000
+
+    explicitly include browse.png
+
+commit 8c862c98ddf1d43d7df5a35682b17288491c4540
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 24 16:38:04 2016 +0000
+
+    disable indexing of context and localize_urls object in job json
+
+commit 358a6d1f5ba170789a7323e54cda822f872db7f8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 24 01:12:37 2016 +0000
+
+    disable indexing of params object in job json
+
+commit e4731bf00bdbb92e414b4487b5727ea4da242665
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 20 21:15:41 2016 +0000
+
+    propagate job creator errors
+
+commit 66ad63f61d9cb48cd6ce040aa1e18aec9e15cb01
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 19 21:24:28 2016 +0000
+
+    remove docker -i option to check if that causes unremoved containers
+    
+    Export only job-specific env in _run.sh.
+
+commit 9af94709903d3590a93fc0b80af67297076f50f7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 18 20:46:30 2016 +0000
+
+    dump _run.sh shell script for postmortem rerun of job
+
+commit 8b1275f34353badc2890af9275f1a3935884b155
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 17 19:03:13 2016 +0000
+
+    use payload_id as job status ID for rabbitmq redeliveries; process worker-offline events as job-failed
+
+commit d952af63c24983e7b0360f351efa1e365469bac3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 12 23:34:57 2016 +0000
+
+    handle container image cache cleanup
+
+commit 579c09abe95aec77acd05d7d85bcbaa1b0dd0f95
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 12 17:50:55 2016 +0000
+
+    remove dependency on docker-py
+    
+    The python docker-py module makes API calls to docker REST API which
+    is not as stable as using the core docker CLI.
+
+commit 97dc73f8e64ea615e37b46dff4e4dd0acec9c4f3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 12 02:06:36 2016 +0000
+
+    docker0 IP address takes "ipaddress" key in facter; look for eth0 instead
+
+commit 738a1f502e111adb38b587bf22767df94515d3c9
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 11 02:33:08 2016 +0000
+
+    use docker-py 1.7.2
+
+commit c8eb36bbc1494e28e2afecee39a4372a42529bab
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 11 02:23:31 2016 +0000
+
+    unify execution of scripts and binaries in a container
+
+commit 204609e984db04f34634fcc1f53e4da9ac3d9a74
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 21:10:56 2016 +0000
+
+    ensure cmd_line_list elements are strings
+
+commit 3869851e01d85f3fbb746849c0ae8d09a26fcf47
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 15:20:22 2016 +0000
+
+    update job_status schema for container image name and url; for faceting
+
+commit d2e13a97e631c70e52532d6858d979e832dcc309
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 06:31:22 2016 +0000
+
+    remove -t option; getting "cannot enable tty mode on non tty input" errors
+
+commit 098512945b0e9616e6d23030cb4e2c9465698aa8
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 05:26:40 2016 +0000
+
+    use docker CLI to load image; docker-py times out on large image
+
+commit 38fed778dd4502129f2e4b3e4c9c580574a35510
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 04:22:05 2016 +0000
+
+    create root cache directory if it doesn't exist
+
+commit e44f6c6823f910ab17b7e70156a875e46fc4b23f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 03:46:51 2016 +0000
+
+    fix bug in downloading container image
+
+commit a3d20e17b4db5bd6e2c1485a4ee7bb20de54d95a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 03:13:53 2016 +0000
+
+    import osaka
+
+commit c362268cf4f02c978427c1beb567ede153c57ca4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 02:23:36 2016 +0000
+
+    save container_image_* configs to context
+
+commit 34252a48df9ee087e620b7b341f45664446f502b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 02:14:44 2016 +0000
+
+    overwrite container_image_* configs from job creators if specified in submit_job JSON
+
+commit 91901bd4fa055ff5a32f9a2a2cf31e5e1466ac3c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 10 02:09:11 2016 +0000
+
+    log container image localization and loading
+
+commit a4e10def48d258e3f82a65350ae3ecfcd2c137c0
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 9 20:34:39 2016 +0000
+
+    download docker image if doesn't exist in local repo
+    
+    Pull from url. If not defined, try docker hub.
+
+commit 13aa16b2d27ad01c52343ee8ec9b73ae80ce62f1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 9 18:42:28 2016 +0000
+
+    call with bash -c option but enclose PGE cmdline call in quotes
+
+commit 900f421645ebc3e23c74e5475397220570923f18
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 9 18:29:25 2016 +0000
+
+    build docker call without the bash -c option
+
+commit 955a78d49b003392e31bf7b3926ffc2bc91b66f1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 9 17:46:48 2016 +0000
+
+    initial implementation of docker container execution
+
+commit 2ec85a84963c1a07694f444622f2bda2771f174d
+Merge: aa212fe 4a76e4e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Apr 23 03:55:08 2016 +0000
+
+    Merge branch 'dev' into hot-cache
+
+commit 4a76e4e5b210a8e55293494bfce35ed584f52029
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Apr 23 03:53:13 2016 +0000
+
+    update cleanup script
+
+commit aa212fe1d42ab20a7549f9d9caf5861a631385f8
+Merge: 0680a96 2e322e5
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Apr 22 06:32:49 2016 +0000
+
+    Merge branch 'dev' into hot-cache
+
+commit 2e322e5bb79817bfa5e2b6c85df2f136022638cf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Apr 22 06:31:28 2016 +0000
+
+    allow job tag to be passed into submit_job
+
+commit 0680a96f4d045685dd79ffc6cfdb8fd8a116c499
+Merge: d83ee30 336deca
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Apr 21 02:21:07 2016 +0000
+
+    Merge branch 'master' into hot-cache
+
+commit 336decad1fde7b6f93ae7c7913e4f96bffd5cdab
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Apr 21 02:20:38 2016 +0000
+
+    set gunicorn request line limit to unlimited
+
+commit d83ee3021db00b9111a37188d13dd9a6f5a46ea6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Apr 7 15:06:57 2016 +0000
+
+    refactor disk cleanup into job dir cleanup and cached product eviction
+
+commit 7a4189509243c109fdb5430cf2289f42912280a2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Apr 6 21:55:50 2016 +0000
+
+    enable sending of celery task errors via email
+
+commit c3e4d4f0fee146105bf53f168bc05ea796a67d05
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Apr 6 21:06:26 2016 +0000
+
+    add root work dir and worker webdav config globally using celeryconfig.py
+    
+    Configuration in job_worker.json will overwrite these globally set configs.
+    Determine root cache dir for L1 hot cache.
+
+commit b7eeed06bfb97fdb0a83523b87ae499eca1b899e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Apr 6 21:02:30 2016 +0000
+
+    update to celery v3.1.23
+
+commit f807ba64460df8cc5a042118f7774e638e7916ab
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Mar 31 16:22:46 2016 +0000
+
+    fix bug: early breakout of cleanup iteration
+
+commit ca47cdc95f824afe4897b484ed4c0f1a46464c94
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Mar 30 17:17:14 2016 +0000
+
+    cleanup job dir walking; update job url with finer grain dir structure
+
+commit 6f8e2e2131240cbd11d1eb2440cc5ecf0f45b009
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Mar 30 15:45:08 2016 +0000
+
+    finer grain job dir structure; fix .done bug in cleanup_old_work() and improve performance
+
+commit 28164b39ea8f3e7973a24b5ff48ea04b505f6c14
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Mar 30 03:28:30 2016 +0000
+
+    add rsync_push job creator
+
+commit 303bf64e7ee2445b8beade5f408ba1c18273ac55
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Mar 30 01:17:44 2016 +0000
+
+    improve public IPv4 address and hostname determination in light of RFC 6598
+
+commit 5babbc2cf9515f9a4c588b7bbc8e8335ecfff993
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Mar 22 17:18:42 2016 +0000
+
+    add boto3 dep req
+
+commit 74cb83ab481a6eefef42ea907ff2734d20c29a58
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Mar 22 17:03:23 2016 +0000
+
+    add EC2 custom metric syncer script
+
+commit e6ab8da1083f7a17ea87983495d5900681d4e33f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Mar 21 16:15:59 2016 +0000
+
+    catch errors queueing finished jobs
+
+commit 51dd8ef7826c904a3e8d552573643cea14ce7228
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Mar 15 20:56:44 2016 +0000
+
+    set s3 url as default
+
+commit c437fda408bfdc9a5fb42eae295d4df614171459
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Mar 2 16:40:06 2016 +0000
+
+    add sftp_push job creator
+
+commit f03ee6a383651dffa103520ab0a7c34b1d22f2c1
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Feb 29 15:29:08 2016 +0000
+
+    handle error when pid to send SIGTERM to no longer exists
+
+commit 7b34f8e5f72f26ecca5b264441a121ebb1f85d7d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Feb 26 23:04:49 2016 +0000
+
+    upload .done flag file to signal successful end of product upload
+
+commit c32bd893a46dc7492062dcc7f7a91ea5e0c52806
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Feb 26 17:00:35 2016 +0000
+
+    handle task-failed events in which worker reached hard time limit
+    
+    Generalized this detection mechanism.
+
+commit 7290e7e01e0b9f04a26e2a23169cab9ae399d36b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 25 18:34:37 2016 +0000
+
+    catch errors deleting previously published products; attempt to overwrite
+
+commit 6fc41b7ad34f44f80b109c92b81824ada587cee3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 25 17:23:16 2016 +0000
+
+    revert back to gevent worker; performs better under heavy load
+
+commit 3c0f4ecf5dbe29d01ca35bee3ffdf40304310494
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Feb 25 16:37:12 2016 +0000
+
+    restore unpublish step; was removed in the transition to osaka
+
+commit 77dfae7ca267cb83352bd7a75d8a6eb7f86e3b1f
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jan 29 01:33:59 2016 +0000
+
+    propagate context between user_rules_* and sciflo workflow processs steps
+
+commit 441df763e06fb79d5eb43a19a84db2432a018738
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 26 20:50:15 2016 +0000
+
+    run tosca behind proxy
+
+commit 69dddfa027977d82a165a01cfd2864928345c31c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 26 18:53:28 2016 +0000
+
+    set new mozart url (proxied behind apache)
+
+commit b9e9ee9342a3036e51c2c2fc0d05b83d24abf02d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 26 16:03:55 2016 +0000
+
+    catch errors when updating job metrics to prevent it from bubbling up to worker
+
+commit 23c28cf3dbab8816c50b8083a5869d74a21464b5
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 21 14:42:02 2016 +0000
+
+    add script to clean out stale queued jobs
+
+commit 70de2b2c412911f5f6484ee609f13fef0970cd88
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 21 14:38:43 2016 +0000
+
+    increase mozart_job_management workers to 4
+
+commit 350b70417727b9444e90600d58576f8837e3c4a7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jan 21 13:40:04 2016 +0000
+
+    set default empty values
+
+commit a29dcf176c91021e5ab127ff8dc7090ab90080d7
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 19 23:11:30 2016 +0000
+
+    get abspath of product dir
+
+commit ea3334f6dd070df578b321083faf7d239ca4549a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 19 17:55:48 2016 +0000
+
+    revert worker for grq to gevent for high concurrency performance; enable debug level logging on all gunicorn apps
+
+commit 16579b0d142db5ea3f0a8e84c4bac33960eb6281
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jan 19 16:34:24 2016 +0000
+
+    use gthread worker
+
+commit 1a02878b6ac394cef6e2fc1286386ae14863b1d9
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jan 6 20:12:37 2016 +0000
+
+    update psutil API
+
+commit 550a6222e58041710118fe592deca625d9b60085
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jan 6 18:10:27 2016 +0000
+
+    use eventlet workers since tornado workers are not a recommended config
+
+commit e938426c7f29bf28a35c9700510dc3e28416ae89
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 4 20:54:18 2016 +0000
+
+    use tornado workers
+
+commit b0cf1f3e076a7be672f042eee25ed47e6bf3792d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 4 20:21:35 2016 +0000
+
+    update reqs
+
+commit e3434c75e3f573bd9000bc82c8a698d3363d016e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jan 4 19:46:06 2016 +0000
+
+    use tornado workers
+
+commit 0240d3288b85e294414d00235da4d6d35244e53c
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Dec 4 22:22:47 2015 +0000
+
+    match any file ending with pge_metrics.json
+
+commit a4b6165cb569563360b92c9bf3b72f57202ca181
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Dec 4 19:55:09 2015 +0000
+
+    add alternate traceback interface by reading it in from a file
+
+commit 09028a39b72683ace30825fbc8dac8ca06425317
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Dec 4 16:31:07 2015 +0000
+
+    simplify alternate error interface by reading it in from a file
+
+commit 4c97302e92117da3083e63cbf8f6952ceb37c6ed
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Dec 4 15:54:23 2015 +0000
+
+    allow jobs to specify alternate error message in context.json
+
+commit cd6758703bc5bb2d4f71e5a71d659079094f24ff
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Dec 3 19:56:38 2015 +0000
+
+    rename job type and queue to user_tagger-job
+
+commit 1bd91ecab2c9228927b3e04f3d41b3494f08fe97
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Dec 3 18:18:37 2015 +0000
+
+    add job & worker configs for bulk_job_tagger
+
+commit 657ed30c487de3fb964f57df215779db5378bea6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Dec 3 16:17:39 2015 +0000
+
+    find all pge_metrics.json under work dir tree and append metrics
+
+commit b5e6fd79e1a902826f2524ab4be6ca6a4f989e62
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Dec 2 16:13:51 2015 +0000
+
+    update pyes to fix 'no attribute PY2' error
+
+commit 1591817d136516a76d6f2f0cc12282ac01b8671e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Nov 17 19:07:47 2015 +0000
+
+    add tags and user_tags explicitly to ES template
+
+commit 530b9d946fddad65c71dc49d720423c9ac8080ce
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 6 18:48:56 2015 +0000
+
+    revert back to ES 1.x until there's more support for ES 2.0
+
+commit 32337af9b261fb12fb45666370a195f54b16e056
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Nov 6 16:05:12 2015 +0000
+
+    update to use default elasticsearch output plugin
+
+commit 9ed63969188030eebddbf40d23adf5c841d91a07
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Oct 26 20:15:49 2015 +0000
+
+    fix generation of destination url; add logging
+
+commit 70a8182c0dbe210ca844d790a6bf419ea6556f8e
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 17:35:03 2015 +0000
+
+    add context to metadata for indexing into ES
+
+commit da684bad5da31fb239bdeb2b402ff6f65dcb1016
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 16:43:31 2015 +0000
+
+    copy context.json to product directory
+
+commit fda3f3c2cac9825bd1969762370437dd6e47dd7b
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 14:08:48 2015 +0000
+
+    use branch
+
+commit ef53843763a78e98b5a3c3e93343ac4ad292ec56
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 13:24:14 2015 +0000
+
+    install celery from tag instead of branch
+
+commit 77b2bd52b5dfed72200f0cde8358ea0346f88da9
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 12:58:39 2015 +0000
+
+    install forked celery v3.1.18 package with rabbitmq priority queues enabled
+
+commit 2c23244e99d89b3cd6c0245e2786168d6418f848
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Oct 20 12:21:51 2015 +0000
+
+    add job priority capability
+    
+    Track job priority in context as well.
+
+commit 33457d0be86e94a6fd6663c1131b765d326e6758
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 14 19:05:08 2015 +0000
+
+    handle higher versions of supervisor
+
+commit c93b5a806d090e3cee4c1f77db146f8bbc897c17
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Oct 14 17:23:00 2015 +0000
+
+    cleanup code formatting; update reqs
+
+commit 536f275e422cf3be81f8778caa2cb747aa123759
+Merge: 27acee6 8df8a98
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Oct 9 17:04:45 2015 +0000
+
+    Merge branches 'master' and 'osaka-dev' of github.jpl.nasa.gov:hysds-org/hysds into osaka-dev
+
+commit 27acee6d39107969d4e08d259ee11eaa81b4331b
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 8 18:37:19 2015 +0000
+
+    mstarch: small bug in product ingest
+
+commit fb5c57f7401701ddba30d7bb4cb933f5d2ca5102
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 8 17:05:24 2015 +0000
+
+    mstarch: correcting upload of browse images
+
+commit 8df8a9889fe0783e7ffe6bca827f7afbb10cee07
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 8 15:33:55 2015 +0000
+
+    add supervisord config for grq
+
+commit ccc6cb5f9fa880ce72574c4462ed70d2ad6ad675
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 8 04:47:28 2015 +0000
+
+    add ability to explicitly specify queue name using dot notation
+
+commit 33003442d91573556013eeea4880684550e70123
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Oct 8 03:13:04 2015 +0000
+
+    remove dav_server; handled by systemd
+
+commit 72593051ea09b9280ea20c061cb3f9e70da15a6d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 30 23:00:56 2015 +0000
+
+    add tsunamid to supervisor conf
+
+commit a57a339262accb86d21791a358dcffc06dbf4ca0
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Sep 28 15:25:03 2015 +0000
+
+    import types module
+
+commit da281a47066ad3136c9ed4cc4d7d06e9747124d4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Sep 28 14:49:55 2015 +0000
+
+    prevent elongation of retry_job names
+
+commit 6a6cf9129263039e76b823c492371adc50b8a227
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 18 03:34:51 2015 +0000
+
+    use _asdict() method since __dict__ is removed in python 2.7.5
+
+commit 38075ea2f5e9df2d46ad80c50d39e8ccbd130f1e
+Merge: a6d3528 2f3040f
+Author: M Starch <lestarch@googlemail.com>
+Date:   Thu Sep 17 16:32:02 2015 -0700
+
+    mstarch: mergeing in changes into osaka-dev
+
+commit a6d3528f4986e75885d1892e2c56b7e0dfd811eb
+Author: M Starch <lestarch@googlemail.com>
+Date:   Thu Sep 17 11:17:32 2015 -0700
+
+    mstarch: osaka initial implementation
+
+commit 2f3040f2ff148569be5348eb3d36e159f1a883fd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 11 01:35:14 2015 +0000
+
+    set GRQ port
+
+commit 374ef4fc6c847ab5cb6d12080038895bf3674cb6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 21:52:06 2015 +0000
+
+    added spyddder-man workers to factotum
+
+commit 6d69a75ca7f3e9bf09d34a827732d36d9a4e9424
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 19:32:28 2015 +0000
+
+    standardize on etc directory for config
+
+commit cb5109cd974fc7397dc424f1bb007468864ea155
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 18:29:05 2015 +0000
+
+    remove ARIA-specific check
+
+commit d5b41dadd3a1a0dfbb6195d757a61fb495e59181
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 18:25:25 2015 +0000
+
+    remove domain-specific configs
+
+commit 881ed528d6cf21406222ab897e501226631eb7c9
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 16:13:20 2015 +0000
+
+    remove domain-specific job creators
+
+commit 510ca01d3ea929be126ff18de58e3fd26f378a2b
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 15:30:29 2015 +0000
+
+    repeat previous fix for create_interferogram
+
+commit 39bad39f9278fb6ae84c11a43894ab77e7419e4a
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Sep 10 15:18:29 2015 +0000
+
+    add if not urls aren't null
+
+commit 982b069f4e70bf905847bcc32b1970448f8da8c9
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 9 18:42:56 2015 +0000
+
+    fixed product regex
+
+commit 3947d14b64293a5cd136c9ed0c190e0f500aab16
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 9 14:27:52 2015 +0000
+
+    handle ALPSRS* ALOS granules
+
+commit 25e8506670f3dd9078aeab9da90968668e3d4f13
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 9 14:24:13 2015 +0000
+
+    handle data products not specified in product orchestrator config
+
+commit f9f96ad560926fcf10ef1443aece416317a7a15f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Sep 5 00:14:53 2015 +0000
+
+    handle prod_date arg
+
+commit 8262aa0255929188d376b2671a14faf65ac7fabb
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 23:36:59 2015 +0000
+
+    recognize context.json for date
+
+commit 0c3c118fda291b4ff6ca0cec41ea8006260b0191
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 21:39:27 2015 +0000
+
+    set expected job info
+
+commit 68c0bbb71fc5af9d6bde54270c5ef59547f1e0d2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 21:29:42 2015 +0000
+
+    cache public IP extraction with facts
+
+commit f3e683ee7b82a40b794992b11c6e41e2b5ef5322
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 17:46:29 2015 +0000
+
+    fixed path name for area_of_interest product
+
+commit 0e2451f9d43f5ddad338389ae482005864ad469d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 17:04:16 2015 +0000
+
+    add spyddder-extract worker
+
+commit 69ef94b23229f51f6f7da2935150ad94d73bcc05
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Sep 4 16:31:20 2015 +0000
+
+    add spyddder-extract workers to aria workers
+    
+    Call extract.py with --force_extract option to bypass data localized from source already.
+
+commit 1ed4d3ccc4b9fdd49bdfa814dfaa572bec4dfa08
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 2 20:01:42 2015 +0000
+
+    spell out AOI dataset
+
+commit a088f7f779dffe121d97f0ee093e4f169d50c1f4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 2 18:36:40 2015 +0000
+
+    added dataset config for AOI
+
+commit 0cd98742b4450523305712adc0c2f8cd2f1789cf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Sep 2 17:40:05 2015 +0000
+
+    update ALOS dataset config from ASF data source
+
+commit de4a323f569e88340325d9a7a039bcddc764d003
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 1 20:51:41 2015 +0000
+
+    set oauth_url correctly
+
+commit a13617a038f7a55fb404f237f6b05cec13b4740c
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 1 18:16:18 2015 +0000
+
+    add 50GB disk usage parameter
+
+commit bd76b1ac578439ed4974a8d31ab5a4521591b6d4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 1 16:59:42 2015 +0000
+
+    added configuration for spyddder-sling-oauth
+
+commit a90784cc300ed46966ffa3157327e4dd5a962824
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Sep 1 16:27:10 2015 +0000
+
+    piggyback off .netrc to enable OAuth authentication
+
+commit eb109265d36ea8909e26a71c07a3f404d04dfbe2
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 31 22:08:21 2015 +0000
+
+    add CCMODS regrid worker
+
+commit 540bb9bdf8cf92b1a0951430728a889a26aa5800
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 31 18:11:06 2015 +0000
+
+    specify file_type parameter for verification
+
+commit 38b6bbe26e4c3f56e2f8131480c10d60e7d01273
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 28 20:44:00 2015 +0000
+
+    handle explicit naming of jobs
+
+commit bfbb3dd9df00a4e2618d12a7c66dce571af163b6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 28 20:05:43 2015 +0000
+
+    udpated dev datasets.json with extractor for S1A
+
+commit 1edc3413676f9b622444b00c1b0ad0f696ef1bb1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 28 04:47:44 2015 +0000
+
+    add S1A raw products
+
+commit d70a7fec1483c8d708710bd923695f23d1613749
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 28 03:12:36 2015 +0000
+
+    added spyddder-man configs
+
+commit 3d500ca57a2e71861dbf64ef8fc6f5eba89594d3
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 27 00:05:53 2015 +0000
+
+    maintain about 50GB free disk space on work
+
+commit 2cc6ca7b6f22f649b80f9e163190d48a05f3bbdd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 19:02:24 2015 +0000
+
+    remove scihub-extract jobs from verdi workers
+
+commit f0f608d5c0087d428d6f67f43f87e987d2eb79ba
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 18:12:43 2015 +0000
+
+    fixed browse url protocol since aria-dst-dav is only HTTPS/SSL
+
+commit 2998eb7a01c2b760abbede17f3636768a59301b0
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 17:45:38 2015 +0000
+
+    add scihub-extract jobs to verdi workers
+
+commit 75fdbb701e4137befc09bb0ddebb46e17a293098
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 17:38:04 2015 +0000
+
+    set 2 workers for scihub-download (max allowed by ESA)
+
+commit 8be28a3b8f2ab75e6421c89f2c6f417cf57bf3b4
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 17:25:35 2015 +0000
+
+    update dev datasets config
+
+commit 26cac9fb335a27c806dd098c8518369c68a1efe6
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 14:55:16 2015 +0000
+
+    add job_worker.json.scihub
+
+commit b76830f7da1d527e2b57e4f16aaf4d0ce5035323
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 26 14:34:25 2015 +0000
+
+    merge updates from scihub-downloader branch
+
+commit 8a13eebf3d11c69da75126906edb14fcc4c4e6bf
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Aug 25 23:26:17 2015 +0000
+
+    fixed more harikiri bugs
+
+commit f9c39e890d1e466212f083300bb3707b5d5d0612
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Aug 25 23:16:05 2015 +0000
+
+    fixed bug in detecting if instance belongs to autoscale group
+
+commit 42c78cb7370227d3b14863d6a20e2b315e891366
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 20 16:23:08 2015 +0000
+
+    generalized; improved CLI interface
+
+commit 4b3b7327e10e63d68f8d547033dc3d2b7982f37d
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 20 05:50:40 2015 +0000
+
+    added template for celeryconfig.py
+    
+    added supervisor config for combined metrics and factotum node
+
+commit c40f2cc3c375f8d1e84cc3fa32bea07481367089
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Aug 17 17:48:02 2015 +0000
+
+    updated sentinel1a product locations
+
+commit 4d4dddd1b30183f40b1fb4b679668f22e9514c6a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 13 16:26:58 2015 -0700
+
+    added CAM5-mjo-daily-subset product
+
+commit 20ee11f6e68b12a0ce482dd087de504a6a7e77e0
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 12 17:36:36 2015 -0700
+
+    updated dataset names for CCMODS products
+
+commit 9663eb67251166dd8a2ae41377afefcf19b46aa4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Aug 12 00:33:10 2015 +0000
+
+    increment ARIA datasets version to v0.6
+
+commit 4b4d754d6ad48a10afb8f169d097fac11d99b804
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 7 00:49:41 2015 +0000
+
+    updated to run on factotum
+
+commit 127e4976eb8fdfe2957c889b4b9fc93e290a7689
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Aug 7 00:31:23 2015 +0000
+
+    add job_worker config for user_rules_job on factotum workers
+
+commit 197fb0217a1320344637f3137f1893230a002268
+Author: gmanipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Aug 6 23:24:27 2015 +0000
+
+    added supervisor conf for factotum
+
+commit dec70cf897c8d3bc1ada79e17b2291e1faa612d2
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 29 01:21:26 2015 +0000
+
+    add dataset level and type to datasets.json config
+    
+    Add dataset_level and dataset_type to update JSON.
+
+commit 2bca2615875bfc0c4de5e3ceac2b5960dc530fc2
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 28 21:43:51 2015 +0000
+
+    replace spacecraftName with platform
+
+commit a5f63a93254522fbb769104ea407dd85388e4ce1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 23 21:37:35 2015 +0000
+
+    decreased import_prov_es workers to 1
+
+commit e2049336af5ffee4457b9abd3c134758a5e6e728
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 23 20:55:47 2015 +0000
+
+    increased number of import_prov_es workers to 32
+
+commit 8400546186c80cbaeff5f841c47bac549bdf9367
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 23 20:44:30 2015 +0000
+
+    added worker to import PROV-ES JSON to PROV-ES FacetView
+
+commit b6226877d7df717ffd8f0c881eb3a5dccb9075ff
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 22 13:59:14 2015 +0000
+
+    set coherenceThreshold as an optional parameter
+
+commit ecbd0dece4bbcab433ba662a0615699882a29378
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 22 03:05:36 2015 +0000
+
+    added coherenceThreshold parameter
+
+commit 19c23518e67240eacb02a831bda368c026916cc4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 21 16:11:45 2015 +0000
+
+    cleaned up logic for job drain detection
+
+commit 3095bb7316d0a843be70e00ea655f6986a7e9f17
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 21 00:15:59 2015 +0000
+
+    update easywebdav and requests for disabling SSL verification; disable SSL verification
+
+commit e67360758a454dd56d1156207ff2ab4764ee23ec
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 20 22:23:53 2015 +0000
+
+    detect job drain by checking rate of failure
+
+commit f584b57861fe228e23b2ffb0ac52ee0f809b409c
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 16 17:43:07 2015 +0000
+
+    use 32 workers for user_rules_product
+
+commit c2d5d6ebe8f5d9b18bdd74af7b60dd9e181d0174
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 14 19:04:23 2015 +0000
+
+    separate l2_fp and dumby worker instances
+
+commit bdb0dbc3ce81fb3ecf852ee46a3d537cd449ba51
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jul 11 08:13:40 2015 +0000
+
+    recognize dumby-product
+
+commit db8c52bce5a65b1f9b947325cc081bdb48b2fefd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jul 11 08:11:58 2015 +0000
+
+    revert back to only logging PROV-ES if PGE creates it initially
+
+commit 3f0c26ef4bde9b0d467703822fd3ff485b8c768e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Sat Jul 11 07:36:53 2015 +0000
+
+    added dumby product
+
+commit 32a99de4ed1ea211651b62961e2b5e8e8d47a9df
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jul 10 22:10:19 2015 +0000
+
+    added GRQ_ES_URL config
+
+commit 0ffbf3d8144e31507b255d57bb5ccdc54f96d3d6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 9 15:48:43 2015 +0000
+
+    improved orchestrator filtering
+
+commit 018798157cd52f83762cd1b9a01567f17adcb020
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 9 01:51:39 2015 +0000
+
+    revert back to 1-minutes celery heartbeats
+
+commit 10d350bf8609012359a4a0d4782b6d9d3d1098e6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 8 16:48:16 2015 +0000
+
+    added user_rules_product worker to mozart-worker; generalized to verdi directory for user_rules_product code
+
+commit d5a72e088654c93f36ef9af7afef821979339ce8
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 8 16:02:06 2015 +0000
+
+    fixed bug
+
+commit 4d7b247946d3bb121a1c475fdce0cc0708bc7f6d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 8 15:19:30 2015 +0000
+
+    updated harikiri to take autoscale group name
+
+commit 926dbe8e586c67c56d7400b52ccd982a490c1573
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jul 8 14:46:37 2015 +0000
+
+    updated oco2-worker config
+
+commit d31d2bf621cc726ef6ffc63f97b3b55aa5a82787
+Merge: c82f5fb 829860e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 20:57:27 2015 +0000
+
+    Merge branch 'master' of https://github.jpl.nasa.gov/hysds-org/hysds into dev
+
+commit c82f5fb344240218c5fa1a910295fcc9a2d98464
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 20:57:08 2015 +0000
+
+    mstarch: working job drain detection
+
+commit d50348aa65c4eddd72e9a591d6aaf77a1fe56abe
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 20:28:23 2015 +0000
+
+    added job drainage detection configs for other clusters
+
+commit 829860ef1d2ebb2e66ab0d5ac51bfd24fc902083
+Merge: 7833f8c d9d24fa
+Author: Michael D Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Tue Jul 7 12:55:47 2015 -0700
+
+    Merge pull request #10 from hysds-org/dev
+    
+    test
+
+commit d9d24fa7a6384512d2a8245c107c59cb62a5ce12
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 19:46:29 2015 +0000
+
+    test
+
+commit 7833f8cb4df87d11409d2bf7e94e9eb09518a381
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 19:09:30 2015 +0000
+
+    handle task-revoked events
+
+commit 7be181920eea64c277eb95e1b6b5a5298d42b794
+Merge: bbdd7e5 a98ca3a
+Author: M Starch <lestarch@googlemail.com>
+Date:   Tue Jul 7 09:58:56 2015 -0700
+
+    Merge branch 'master' of github.jpl.nasa.gov:hysds-org/hysds
+
+commit bbdd7e543e76681e6d39977b8a06ecbdd5258e6b
+Merge: 3e1e26a 3aec29d
+Author: M Starch <lestarch@googlemail.com>
+Date:   Tue Jul 7 09:58:30 2015 -0700
+
+    Merge branch 'master' of github.jpl.nasa.gov:hysds-org/hysds
+
+commit a98ca3aeff1d7539e857c3b2479b08fa26d73464
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 16:58:22 2015 +0000
+
+    set celery heartbeat-interval to 10 minutes
+
+commit 0004650d8b478e8b00a4c1227c066068a6fc0c10
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 16:44:38 2015 +0000
+
+    enable worker-heartbeat events
+
+commit 3aec29d3beedd85ec61fac3b61761b343ba771f4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 16:28:11 2015 +0000
+
+    updated configs for OCO-2 clusters
+
+commit 3e1e26a932f71194fcbbcf82342b219b3be9e9d6
+Merge: 66413ff e2b2cbe
+Author: M Starch <lestarch@googlemail.com>
+Date:   Tue Jul 7 08:13:19 2015 -0700
+
+    mstarch: merging in latest changes
+
+commit e2b2cbe08232a35b6dd51c6839d283c8578b54fa
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jul 7 06:30:01 2015 +0000
+
+    use unix domain socket for process_events indexing; index task-sent events
+
+commit 66413ffc2bf94c4d6b80f71581e66eb51993c979
+Author: M Starch <lestarch@googlemail.com>
+Date:   Mon Jul 6 14:41:43 2015 -0700
+
+    mstarch: reseting job failure count on success
+
+commit a6ab2a973a3adb59ec96815cdf1fa5c51a30b04e
+Author: M Starch <lestarch@googlemail.com>
+Date:   Mon Jul 6 13:22:39 2015 -0700
+
+    mstarch: configuration for worker contiguous failure monitoring
+
+commit f17ceb4dddb24be0373d273e319aba2274007ca4
+Author: M Starch <lestarch@googlemail.com>
+Date:   Mon Jul 6 12:52:23 2015 -0700
+
+    mstarch: process events terminates a worker on excessive contiguous failures
+
+commit 25406682a0f3048e4a561a4a2c53712451693979
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 6 18:33:05 2015 +0000
+
+    removed context parameter from template
+
+commit fc6e397510c1eb981c56dd44144390834dc88021
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 6 16:46:15 2015 +0000
+
+    set context as a dict and don't index
+
+commit fd10b6210113b4b9a3f12441f36af17c86b6d734
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 6 14:53:18 2015 +0000
+
+    index task statuses for more system visibility
+
+commit 3bb271f1086668b2139d68b14566ee305bfa2700
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jul 6 14:41:17 2015 +0000
+
+    added extensive error checking to propagate job-failed errors
+
+commit 4573514ad4649e76c2c6393db0ca662b9fa26828
+Merge: c80fe2c ea178cb
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Thu Jul 2 15:35:21 2015 -0700
+
+    Merge pull request #8 from gmanipon/master
+    
+    update
+
+commit ea178cb942373d0cf4b080a12d0a13581a8c9ecb
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 22:16:05 2015 +0000
+
+    index worker-(on|off)line statuses for full system visibility
+
+commit 0888012dfc2e652b3d12d2826c0fb60f3cbd7995
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 18:51:36 2015 +0000
+
+    simplified detection of WorkerLostError; handle only task-failed, worker-online, and worker-offline
+
+commit c3e8593b342b3a4b0efb4d7642cd3adaaac36693
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 16:24:06 2015 +0000
+
+    write job status to job_status-current index
+
+commit ff50e8f85c9d65a471992402431b08bac9e87cce
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 16:16:24 2015 +0000
+
+    remove job type so job-offline doesn't add to job type count in mozart
+
+commit 4f32b33c28ea362dc103f99bef19804ed466ce41
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 14:49:30 2015 +0000
+
+    write job-offline to separate index
+
+commit abef75c52c6f6b3f3f04a36cbd2051d92a415eeb
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 14:48:47 2015 +0000
+
+    handle WorkerLostError and propagate job status JSON
+
+commit a0ed678a31905dfd8860f491acfa4c0ad3e94958
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jul 2 14:30:48 2015 +0000
+
+    use msgpack for event serialization
+
+commit 83887aaa274d59b02fcc37885ba7674e544ed2b5
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 30 16:16:32 2015 +0000
+
+    renamed job-running job status to job-started
+    
+    Removed time_received from job metadata.
+    Track time_end for job-offline.
+
+commit 7ce85a1ad94ccc8089240b26ce4c9cfabdc98d7d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 30 14:46:29 2015 +0000
+
+    renamed worker-offline job status to job-offline
+
+commit c2ea867b31546f9bf3b0c3c0ec6a2e1fde86002d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 30 14:34:41 2015 +0000
+
+    ship task's delivery info to track redelivered flag
+
+commit a58222f730d6f05a9d95a87bd21b4cbbec10bd0e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 30 14:08:22 2015 +0000
+
+    added worker config for dumby jobs
+
+commit c3fa13321383e1f59f9ff90bbf2d4343d75d7a8e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 30 13:55:02 2015 +0000
+
+    use single job_status index to remove job state transition effects
+    
+    Also added celeryconfig.py for OCO-2 dev cluster.
+
+commit 34bde4221f7dc41710e77d8a5a392738db3396ab
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 29 14:54:37 2015 +0000
+
+    use msgpack instead of json for all logstash events
+
+commit b411f821719b64893884f14999113ebee39c9d99
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 25 16:30:30 2015 +0000
+
+    re-enabled logging of JSON payloads for job status, job metrics, and worker metrics
+
+commit 39eaedb8b5f6da590ad02f6c3244c725ee88e0f5
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 25 06:48:46 2015 +0000
+
+    initial implementation of sending real-time updates to redis
+    
+    Directly send job status, job info metrics, and instance metrics to their corresponding redis endpoint.
+    Only logstash indexers are running.
+
+commit c80fe2cfeaae6cbbee11bd8286814c7209061b9a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 15:37:16 2015 +0000
+
+    start logstash processes up front since they take a while to fire up
+
+commit 26f488fd753c25d676bcb6b4ffba76689c143e65
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 15:18:22 2015 +0000
+
+    use msgpack serializer for tasks and results
+
+commit c9258938c63b02b48dd3be6503b3fae1f6160dde
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 06:10:44 2015 +0000
+
+    use msgpack codec for logstash json payload
+
+commit ddf729c5352fc3c6139467be00dc5f0502eb8634
+Merge: 65108f2 5289060
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Tue Jun 23 22:01:44 2015 -0700
+
+    Merge pull request #7 from gmanipon/master
+    
+    Merge branch 'upstream'
+
+commit 5289060b929a93d3a2f87992e051b5dc09fb93ec
+Merge: d7ad6c4 65108f2
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 04:59:53 2015 +0000
+
+    Merge branch 'upstream'
+
+commit 65108f2adbb6178597a1612f370dceba5b81dd56
+Merge: d7ad6c4 ea56e53
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 04:55:24 2015 +0000
+
+    Merge branch 'mstarch-master'
+
+commit ea56e532f2ef6344dca4a2c5dc0677b2adaac4bd
+Merge: d7ad6c4 1d9a160
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 24 04:13:40 2015 +0000
+
+    Merge branch 'master' of github.jpl.nasa.gov:mstarch/hysds into mstarch-master
+
+commit d7ad6c4f9a9a4438a7bbfa528cde963e40ed5243
+Merge: 1cd5dd8 e73d5da
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Tue Jun 23 20:32:38 2015 -0700
+
+    Merge pull request #6 from gmanipon/master
+    
+    sync updates
+
+commit 1d9a1604a4ad815cdf6a38086d1540cb69989d5b
+Merge: a341c72 1cd5dd8
+Author: M Starch <lestarch@googlemail.com>
+Date:   Tue Jun 23 14:42:20 2015 -0700
+
+    Merge branch 'master' of github.jpl.nasa.gov:hysds-org/hysds
+
+commit a341c725ff79ff39e01d7944514f2b8b096f35b5
+Author: M Starch <lestarch@googlemail.com>
+Date:   Tue Jun 23 13:41:54 2015 -0700
+
+    mstarch: adding back download_file_http
+
+commit e73d5da51771c202a917c8765c0536ee02946d07
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 22 22:06:56 2015 +0000
+
+    set worker-offline status as a final status
+
+commit 0a429aa6293edf42c57a178df8fb80583e9221de
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 22 22:03:37 2015 +0000
+
+    fixed regex for job_status_json for process_events
+
+commit 8116a4a49804ce6e4918dbc3ed73ba94511d1bc6
+Merge: 1011774 9b0ef33
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 22 17:15:28 2015 +0000
+
+    Merge branch 'master' of github.jpl.nasa.gov:gmanipon/hysds
+
+commit 1011774a1635de6442f8801fd0f1ad47f22c4bf8
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 22 17:14:28 2015 +0000
+
+    moved get_short_error to utils.py; set short_error on job_status_json
+
+commit 1cd5dd8d11e1dab42667e62355eda5b1f9a0e813
+Merge: 294aa4e 9b0ef33
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Mon Jun 22 08:27:04 2015 -0700
+
+    Merge pull request #5 from gmanipon/master
+    
+    sync updates
+
+commit 9b0ef33334f0b51dd462e22c779e923efc62d0be
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 19 16:51:57 2015 +0000
+
+    modified time series product
+
+commit 763019f524933673393fdecb6472e63cea3b5aca
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 19 16:16:36 2015 +0000
+
+    updated time series product name to be ES friendly
+
+commit 62dac4eac85097b21666ab734c8738f310162bda
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 19 16:12:39 2015 +0000
+
+    added configuration for time series product
+
+commit 76386f2e590ee49d7e7a6c2bc14945a17072ef09
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 19 15:49:18 2015 +0000
+
+    set job name if not specified
+
+commit f05076d841253ab1cc7f0a92c841ce6be9f1fc5a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 23:55:25 2015 +0000
+
+    create job from passthru query
+
+commit 6cbdff7f65e3f4c01d1c2d4ea6e357fb7c1e6370
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 23:32:38 2015 +0000
+
+    fixed buggy job JSON creation for time series
+
+commit 2340509104167e8c28220518c2bb2a24e2503116
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 23:27:24 2015 +0000
+
+    fixed bug
+
+commit e2b5b7fb70ba45fa1e6e4e76b3aa36c719fa1376
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 23:21:54 2015 +0000
+
+    added configuration for ARIA-MH time series
+
+commit 1bff7d3668381530366ef93273ac6a6a18ea1683
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 22:52:01 2015 +0000
+
+    added configuration for time-series job
+
+commit 3f7331b1b000d4606f8657869c9cc019242bd1bb
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 18 00:13:46 2015 +0000
+
+    incremented version for ARIA-MH products
+
+commit d8d2beee230b2b9d2ae0430d62db2e39e8ea7336
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 17 16:31:47 2015 +0000
+
+    save task_id of payload instead of job payload which could be heavy
+
+commit f3bbf25e1ce9a12414c32f5529421e8b7db68493
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 17 16:22:41 2015 +0000
+
+    use logstash for HySDS job status updates
+
+commit 14259af7cf7349d9e10974737d3dcb7743b0de8a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 15 21:45:26 2015 +0000
+
+    use latest celery and flower
+
+commit 7541116f823bc57111a677c86c9eda04ab66d343
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 15 18:19:53 2015 +0000
+
+    moved off workers from mozart into metrics
+
+commit ebb2104852b138596bc2fd3f574918b73b36fa25
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 15 18:13:43 2015 +0000
+
+    added schema for job_payload parameter and set to string so that ES doesn't try to parse values
+
+commit 47341826123dde1f7b5e18eb39d572a31fe16b54
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 22:34:03 2015 +0000
+
+    increased logsize and number of log files; decreased harikiri threshold to 15 minutes
+
+commit e266f41fea754903c68742ea34dac76244f33d33
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 15:34:06 2015 +0000
+
+    added short_error to job_status template
+
+commit 8890a997b3818ef6dfc753382e0d4ab99dce9a2a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 07:58:46 2015 +0000
+
+    added shortened error string; changed job-offline to worker-offline
+
+commit acea38dd2325d9a2419c1031e761bb9c597f6cc8
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 06:27:34 2015 +0000
+
+    import time
+
+commit 62096163afe1d23664584253935ebdf6422ac5b3
+Merge: cf0a4fd 16ff7b9
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 00:07:35 2015 +0000
+
+    Merge branch 'master' of https://github.jpl.nasa.gov/gmanipon/hysds
+
+commit 16ff7b9f43ef65b56e71ff6e456c4e1b15270fa6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 12 00:04:24 2015 +0000
+
+    handle worker-offline errors
+
+commit cf0a4fdc1fb5c058a2bfd3ddcc132ce1adbdac71
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 11 21:51:51 2015 +0000
+
+    change to shipper.conf
+
+commit 85e649d1a1cbdd985f29ebaee8dcecd6dc6555c4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 11 21:27:18 2015 +0000
+
+    run 32 workers for user_rules_job and retry_job
+
+commit 300defec0ec8d589a75facf24ca03fc0dd336415
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 11 20:04:47 2015 +0000
+
+    added supervisord configuration for mozart-worker
+
+commit 66c37f9523add9db2e5c263688e39e6a8d84cd7b
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 11 17:06:15 2015 +0000
+
+    update job info by sending custom event: job-running
+    
+    Added sleeps and retries to make custom event dispatch resilient.
+
+commit 4d2dee71d0aa2b41c72595f829713e0de7fd2ca1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 5 20:25:48 2015 +0000
+
+    catch any errors
+
+commit 1fd43445e2de92187431d47fd9165db954c65356
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri Jun 5 17:52:53 2015 +0000
+
+    extract basename of work dir for job name
+
+commit 0c0e7855d80d8bea7d0d2b14827f43a7c8adcebc
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 17:03:38 2015 +0000
+
+    pass subagg_url
+
+commit b0d8bcae1476a3b5a3529e2215680177077af6dd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 15:30:43 2015 +0000
+
+    added supervisor config for harikiri
+
+commit a6fd3552eceade2474b93d7a747331a087b51d9e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 15:11:57 2015 +0000
+
+    detect when no jobs ran
+
+commit 8c2aa7d8b39ff7b65d35b06b50bcb5021215993f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 14:55:58 2015 +0000
+
+    added missing import
+
+commit 85915b36f3c59c9c3e6d38edd78a6d5c50919696
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 14:45:31 2015 +0000
+
+    use .boto config to pull region
+
+commit 13523c9a2f34daf90992617a2b19d76e432130d2
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 14:27:27 2015 +0000
+
+    fixed bug
+
+commit 77005f272d7554538d59e6483095998edc7a6869
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 14:24:43 2015 +0000
+
+    sleep for a bit after detaching itself from AS group
+
+commit e973368feabca01215044b0bfe79e1590a9add2e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 14:21:20 2015 +0000
+
+    detach from AS group, decrement desired, and die
+
+commit 3e04c065b9ba933df6598cd811d00eeaf57c98ec
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 09:36:47 2015 +0000
+
+    added initial implementation of shutdown script
+
+commit af2eeeaf0aec8cf3f6a4adddddc0df90ebeaf502
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 08:39:42 2015 +0000
+
+    fixed job_type for oco2-localize
+
+commit b360044172059a4253248891f60c8509c2783213
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 08:17:13 2015 +0000
+
+    fixed regex and urls
+
+commit ac948cc40d919205196545f7536b3a9c9acbb6a7
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 08:02:09 2015 +0000
+
+    added job configs for rule actions for l2_fp and oco2-localize
+
+commit ebd427d130e3ac59839a2535fbe3ee7d1365dfd9
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 06:17:06 2015 +0000
+
+    added queue_router worker configs for products and jobs
+
+commit 20b5014589c852b2c18fbb99de6f03c2f68b2c54
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu Jun 4 03:51:47 2015 +0000
+
+    add catch-all job configuration
+    
+    Create job queue without orchestrator configuration explicitly defined.
+    Fixed overwriting of job_type var.
+    Better handling of localize_urls parameter in passthru function.
+
+commit 4ab8c5c7c4fb43bf95d180ee835fad608fb491b8
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jun 3 17:49:26 2015 -0700
+
+    mstarch: fixing gof3r over https
+
+commit 4163e3a3ee64977cda50071996a0d7fc5475281e
+Merge: 2a22189 4c4a417
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jun 3 17:41:28 2015 -0700
+
+    mstarch: oco2 changes merged with upstream
+
+commit 2a221897581106a633b8c8ae921df1cfdf62a209
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Wed Jun 3 17:35:05 2015 -0700
+
+    mstarch: oco2 updates to hysds
+
+commit 4c4a417fd3ccd937e3f9b495f236cfe90c36cea0
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 3 20:01:13 2015 +0000
+
+    added product config for OCO-2 input tar and sounding list
+
+commit 3604c18c67ffa0accd74a2050eedb540342542ba
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 3 19:07:36 2015 +0000
+
+    added job config for oco2-localize
+
+commit 294aa4ed59c209b5af32bd6e49ed168561c6de84
+Merge: 25835b6 b1ca88e
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Wed Jun 3 08:20:41 2015 -0700
+
+    Merge pull request #3 from gmanipon/master
+    
+    merge
+
+commit b1ca88e45dd7eef722df6133a2b4f0527ad21263
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 3 15:18:29 2015 +0000
+
+    set PATH env for subprocess to find gof3r
+
+commit cf74fb173745c8d21f12d43fafae829f4fc7511d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 3 15:01:22 2015 +0000
+
+    removed hard-coded path; handle over_ssl flag
+
+commit 25835b6c20f33b0fbd67e12ca372839bf5beb86d
+Merge: 7123d47 17f4fab
+Author: Gerald Manipon <geraldjohn.m.manipon@jpl.nasa.gov>
+Date:   Wed Jun 3 07:43:18 2015 -0700
+
+    Merge pull request #2 from gmanipon/master
+    
+    update job for oco2-ingest
+
+commit 17f4fab6adbfae5dbbf9ddcb3a7d32246cde745f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed Jun 3 14:36:27 2015 +0000
+
+    added passthru job_creator function
+
+commit bb32266a3b176147c92f681dbe7ded9e1e3b001d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 23:36:17 2015 +0000
+
+    added job config for oco2
+
+commit 7123d47faa9d3054a5a624a9fa24393bfe8fb2dd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 23:01:39 2015 +0000
+
+    handle if job is not yet in elasticsearch
+
+commit d7b1a4970f640faf0a96b8b9d484a71d395a4ddb
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 22:51:12 2015 +0000
+
+    log task-started
+
+commit 607b28243e0b99da41fafdf33c0702524c803117
+Merge: 322058f 0eab47a
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Tue Jun 2 14:44:25 2015 -0700
+
+    Merge remote branch 'upstream/master'
+
+commit 0eab47ade5b1835dad6ebb08d82b1d75fd4e326d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 20:48:29 2015 +0000
+
+    update handling of various errors
+    
+    Added retry_job action.
+    Save original job JSON payload to job_payload parameter.
+    Fixed call to is_alive() in billiard.Process.
+    Queue finished job using UUID's.
+    Handle submission of finished jobs in process_event.py when WorkerLostError occurs.
+
+commit 0c3c70ce3edc15fe801566e97d5142b0c67be970
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 15:24:22 2015 +0000
+
+    disable handling of task-start
+
+commit f8f5ff00a916ccd06936490de9405b85ad70a294
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 15:08:03 2015 +0000
+
+    added error and traceback to job_status template
+
+commit 7082f42dd7be8bebcbec3a18c1868276e6dfc89d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 14:50:32 2015 +0000
+
+    added stub handler for worker-heartbeat
+
+commit da4a28f83a29837141ea412112d26bcf1e2a8926
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 06:20:52 2015 +0000
+
+    overwrite existing task entry
+
+commit 54c98d100b66f0d593ef34db02c89c208af13cac
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 05:28:21 2015 +0000
+
+    fixed call to call
+
+commit 7e0bdbe9fc372aec0391f7c59977f962c493fe7f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 05:24:01 2015 +0000
+
+    fixed bug
+
+commit e78e628b05c8b231bbd7cfa4057d1123acb502a1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 05:21:16 2015 +0000
+
+    use gof3r for s3 download
+
+commit 74f1a50ac2289e848677a3875807497ddf14ec9c
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 04:58:11 2015 +0000
+
+    overwrite status when WorkerLostError is encountered
+
+commit 265ec5b9e4d7b62d6883b7e94424dc1c87068c66
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 03:41:15 2015 +0000
+
+    set job as object
+
+commit 6cfb37b518fc8bad3f403b141a9690dfb08785c1
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 03:18:27 2015 +0000
+
+    updated priority so that logstash runs after log file exists
+
+commit b7fbfdb1063271883fd9258f697c618e26ebfc60
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 01:21:20 2015 +0000
+
+    handle WorkerLostError as well
+
+commit 8bb75596e1ee691e5129f319cacdcef7173ca91d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue Jun 2 00:40:04 2015 +0000
+
+    updated order so that logstash procs starts up first
+
+commit 34312bc92e0240f95942ec2dc42191d5804cf3ee
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon Jun 1 20:33:51 2015 +0000
+
+    handle task-started; will be updated by logstash from verdi
+
+commit bf87b60acea94a62eb79550db29254eea9b32172
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 21:47:46 2015 +0000
+
+    removed all traced of old job states
+
+commit 0f0a098aa231364da9088e65ca45610338037699
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 21:17:53 2015 +0000
+
+    handle worker offlined during task-started
+
+commit 5facc17ce3af14ffee7858357b2cfbd839e105af
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 19:18:37 2015 +0000
+
+    updated to handle real-time update of job status (requeue) when workers go down
+
+commit 0d093baf38ba1ec7af5a4ac92f6657138b5b5a13
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 15:41:28 2015 +0000
+
+    disable handling of task-started for now
+
+commit cd5d11a1bf73f5aa492ccd0d951d6dfe5da6b8fd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 15:17:35 2015 +0000
+
+    added cleaner for worker_status indexes
+
+commit 9ebeb4de6a7108d0d8eb08dc833a133f07884e37
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 15:13:29 2015 +0000
+
+    initial implementation of real-time job/worker status updates
+    
+    Utilizing celery events for updating job status in elasticsearch.
+    Added worker status updates.
+
+commit 42164ba45b800c9e74d5f188dc4d6f1bf7901d6d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 28 14:09:52 2015 +0000
+
+    send celery heartbeats every minute instead of every 2 seconds
+    
+    Also added initial script for processing worker and task events.
+
+commit 347a7254b26fb0dc6fff596fa96487b73a214fc6
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 27 15:58:52 2015 +0000
+
+    enable tracking of all events including sent and started
+
+commit 40bbbd6c35a7ee2929e3cb120b2887640486964d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 27 14:43:55 2015 +0000
+
+    extract facts once only
+
+commit bb939707295267f1e7df5822c271fcce84aa174f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 22 08:37:53 2015 +0000
+
+    updated IPs
+
+commit 322058f1fb8599bb56fcc65e628a6a2d064437e4
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu May 21 16:21:21 2015 -0700
+
+    Hysds S3 improvments
+
+commit 1118596242785988e6e887b49462cc1bb6adfa01
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu May 21 16:09:14 2015 -0700
+
+    sensible acl default
+
+commit 6b72bb569a87446451bd8cc62d196b305830a439
+Author: Michael Starch <Michael.D.Starch@jpl.nasa.gov>
+Date:   Thu May 21 16:07:55 2015 -0700
+
+    run_job.py now check status and exits correctly
+
+commit b22b6b7e940be283dc7374b597a27c1bf01cba47
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 20 22:09:59 2015 +0000
+
+    write .done file after publishing of product
+
+commit 9da11680dc7dff1b697ab87e5a769c29a780cf00
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Wed May 20 21:07:02 2015 +0000
+
+    use gunicorn for job_subscriber
+
+commit fe2f00b5bf18d9bbd07d29722b3d33b0848a2c69
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 18 19:44:13 2015 +0000
+
+    added job_subscriber
+
+commit b80efd3136b4075da1c22efff29c37a1f35d07f7
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 18 19:39:12 2015 +0000
+
+    added config with custom_ec2_metrics update.
+
+commit c2024620d9d1883a5eebf89adc6aaf17bfc8dd67
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 18 18:09:48 2015 +0000
+
+    updated IPs
+
+commit 02580f29b07f4b85f58d0646ad6a2781a4ff0176
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 18 17:57:51 2015 +0000
+
+    increase instance_stats interval to 600 seconds
+
+commit fbf4bc578f38796e77cd8fdcf2eab0c734473edd
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Mon May 18 17:23:10 2015 +0000
+
+    update private and public IPs
+
+commit 34f218a2fd4213f5a7737c725b43df5f64e9efec
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 15 01:31:31 2015 +0000
+
+    use only s3-browse url
+
+commit 886d752a1c096b42f3809a3c34168e2ebac2e1dc
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 15 01:25:52 2015 +0000
+
+    updated to use s3-browse app for url
+
+commit f33126de8bf93a1c70d42dfc2f1151760d435d5d
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 23:44:54 2015 +0000
+
+    add config for user_rules_product processing
+
+commit 44306afd681bdc9042c7df31135a1e134d851694
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 23:24:49 2015 +0000
+
+    fixed dataset config and setup orchestrator config for product
+
+commit b49c875ddec97811f308061442f649aec9ddb8d4
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 21:53:40 2015 +0000
+
+    point to product tarball
+
+commit 05be1ba4d143ee0602a4c328c3961a24dddaaaef
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 21:16:56 2015 +0000
+
+    set path
+
+commit 2690b10be4ee032ca40ac2d0a1c26247b8ad31b7
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 20:47:23 2015 +0000
+
+    handle issues uploading to AWS S3
+
+commit c6d04d7f265be86516e304afec1c00c4a0fc50a2
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 20:07:49 2015 +0000
+
+    specify port 80
+
+commit 3680e6e2ab446f2d78c9ea121a2980ec7e998662
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 19:47:02 2015 +0000
+
+    added sounding_group_index arg
+
+commit b1eeab5a6a141cfa1c9d32ed862c71a8f9a63497
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 19:19:06 2015 +0000
+
+    added config for oco2 products; set datasets.json.s3
+
+commit 5088d6fa96896a64b62de5b7a238afd3f2db6ac0
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 17:35:26 2015 +0000
+
+    fixed path to ops oco2 code
+
+commit 637e7284d0cf8ddbc323739fe82e3cd258e3b9f5
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 15:07:28 2015 +0000
+
+    ack after job has finished
+
+commit d3e8f60fdfa391bb8267f9b0ef262d98f028794a
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Thu May 14 04:12:00 2015 +0000
+
+    updated for OCO2 AWS account
+
+commit 4306a99b8bd4e6636f230456f51f96bd1a7f4b60
+Author: Michael D Starch <mstarch@oco2-pcs-dev.jpl.nasa.gov>
+Date:   Wed May 13 09:19:25 2015 -0700
+
+    mstarch: fixing host->hostname
+
+commit 62d6acf861e0d8bcf4766bd9dbc3887e63c72d22
+Author: M Starch <lestarch@googlemail.com>
+Date:   Wed May 13 08:47:27 2015 -0700
+
+    mstarch: adding in s3 up down stuff
+
+commit f15d5e54d97c3f57b860345af4c67ab2c34aeef7
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 12 20:48:21 2015 +0000
+
+    updated to use private IP address in EC2
+
+commit 267b5f898afbd507eacef5654612184de65e8cb7
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 12 20:25:33 2015 +0000
+
+    added configurations for l2_fp jobs
+
+commit 570e59698d7ba2cd9364e09508915c900c4d208e
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Tue May 12 20:01:00 2015 +0000
+
+    refactored download_file; handle download from s3
+
+commit 2692a5810c58f820ce205670be13b042e9ace3ed
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 8 22:07:42 2015 +0000
+
+    added
+
+commit e1bc6f450b27d1ad21580544a8e614635f664427
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 8 14:44:58 2015 +0000
+
+    added .gitignore
+
+commit 99cd558705a0144ff72ccc13b1943edc99a29f4f
+Author: Gerald Manipon <gmanipon@jpl.nasa.gov>
+Date:   Fri May 8 14:02:57 2015 +0000
+
+    initial import from svn repo
+    
+    URL: https://gitlab.jpl.nasa.gov/svn/trunk/HySDS/hysds
+    Repository Root: https://gitlab.jpl.nasa.gov/svn
+    Repository UUID: ae7fae16-8c10-0410-aa46-954c80f3d31f
+    Revision: 8599
+    Node Kind: directory
+    Schedule: normal
+    Last Changed Author: gmanipon
+    Last Changed Rev: 8591
+    Last Changed Date: 2015-05-05 20:23:40 +0000 (Tue, 05 May 2015)

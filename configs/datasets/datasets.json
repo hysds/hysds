@@ -1,0 +1,73 @@
+{
+  "datasets": [
+    {
+      "ipath": "my_project::data/area_of_interest",
+      "version": "v0.1",
+      "level": "l0",
+      "type": "area_of_interest",
+      "match_pattern": "/(?P<id>AOI_.+)$",
+      "alt_match_pattern": null,
+      "extractor": null,
+      "publish": {
+        "location": "davs://username:password@mydav.example.com/repository/products/area_of_interest/${version}/${id}",
+        "urls": [
+          "https://mydav.example.com/repository/products/area_of_interest/${version}/${id}"
+        ]
+      },
+      "browse": {
+        "location": "davs://username:password@mydav.example.com/public/browse/area_of_interest/${version}/${id}",
+        "urls": [
+          "http://mydav.example.com/public/browse/area_of_interest/${version}/${id}"
+        ]
+      }
+    },
+    {
+      "ipath": "my_project::data/my_custom_dataset1",
+      "version": "v0.1",
+      "level": "l1",
+      "type": "raw",
+      "match_pattern": "/(?P<prod_instance>ALPSR\\w\\d{9}-L1\\.0)$",
+      "alt_match_pattern": "(?P<prod_instance>ALPSR\\w\\d{9}-L1\\.0)_(?P<year>\\d{4})-(?P<month>\\d{2})-(?P<day>\\d{2})\\.context\\.json$",
+      "extractor": "/home/ops/my_custom_dataset_scripts/extract_metadata.sh",
+      "publish": {
+        "location": "davs://username:password@mydav.example.com/repository/products/my_custom_dataset1/${version}/${year}/${month}/${day}/${prod_instance}",
+        "urls": [
+          "https://mydav.example.com/repository/products/my_custom_dataset1/${version}/${year}/${month}/${day}/${prod_instance}"
+        ]
+      },
+      "browse": {
+        "location": "davs://username:password@mydav.example.com/public/browse/my_custom_dataset1/${version}/${year}/${month}/${day}/${prod_instance}",
+        "urls": [
+          "https://mydav.example.com/public/browse/my_custom_dataset1/${version}/${year}/${month}/${day}/${prod_instance}"
+        ]
+      }
+    },
+    {
+      "ipath": "my_project::data/my_custom_dataset2",
+      "version": "v0.1",
+      "level": "l1",
+      "type": "sounding",
+      "match_pattern": "/(?P<agg>oco2_.*?)/(?P<subagg>oco2_.*_\\d+)$",
+      "alt_match_pattern": null,
+      "extractor": null,
+      "publish": {
+        "s3-acl":"public-read",
+        "s3-api-key":"API-KEY-GOES-HERE",
+        "s3-secret-key":"SECRET-KEY-GOES-HERE",
+        "location": "s3://s3-us-west-1.amazonaws.com:80/my_product_bucket/repository/products/my_custom_dataset2/${agg}/${subagg}",
+        "urls": [
+          "s3://s3-us-west-1.amazonaws.com:80/my_product_bucket/repository/products/my_custom_dataset2/${agg}/${subagg}"
+        ]
+      },
+      "browse": {
+        "s3-acl":"public-read",
+        "s3-api-key":"API-KEY-GOES-HERE",
+        "s3-secret-key":"SECRET-KEY-GOES-HERE",
+        "location": "s3://s3-us-west-1.amazonaws.com:80/my_product_bucket/public/browse/my_custom_dataset2/${agg}/${subagg}",
+        "urls": [
+          "s3://s3-us-west-1.amazonaws.com:80/my_product_bucket/public/browse/my_custom_dataset2/${agg}/${subagg}"
+        ]
+      }
+    }
+  ]
+}

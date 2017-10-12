@@ -1,0 +1,21 @@
+input { 
+  redis {
+    host => "{{ METRICS_REDIS_PVT_IP }}"
+    # these settings should match the output of the agent
+    data_type => "list"
+    key => "logstash"
+
+    # We use the 'msgpack' codec here because we expect to read
+    # msgpack events from redis.
+    codec => msgpack
+  }
+}
+
+output {
+  #stdout { codec => rubydebug }
+
+  elasticsearch {
+    hosts => ["{{ METRICS_ES_PVT_IP }}:9200"]
+  }
+}
+

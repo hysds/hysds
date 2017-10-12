@@ -1,0 +1,15 @@
+{
+  "root_work_dir": "/data/work",
+  "webdav_port": 8085,
+  "configs": [
+    {
+      "type": "notify_job_by_email",
+      "command": {
+        "path": "/home/ops/mozart/ops/user_rules_job/scripts/notify_by_email.sh",
+        "options": [],
+        "arguments": ["$id", "$url", "$emails", "$rule_name"],
+        "env": []
+      }
+    }
+  ]
+} 

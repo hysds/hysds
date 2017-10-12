@@ -1,0 +1,2 @@
+Sphinx
+-r extras/sqlalchemy.txt

@@ -1,0 +1,15 @@
+{
+  "root_work_dir": "/data/work",
+  "webdav_port": 8085,
+  "configs": [
+    {
+      "type": "user_tagger-job",
+      "command": {
+        "path": "/home/ops/verdi/ops/user_rules_job/scripts/user_tagger.sh",
+        "options": [],
+        "arguments": [],
+        "env": []
+      }
+    }
+  ]
+} 

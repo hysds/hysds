@@ -1,0 +1,474 @@
+{
+  "mappings": {
+    "job": {
+      "properties": {
+        "resource": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "type": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "status": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "timestamp": {
+          "type": "date", 
+          "format": "YYYY-MM-dd HH:mm:ss,SSS"
+        }, 
+        "context" : {
+          "type" : "object",
+          "enabled" : false
+        },
+        "job": {
+          "properties": {
+            "container_image_name": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "container_image_url": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "context" : {
+              "type" : "object",
+              "enabled" : false
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "delivery_info": {
+              "properties": {
+                "priority": {
+                  "type": "integer"
+                },
+                "routing_key": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                },
+                "exchange": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                },
+                "redelivered": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "job_info": {
+              "properties": {
+                "context" : {
+                  "type" : "object",
+                  "enabled" : false
+                },
+                "payload" : {
+                  "type" : "object",
+                  "enabled" : false
+                },
+                "payload_hash": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                },
+                "dedup": {
+                  "type": "boolean"
+                },
+                "dedup_job": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                },
+                "job_queue": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "status": {
+                  "type": "integer"
+                }, 
+                "time_start": {
+                  "type": "date", 
+                  "format": "dateOptionalTime"
+                }, 
+                "error_queue": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "completed_queue": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "execute_node": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "time_queued": {
+                  "type": "date", 
+                  "format": "dateOptionalTime"
+                }, 
+                "job_status_exchange": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "job_dir": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "time_end": {
+                  "type": "date", 
+                  "format": "dateOptionalTime"
+                }, 
+                "cmd_start": {
+                  "type": "date", 
+                  "format": "dateOptionalTime"
+                }, 
+                "cmd_end": {
+                  "type": "date", 
+                  "format": "dateOptionalTime"
+                }, 
+                "cmd_duration": {
+                  "type": "double"
+                }, 
+                "public_ip": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "facts": {
+                  "properties": {
+                    "swapsize": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "ec2_instance_type": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "is_virtual": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "architecture": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "ec2_placement_availability_zone": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "memorytotal": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "virtual": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "physicalprocessorcount": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "ec2_ami_id": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }, 
+                    "processorcount": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }
+                  }
+                }, 
+                "host": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "job_url": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "metrics": {
+                  "properties": {
+                    "inputs_localized": {
+                      "properties": {
+                        "disk_usage": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        }, 
+                        "time_start": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "url": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        }, 
+                        "time_end": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "duration": {
+                          "type": "double"
+                        }, 
+                        "path": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        }
+                      }
+                    }, 
+                    "products_staged": {
+                      "properties": {
+                        "path": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "disk_usage": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        }, 
+                        "time_start": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "time_end": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "duration": {
+                          "type": "double"
+                        }, 
+                        "transfer_rate": {
+                          "type": "double"
+                        }, 
+                        "id": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "urls": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "browse_urls": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "dataset": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "ipath": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "system_version": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "dataset_level": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "dataset_type": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        }
+                      }
+                    }, 
+                    "job_dir_size": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    },
+                    "product_provenance": {
+                      "properties": {
+                        "product_type": {
+                          "index": "not_analyzed", 
+                          "type": "string"
+                        },
+                        "acquisition_start_time": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "source_production_time": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "availability_time": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "processing_start_time": {
+                          "type": "date", 
+                          "format": "dateOptionalTime"
+                        }, 
+                        "ground_system_latency": {
+                          "type": "double"
+                        }, 
+                        "access_latency": {
+                          "type": "double"
+                        }, 
+                        "processing_latency": {
+                          "type": "double"
+                        }, 
+                        "total_latency": {
+                          "type": "double"
+                        }, 
+                        "location": {
+                          "tree": "quadtree",
+                          "type": "geo_shape",
+                          "precision": "1m"
+                        } 
+                      }
+                    }
+                  }
+                }, 
+                "duration": {
+                  "type": "double"
+                }, 
+                "id": {
+                  "index": "not_analyzed", 
+                  "type": "string"
+                }, 
+                "job_payload": {
+                  "properties": {
+                    "job_type": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    },
+                    "payload_task_id": {
+                      "index": "not_analyzed", 
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }, 
+            "localize_urls" : {
+              "type" : "object",
+              "enabled" : false
+            },
+            "params" : {
+              "type" : "object",
+              "enabled" : false
+            },
+            "type": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "name": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "job_id": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "task_id": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "tag": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "username": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "job_hash": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }
+          }
+        }, 
+        "uuid": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "job_id": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "payload_id": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "payload_hash": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "dedup": {
+          "type": "boolean"
+        },
+        "dedup_job": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "dedup_msg": {
+          "type": "string"
+        },
+        "error": {
+          "type": "multi_field",
+          "fields": {
+            "error": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        },
+        "short_error": {
+          "type": "multi_field",
+          "fields": {
+            "short_error": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        },
+        "traceback": {
+          "type": "string"
+        },
+        "signum": {
+          "type": "integer"
+        },
+        "celery_hostname": {
+          "index": "not_analyzed", 
+          "type": "string"
+        },
+        "celery_timestamp": {
+          "type": "date"
+        },
+        "celery_pid": {
+          "type": "integer"
+        },
+        "celery_runtime": {
+          "type": "double"
+        },
+        "tags": {
+          "type": "multi_field",
+          "fields": {
+            "tags": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        },
+        "user_tags": {
+          "type": "multi_field",
+          "fields": {
+            "user_tags": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        }
+      }
+    }
+  }, 
+  "template": "job_status*",
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "default": {
+          "filter": [
+            "standard", 
+            "lowercase", 
+            "word_delimiter"
+          ], 
+          "tokenizer": "keyword"
+        }
+      }
+    }
+  },
+  "aliases" : {
+    "job_status" : {}
+  }
+}

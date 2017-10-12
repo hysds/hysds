@@ -1,0 +1,13 @@
+{
+  "configs": [
+    { 
+      "type": "notify_by_email",
+      "command": {
+        "path": "/home/ops/mozart/ops/user_rules_dataset/scripts/notify_by_email.sh",
+        "options": [],
+        "arguments": ["$id", "$url", "$emails", "$rule_name"],
+        "env": []
+      }
+    }
+  ]
+}

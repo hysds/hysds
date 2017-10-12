@@ -1,0 +1,114 @@
+{
+  "configs": [
+    {
+      "job_type": "job:ingest_dataset",
+      "job_creators": [
+        {
+          "job_name": "ingest_dataset",
+          "function": "utils.ingest_dataset",
+          "job_queues": [ "ingest_dataset" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:retry_job",
+      "job_creators": [
+        {
+          "job_name": "retry_job",
+          "function": "utils_job.retry_job",
+          "job_queues": [ "retry_job" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:notify_by_email",
+      "job_creators": [
+        {
+          "job_name": "notify_by_email",
+          "function": "utils.notify_by_email",
+          "job_queues": [ "notify_by_email" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:notify_job_by_email",
+      "job_creators": [
+        {
+          "job_name": "notify_job_by_email",
+          "function": "utils_job.notify_job_by_email",
+          "job_queues": [ "notify_job_by_email" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:notify_by_tweet",
+      "job_creators": [
+        {
+          "job_name": "notify_by_tweet",
+          "function": "utils.notify_by_tweet",
+          "job_queues": [ "notify_by_tweet" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:notify_job_by_tweet",
+      "job_creators": [
+        {
+          "job_name": "notify_job_by_tweet",
+          "function": "utils.notify_job_by_tweet",
+          "job_queues": [ "notify_job_by_tweet" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:ftp_push",
+      "job_creators": [
+        {
+          "job_name": "ftp_push",
+          "function": "utils.ftp_push",
+          "job_queues": [ "ftp_push" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:purge_dataset",
+      "job_creators": [
+        {
+          "job_name": "purge_dataset",
+          "function": "utils.purge_dataset",
+          "job_queues": [ "purge_dataset" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:purge_datasets",
+      "job_creators": [
+        {
+          "job_name": "purge_datasets",
+          "function": "utils.purge_datasets",
+          "job_queues": [ "purge_dataset" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:custom_script",
+      "job_creators": [
+        {
+          "job_name": "custom_script",
+          "function": "utils.custom_script",
+          "job_queues": [ "custom_script" ]
+        }
+      ]
+    },
+    {
+      "job_type": "job:import_prov_es",
+      "job_creators": [
+        {
+          "job_name": "import_prov_es",
+          "function": "utils.import_prov_es",
+          "job_queues": [ "import_prov_es" ]
+        }
+      ]
+    }
+  ]
+} 

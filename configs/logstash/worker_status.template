@@ -1,0 +1,107 @@
+{
+  "mappings": {
+    "worker": {
+      "properties": {
+        "resource": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "type": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "status": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "tags": {
+          "type": "multi_field",
+          "fields": {
+            "tags": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        },
+        "celery_hostname": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "uuid": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "event": {
+          "properties": {
+            "sw_sys": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "local_received": {
+              "type": "date", 
+              "format": "dateOptionalTime"
+            }, 
+            "clock": {
+              "type": "integer"
+            }, 
+            "timestamp": {
+              "type": "date", 
+              "format": "dateOptionalTime"
+            }, 
+            "hostname": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "pid": {
+              "type": "integer"
+            }, 
+            "sw_ver": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "utcoffset": {
+              "type": "integer"
+            }, 
+            "loadavg": {
+              "type": "double"
+            }, 
+            "processed": {
+              "type": "integer"
+            }, 
+            "active": {
+              "type": "integer"
+            }, 
+            "freq": {
+              "type": "double"
+            }, 
+            "type": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }, 
+            "sw_ident": {
+              "index": "not_analyzed", 
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }, 
+  "template": "worker_status*",
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "default": {
+          "filter": [
+            "standard", 
+            "lowercase", 
+            "word_delimiter"
+          ], 
+          "tokenizer": "keyword"
+        }
+      }
+    }
+  },
+  "aliases" : {
+    "worker_status" : {},
+    "job_status" : {}
+  }
+}

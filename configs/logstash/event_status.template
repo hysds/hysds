@@ -1,0 +1,61 @@
+{
+  "mappings": {
+    "event": {
+      "properties": {
+        "resource": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "type": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "status": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "timestamp": {
+          "type": "date", 
+          "format": "YYYY-MM-dd HH:mm:ss,SSS"
+        }, 
+        "hostname": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "uuid": {
+          "index": "not_analyzed", 
+          "type": "string"
+        }, 
+        "tags": {
+          "type": "multi_field",
+          "fields": {
+            "tags": { "type": "string", "index": "analyzed" },
+            "untouched": { "type": "string", "index": "not_analyzed" }
+          }
+        },
+        "event" : {
+          "type" : "object",
+          "enabled" : false
+        }
+      }
+    }
+  }, 
+  "template": "event_status*",
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "default": {
+          "filter": [
+            "standard", 
+            "lowercase", 
+            "word_delimiter"
+          ], 
+          "tokenizer": "keyword"
+        }
+      }
+    }
+  },
+  "aliases" : {
+    "job_status" : {}
+  }
+}

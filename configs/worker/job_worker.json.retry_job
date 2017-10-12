@@ -1,0 +1,15 @@
+{
+  "root_work_dir": "/data/work",
+  "webdav_port": 8085,
+  "configs": [
+    {
+      "type": "retry_job",
+      "command": {
+        "path": "/home/ops/mozart/ops/user_rules_job/scripts/retry_job.sh",
+        "options": [],
+        "arguments": ["$id"],
+        "env": []
+      }
+    }
+  ]
+} 

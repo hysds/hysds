@@ -1,0 +1,6 @@
+#!/bin/bash
+ES_URL=$1
+TEMPLATE_NAME=$2
+TEMPLATE_FILE=$3
+
+curl -XPUT ${ES_URL}/_template/${TEMPLATE_NAME} -d @${TEMPLATE_FILE}

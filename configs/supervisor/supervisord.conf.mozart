@@ -1,0 +1,166 @@
+[unix_http_server]
+file=%(here)s/../run/supervisor.sock
+
+[inet_http_server]
+port = 0.0.0.0:9001
+username = ops
+password = ops
+
+[supervisord]
+pidfile=%(here)s/../run/supervisord.pid
+logfile=%(here)s/../log/supervisord.log
+logfile_maxbytes=50MB
+logfile_backups=10
+loglevel=info
+nodaemon=false
+minfds=1024
+minprocs=200
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix://%(here)s/../run/supervisor.sock
+
+[program:instance_stats]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/log_instance_stats.py --interval 600
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:process_events]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/process_events.py
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+logfile_maxbytes=1024MB
+logfile_backups=100
+
+[program:orchestrator_datasets]
+directory={{ OPS_HOME }}/mozart/ops/hysds
+environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_datasets.json",
+            HYSDS_JOB_CREATORS_DIR="{{ OPS_HOME }}/mozart/etc/job_creators"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q dataset_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10
+
+[program:orchestrator_jobs]
+directory={{ OPS_HOME }}/mozart/ops/hysds
+environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_jobs.json",
+            HYSDS_JOB_CREATORS_DIR="{{ OPS_HOME }}/mozart/etc/job_creators"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q jobs_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10
+
+[program:flower]
+directory={{ OPS_HOME }}/mozart/ops/hysds
+command=celery flower --broker=amqp://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672//
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:logstash_indexer]
+directory={{ OPS_HOME }}/logstash/bin
+environment=LS_HEAP_SIZE="2048m"
+command={{ OPS_HOME }}/logstash/bin/logstash agent -f {{ OPS_HOME }}/mozart/etc/indexer.conf
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:mozart_job_management]
+directory={{ OPS_HOME }}/mozart/ops/mozart
+command=gunicorn -w4 -b 127.0.0.1:8888 -k gevent --timeout=3600
+        --graceful-timeout=3600 --log-level=debug
+        --limit-request-line=0 mozart:app
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:figaro]
+directory={{ OPS_HOME }}/mozart/ops/figaro
+command=gunicorn -w4 -b 127.0.0.1:8898 -k gevent --timeout=3600
+        --graceful-timeout=3600 --log-level=debug
+        --limit-request-line=0 figaro:app
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:watchdog_job_timeouts]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_job_timeouts.py
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:watchdog_task_timeouts]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_task_timeouts.py
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:watchdog_worker_timeouts]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_worker_timeouts.py
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:sync_ec2_job_metric-{{ MONITORED_QUEUE }}]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_job_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ MONITORED_QUEUE }}
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10

@@ -1,0 +1,48 @@
+[unix_http_server]
+file=%(here)s/../run/supervisor.sock
+
+[inet_http_server]
+port = 0.0.0.0:9001
+username = ops
+password = ops
+
+[supervisord]
+pidfile=%(here)s/../run/supervisord.pid
+logfile=%(here)s/../log/supervisord.log
+logfile_maxbytes=50MB
+logfile_backups=10
+loglevel=info
+nodaemon=false
+minfds=1024
+minprocs=200
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix://%(here)s/../run/supervisor.sock
+
+[program:grq2]
+directory={{ OPS_HOME }}/sciflo/ops/grq2
+command=gunicorn -w4 -b 0.0.0.0:8878 -k gevent --log-level=debug
+        --limit-request-line=0 grq2:app
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:tosca]
+directory={{ OPS_HOME }}/sciflo/ops/tosca
+command=gunicorn -w4 -b 127.0.0.1:8879 -k gevent --timeout=3600
+        --graceful-timeout=3600 --log-level=debug
+        --limit-request-line=0 tosca:app
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10

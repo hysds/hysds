@@ -1,0 +1,91 @@
+[unix_http_server]
+file=%(here)s/../run/supervisor.sock
+
+[inet_http_server]
+port = 0.0.0.0:9001
+username = ops
+password = ops
+
+[supervisord]
+pidfile=%(here)s/../run/supervisord.pid
+logfile=%(here)s/../log/supervisord.log
+logfile_maxbytes=50MB
+logfile_backups=10
+loglevel=info
+nodaemon=false
+minfds=1024
+minprocs=200
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix://%(here)s/../run/supervisor.sock
+
+[program:tsunamid]
+directory=/data/work
+command=/usr/local/bin/tsunamid /data/work/*
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:instance_stats]
+directory={{ OPS_HOME }}/verdi/ops/hysds/scripts
+command={{ OPS_HOME }}/verdi/ops/hysds/scripts/log_instance_stats.py --interval 600
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+startsecs=10
+
+[program:user_rules_job]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=32
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10
+
+[program:user_rules_dataset]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=32
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10
+
+[program:user_rules_trigger]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_trigger -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=4
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10
+
+[program:import_prov_es]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+environment=HYSDS_WORKER_CFG="{{ OPS_HOME }}/verdi/etc/workers/job_worker.json.import_prov_es",
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q import_prov_es -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+startsecs=10

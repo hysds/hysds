@@ -1,0 +1,43 @@
+language: python
+python: 2.7
+env:
+  global:
+    PYTHONUNBUFFERED=yes
+    LANGUAGE="en_US.UTF-8"
+    LANG="en_US.UTF-8"
+    LC_ALL="en_US.UTF-8"
+    TERM="xterm-256color"
+    LOCALE=C
+  matrix:
+    - TOXENV=2.6
+    - TOXENV=2.7
+    - TOXENV=3.3
+    - TOXENV=3.4
+    - TOXENV=pypy
+before_install:
+  - |
+    if [[ $TOXENV = pypy ]]; then
+      deactivate
+      sudo apt-add-repository --yes ppa:pypy/ppa
+      sudo apt-get update
+      sudo apt-get install pypy
+      source ~/virtualenv/pypy/bin/activate
+    fi
+    python --version
+    uname -a
+    lsb_release -a
+install:
+  - # PyPy: we use -q here to avoid unicode errors in pip progress bar.
+  - pip -q install -U pip
+  - pip -q install -U tox
+script:
+  - tox -v -- -v
+after_success:
+  - .tox/$TRAVIS_PYTHON_VERSION/bin/coverage xml
+  - .tox/$TRAVIS_PYTHON_VERSION/bin/codecov -e TOXENV
+notifications:
+  irc:
+    channels:
+      - "chat.freenode.net#celery"
+    on_success: change
+    on_failure: change

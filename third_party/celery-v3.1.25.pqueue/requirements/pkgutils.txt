@@ -1,0 +1,7 @@
+setuptools>=1.3.2
+wheel
+paver
+flake8
+flakeplus
+tox
+Sphinx-PyPI-upload
