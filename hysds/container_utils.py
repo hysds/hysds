@@ -110,7 +110,7 @@ def get_base_docker_cmd(params):
                         "%s:%s" % (params['uid'], params['gid']) ]
 
     # add volumes
-    for k, v in volumes.iteritems():
+    for k, v in params['volumes'].iteritems():
         docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
 
     # set work directory and image

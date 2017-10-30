@@ -915,7 +915,7 @@ def run_job(job, queue_when_finished=True):
             try:
                 docker_params_file = os.path.join(job_dir, '_docker_params.json')
                 with open(docker_params_file, 'w') as f:
-                    json.dump(job, f, indent=2, sort_keys=True)
+                    json.dump(docker_params, f, indent=2, sort_keys=True)
             except Exception, e:
                 tb = traceback.format_exc()
                 err = "Failed to dump docker params to file %s: %s\n%s" % (docker_params_file, str(e), tb)
