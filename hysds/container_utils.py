@@ -30,14 +30,12 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         "uid": os.getuid(),
         "gid": os.getgid(),
         "working_dir": job_dir,
-        "volumes": {
-            "/sys/fs/cgroup": "/sys/fs/cgroup:ro",
-            "/var/run/docker.sock": "/var/run/docker.sock",
-        }
+        "volumes": [
+            ( "/sys/fs/cgroup", "/sys/fs/cgroup:ro" ),
+            ( "/var/run/docker.sock", "/var/run/docker.sock" ),
+            ( root_work_dir, root_work_dir ),
+        ]
     }
-
-    # add root work directory
-    params['volumes'][root_work_dir] = root_work_dir
 
     # add default image mappings
     celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
@@ -62,7 +60,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
         if v.startswith('/'): mnt = v
         else: mnt = os.path.join(job_dir, v)
-        params['volumes'][k] = "%s:%s" % (mnt, mode)
+        params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
 
     return params
 
@@ -110,7 +108,7 @@ def get_base_docker_cmd(params):
                         "%s:%s" % (params['uid'], params['gid']) ]
 
     # add volumes
-    for k, v in params['volumes'].iteritems():
+    for k, v in params['volumes']:
         docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
 
     # set work directory and image
