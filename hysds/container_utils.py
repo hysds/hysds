@@ -30,7 +30,10 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         "uid": os.getuid(),
         "gid": os.getgid(),
         "working_dir": job_dir,
-        "volumes": {},
+        "volumes": {
+            "/sys/fs/cgroup": "/sys/fs/cgroup:ro",
+            "/var/run/docker.sock": "/var/run/docker.sock",
+        }
     }
 
     # add root work directory
