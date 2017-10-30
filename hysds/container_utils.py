@@ -102,11 +102,8 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         image_info = check_output(['docker', 'inspect', image_name])
 
 
-def get_base_docker_cmd(params, cache_dir):
+def get_base_docker_cmd(params):
     """Parse docker params and build base docker command line list."""
-
-    # ensure image is loaded
-    ensure_image_loaded(params['image_name'], params['image_url'], cache_dir)
 
     # build command
     docker_cmd_base = [ "docker", "run", "--rm", "-u", 
@@ -122,12 +119,12 @@ def get_base_docker_cmd(params, cache_dir):
     return docker_cmd_base
 
 
-def get_docker_cmd(params, cache_dir, cmd_line_list):
+def get_docker_cmd(params, cmd_line_list):
     """Pull docker image into local repo and add call to docker in the 
        command line list."""
 
     # build command
-    docker_cmd = get_base_docker_cmd(params, cache_dir)
+    docker_cmd = get_base_docker_cmd(params)
 
     # set command
     docker_cmd.extend([str(i) for i in cmd_line_list])

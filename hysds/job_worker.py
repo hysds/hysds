@@ -15,7 +15,7 @@ get_worker_status, log_custom_event)
 
 from hysds.utils import (download_file, disk_space_info, get_threshold,
 get_disk_usage, parse_iso8601, get_short_error, query_dedup_job, makedirs)
-from hysds.container_utils import get_docker_params, get_docker_cmd
+from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.dataset_ingest import ingest
 from hysds.user_rules_job import queue_finished_job
@@ -853,6 +853,13 @@ def run_job(job, queue_when_finished=True):
                             'celery_hostname': run_job.request.hostname }
         log_job_status(job_status_json)
 
+        # check if containers need to be loaded
+        image_name = job.get('container_image_name', None)
+        image_url = job.get('container_image_url', None)
+        image_mappings = job.get('container_mappings', {})
+        if image_name is not None:
+            ensure_image_loaded(image_name, image_url, cache_dir_abs)
+
         # localize urls
         for i in job['localize_urls']:
             url = i['url']
@@ -899,9 +906,6 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        image_name = job.get('container_image_name', None)
-        image_url = job.get('container_image_url', None)
-        image_mappings = job.get('container_mappings', {})
         if image_name is not None:
             # get docker params
             docker_params = get_docker_params(image_name, image_url, image_mappings, 
@@ -918,7 +922,7 @@ def run_job(job, queue_when_finished=True):
                 raise(RuntimeError(err))
 
             # get command-line list
-            cmdLineList = get_docker_cmd(docker_params, cache_dir_abs, cmdLineList)
+            cmdLineList = get_docker_cmd(docker_params, cmdLineList)
             logger.info(" docker cmdLineList: %s" % cmdLineList)
 
         # make sure command-line list items are string
