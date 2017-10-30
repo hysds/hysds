@@ -15,7 +15,7 @@ get_worker_status, log_custom_event)
 
 from hysds.utils import (download_file, disk_space_info, get_threshold,
 get_disk_usage, parse_iso8601, get_short_error, query_dedup_job, makedirs)
-from hysds.container_utils import get_docker_cmd
+from hysds.container_utils import get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.dataset_ingest import ingest
 from hysds.user_rules_job import queue_finished_job
@@ -903,9 +903,22 @@ def run_job(job, queue_when_finished=True):
         image_url = job.get('container_image_url', None)
         image_mappings = job.get('container_mappings', {})
         if image_name is not None:
-            cmdLineList = get_docker_cmd(image_name, image_url, image_mappings,
-                                         cache_dir_abs, root_work_dir, job_dir,
-                                         cmdLineList)
+            # get docker params
+            docker_params = get_docker_params(image_name, image_url, image_mappings, 
+                                              root_work_dir, job_dir)
+
+            # dump docker params to file
+            try:
+                docker_params_file = os.path.join(job_dir, '_docker_params.json')
+                with open(docker_params_file, 'w') as f:
+                    json.dump(job, f, indent=2, sort_keys=True)
+            except Exception, e:
+                tb = traceback.format_exc()
+                err = "Failed to dump docker params to file %s: %s\n%s" % (docker_params_file, str(e), tb)
+                raise(RuntimeError(err))
+
+            # get command-line list
+            cmdLineList = get_docker_cmd(docker_params, cache_dir_abs, cmdLineList)
             logger.info(" docker cmdLineList: %s" % cmdLineList)
 
         # make sure command-line list items are string
