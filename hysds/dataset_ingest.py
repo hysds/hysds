@@ -210,59 +210,6 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     # get ipath
     ipath = r.currentIpath
 
-    # get level
-    level = r.getLevel()
-
-    # get type
-    dtype = r.getType()
-
-    # get publish path
-    pub_path_url = r.getPublishPath()
-
-    # get publish urls
-    pub_urls = [i for i in r.getPublishUrls()]
-
-    # get S3 profile name and api keys for dataset publishing
-    s3_secret_key, s3_access_key = r.getS3Keys()
-    s3_profile = r.getS3Profile()
-
-    # set osaka params
-    osaka_params = {}
-
-    # S3 profile takes precedence over explicit api keys
-    if s3_profile is not None:
-        osaka_params['profile_name'] = s3_profile
-    else:
-        if s3_secret_key is not None and s3_access_key is not None:
-            osaka_params['aws_access_key_id'] = s3_access_key
-            osaka_params['aws_secret_access_key'] = s3_secret_key
-
-    # get browse path and urls
-    browse_path = r.getBrowsePath()
-    browse_urls = r.getBrowseUrls()
-
-    # get S3 profile name and api keys for browse image publishing
-    s3_secret_key_browse, s3_access_key_browse = r.getS3Keys("browse")
-    s3_profile_browse = r.getS3Profile("browse")
-
-    # set osaka params for browse
-    osaka_params_browse = {}
-
-    # S3 profile takes precedence over explicit api keys
-    if s3_profile_browse is not None:
-        osaka_params_browse['profile_name'] = s3_profile_browse
-    else:
-        if s3_secret_key_browse is not None and s3_access_key_browse is not None:
-            osaka_params_browse['aws_access_key_id'] = s3_access_key_browse
-            osaka_params_browse['aws_secret_access_key'] = s3_secret_key_browse
-
-    # get pub host and path
-    logger.info("Configured pub host & path: %s" % (pub_path_url))
-
-    # check scheme
-    if not osaka.main.supported(pub_path_url):
-        raise RuntimeError("Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
-
     # get extractor
     extractor = r.getMetadataExtractor()
     if extractor is not None:
@@ -321,6 +268,63 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         logger.info("Loaded context from existing file: %s" % context_file)
     else: context = {}
     metadata['context'] = context
+
+    # set metadata and dataset groups in recognizer
+    r.setDataset(dataset)
+    r.setMetadata(metadata)
+
+    # get level
+    level = r.getLevel()
+
+    # get type
+    dtype = r.getType()
+
+    # get publish path
+    pub_path_url = r.getPublishPath()
+
+    # get publish urls
+    pub_urls = [i for i in r.getPublishUrls()]
+
+    # get S3 profile name and api keys for dataset publishing
+    s3_secret_key, s3_access_key = r.getS3Keys()
+    s3_profile = r.getS3Profile()
+
+    # set osaka params
+    osaka_params = {}
+
+    # S3 profile takes precedence over explicit api keys
+    if s3_profile is not None:
+        osaka_params['profile_name'] = s3_profile
+    else:
+        if s3_secret_key is not None and s3_access_key is not None:
+            osaka_params['aws_access_key_id'] = s3_access_key
+            osaka_params['aws_secret_access_key'] = s3_secret_key
+
+    # get browse path and urls
+    browse_path = r.getBrowsePath()
+    browse_urls = r.getBrowseUrls()
+
+    # get S3 profile name and api keys for browse image publishing
+    s3_secret_key_browse, s3_access_key_browse = r.getS3Keys("browse")
+    s3_profile_browse = r.getS3Profile("browse")
+
+    # set osaka params for browse
+    osaka_params_browse = {}
+
+    # S3 profile takes precedence over explicit api keys
+    if s3_profile_browse is not None:
+        osaka_params_browse['profile_name'] = s3_profile_browse
+    else:
+        if s3_secret_key_browse is not None and s3_access_key_browse is not None:
+            osaka_params_browse['aws_access_key_id'] = s3_access_key_browse
+            osaka_params_browse['aws_secret_access_key'] = s3_secret_key_browse
+
+    # get pub host and path
+    logger.info("Configured pub host & path: %s" % (pub_path_url))
+
+    # check scheme
+    if not osaka.main.supported(pub_path_url):
+        raise RuntimeError("Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
 
     # upload dataset to repo; track disk usage and start/end times of transfer
     prod_dir_usage = get_disk_usage(local_prod_path)

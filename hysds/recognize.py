@@ -83,6 +83,30 @@ class Recognizer:
                 return self.currentIpath
         raise RecognizerError("No dataset configured for %s. Check %s." % (path, self.dataset_file))
 
+    def _parse_keys(self, d, root=''):
+        """Recursive function to return jpath pairs."""
+
+        res = []
+        if isinstance(d, dict):
+            for k, v in d.iteritems():
+                res.extend(self._parse_keys(v, root="_".join([root, k])))
+        elif isinstance(d, list):
+            for i, j in enumerate(d):
+                res.extend(self._parse_keys(j, root="_".join([root, str(i)])))
+        else:
+            res.append((root, d))
+        return res
+
+    def setDataset(self, dataset):
+        """Add dataset values to group dict."""
+
+        self.group_dict.update({ k:v for k,v in self._parse_keys(dataset, '_dataset')})
+
+    def setMetadata(self, met):
+        """Add metadata values to group dict."""
+
+        self.group_dict.update({ k:v for k,v in self._parse_keys(met, '_met')})
+
     def getId(self):
         """Generate and return the id."""
         
@@ -112,7 +136,7 @@ class Recognizer:
         
     def getPublishPath(self):
         """Generate and return the publish path."""
-        
+
         if self.recognized is None: return None
         else:
             return Template(self.recognized['publish']['location']).substitute(
