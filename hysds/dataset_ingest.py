@@ -128,7 +128,7 @@ def restage(host, src, dest, signal_file):
     return ret 
 
 
-def publish_dataset(path, url, params=None):
+def publish_dataset(path, url, params=None, force=False):
     '''
     Publish a dataset to the given url
     @param path - path of dataset to publish
@@ -137,6 +137,11 @@ def publish_dataset(path, url, params=None):
 
     # set osaka params
     if params is None: params = {}
+
+    # force remove previous dataset if it exists?
+    if force:
+        try: unpublish_dataset(url, params=params)
+        except: pass
 
     # upload datasets 
     for root, dirs, files in os.walk(path):
@@ -161,7 +166,7 @@ def unpublish_dataset(url, params=None):
 
 
 def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
-           prod_path, job_path, dry_run=False):
+           prod_path, job_path, dry_run=False, force=False):
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
@@ -170,6 +175,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     logger.info("prod_path: %s" % prod_path)
     logger.info("job_path: %s" % job_path)
     logger.info("dry_run: %s" % dry_run)
+    logger.info("force: %s" % force)
 
     # get dataset
     if os.path.isdir(prod_path):
@@ -322,7 +328,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     if dry_run:
         logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
     else:
-        publish_dataset(local_prod_path, pub_path_url, params=osaka_params)
+        publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
     tx_t2 = datetime.utcnow()
 
     # add metadata for all browse images and upload to browse location
