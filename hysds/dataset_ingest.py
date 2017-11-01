@@ -138,10 +138,6 @@ def publish_dataset(path, url, params=None):
     # set osaka params
     if params is None: params = {}
 
-    # remove previous dataset if it exists
-    try: unpublish_dataset(url, params=params)
-    except: pass
-
     # upload datasets 
     for root, dirs, files in os.walk(path):
         for file in files:
@@ -164,7 +160,8 @@ def unpublish_dataset(url, params=None):
     osaka.main.rmall(url, params=params)
 
 
-def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_path, job_path):
+def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
+           prod_path, job_path, dry_run=False):
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
@@ -172,6 +169,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
     logger.info("dataset_processed_queue: %s" % dataset_processed_queue)
     logger.info("prod_path: %s" % prod_path)
     logger.info("job_path: %s" % job_path)
+    logger.info("dry_run: %s" % dry_run)
 
     # get dataset
     if os.path.isdir(prod_path):
@@ -318,6 +316,15 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
     else: context = {}
     metadata['context'] = context
 
+    # upload dataset to repo; track disk usage and start/end times of transfer
+    prod_dir_usage = get_disk_usage(local_prod_path)
+    tx_t1 = datetime.utcnow()
+    if dry_run:
+        logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
+    else:
+        publish_dataset(local_prod_path, pub_path_url, params=osaka_params)
+    tx_t2 = datetime.utcnow()
+
     # add metadata for all browse images and upload to browse location
     imgs_metadata = []
     imgs = glob('%s/*browse.png' % local_prod_path)
@@ -328,9 +335,12 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
             small_img_basename = os.path.basename(small_img)
             if browse_path is not None:
                 this_browse_path = os.path.join(browse_path, small_img_basename)
-                logger.info("Uploading %s to %s" % (small_img, browse_path))
-                osaka.main.put(small_img, this_browse_path,
-                               params=osaka_params_browse, noclobber=True)
+                if dry_run:
+                    logger.info("Would've uploaded %s to %s" % (small_img, browse_path))
+                else:
+                    logger.info("Uploading %s to %s" % (small_img, browse_path))
+                    osaka.main.put(small_img, this_browse_path,
+                                   params=osaka_params_browse, noclobber=False)
         else: small_img_basename = None
         img_metadata['small_img'] = small_img_basename
         tooltip_match = BROWSE_RE.search(img_metadata['img'])
@@ -354,12 +364,6 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
             if matched is None: unrecognized.append(img)
         imgs_metadata = [sorter[i] for i in sorted(sorter)]
         imgs_metadata.extend(unrecognized)
-
-    # upload dataset to repo; track disk usage and start/end times of transfer
-    prod_dir_usage = get_disk_usage(local_prod_path)
-    tx_t1 = datetime.utcnow()
-    publish_dataset(local_prod_path, pub_path_url, params=osaka_params)
-    tx_t2 = datetime.utcnow()
 
     # save dataset metrics on size and transfer
     tx_dur = (tx_t2 - tx_t1).total_seconds()
@@ -395,8 +399,15 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
     # update GRQ
     if isinstance(update_json['metadata'], types.DictType) and len(update_json['metadata']) > 0:
         #logger.info("update_json: %s" % pformat(update_json))
-        res = index_dataset(grq_update_url, update_json)
-        logger.info("res: %s" % res)
+        if dry_run:
+            logger.info("Would've indexed doc at %s: %s" % (grq_update_url, 
+                                                            json.dumps(update_json, indent=2, sort_keys=True)))
+        else:
+            res = index_dataset(grq_update_url, update_json)
+            logger.info("res: %s" % res)
+
+    # finish if dry run
+    if dry_run: return (prod_metrics, update_json)
 
     # create PROV-ES JSON file for publish processStep
     prod_prov_es_file = os.path.join(local_prod_path, '%s.prov_es.json' % os.path.basename(local_prod_path))
@@ -413,7 +424,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue, prod_p
                             pub_urls, prod_metrics, objectid)
         # upload publish PROV-ES file
         osaka.main.put(pub_prov_es_file, os.path.join(pub_path_url, pub_prov_es_bn),
-                       params=osaka_params, noclobber=True)
+                       params=osaka_params, noclobber=False)
     
     # queue data dataset
     queue_dataset(ipath, update_json, dataset_processed_queue)
