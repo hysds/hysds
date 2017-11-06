@@ -443,11 +443,11 @@ def run_job(job, queue_when_finished=True):
     cmd_payload = job.get('params', {}).get('_command', None)
     logger.info("_command:%s" % cmd_payload)
 
-    # get disk usage requirment
+    # get disk usage requirement
     du_payload = job.get('params', {}).get('_disk_usage', None)
     logger.info("_disk_usage:%s" % du_payload)
 
-    # get disk usage requirment
+    # get depedency images
     dependency_images = job.get('params', {}).get('job_specification', {}).get('dependency_images', [])
     logger.info("dependency_images:%s" % json.dumps(dependency_images, indent=2))
 
@@ -872,11 +872,14 @@ def run_job(job, queue_when_finished=True):
         if image_name is not None:
             image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
             job['container_image_id'] = image_info['Id']
-        for dep_img in job.get('dependency_images', []):
+            context['container_image_id'] = job['container_image_id']
+        for i, dep_img in enumerate(job.get('dependency_images', [])):
             dep_image_info = ensure_image_loaded(dep_img['container_image_name'], 
                                                  dep_img['container_image_url'],
                                                  cache_dir_abs)
             dep_img['container_image_id'] = dep_image_info['Id']
+            ctx_dep_img = context['job_specification']['dependency_images'][i]
+            ctx_dep_img['container_image_id'] = dep_img['container_image_id']
 
         # localize urls
         for i in job['localize_urls']:
