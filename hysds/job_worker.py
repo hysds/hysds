@@ -15,7 +15,7 @@ get_worker_status, log_custom_event)
 
 from hysds.utils import (download_file, disk_space_info, get_threshold,
 get_disk_usage, parse_iso8601, get_short_error, query_dedup_job, makedirs)
-from hysds.container_utils import get_docker_cmd
+from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.dataset_ingest import ingest
 from hysds.user_rules_job import queue_finished_job
@@ -443,9 +443,13 @@ def run_job(job, queue_when_finished=True):
     cmd_payload = job.get('params', {}).get('_command', None)
     logger.info("_command:%s" % cmd_payload)
 
-    # get disk usage requirment
+    # get disk usage requirement
     du_payload = job.get('params', {}).get('_disk_usage', None)
     logger.info("_disk_usage:%s" % du_payload)
+
+    # get depedency images
+    dependency_images = job.get('params', {}).get('job_specification', {}).get('dependency_images', [])
+    logger.info("dependency_images:%s" % json.dumps(dependency_images, indent=2))
 
     # get workers dir
     workers_dir = "workers"
@@ -539,7 +543,8 @@ def run_job(job, queue_when_finished=True):
                         'options': [],
                         'arguments': cmd_payload_list[1:],
                         'env': [],
-                    }
+                    },
+                    'dependency_images': dependency_images,
                 }
             ]
         }
@@ -777,6 +782,13 @@ def run_job(job, queue_when_finished=True):
         logger.info("Using container mappings: %s"
                     % json.dumps(job['container_mappings'], indent=2))
 
+    # set or overwrite dependency images
+    dep_imgs = work_cfgs[job['type']].get('dependency_images', [])
+    if len(dep_imgs) > 0:
+        job['dependency_images'] = dep_imgs
+        logger.info("Setting dependency_images from worker configuration: %s"
+                    % json.dumps(job['dependency_images'], indent=2))
+
     # write empty context to file
     try:
         if len(context) > 0: context = { 'context': context }
@@ -853,6 +865,26 @@ def run_job(job, queue_when_finished=True):
                             'celery_hostname': run_job.request.hostname }
         log_job_status(job_status_json)
 
+        # check if containers need to be loaded
+        image_name = job.get('container_image_name', None)
+        image_url = job.get('container_image_url', None)
+        image_mappings = job.get('container_mappings', {})
+        if image_name is not None:
+            image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            job['container_image_id'] = image_info['Id']
+            context['container_image_id'] = job['container_image_id']
+        for i, dep_img in enumerate(job.get('dependency_images', [])):
+            dep_image_info = ensure_image_loaded(dep_img['container_image_name'], 
+                                                 dep_img['container_image_url'],
+                                                 cache_dir_abs)
+            dep_img['container_image_id'] = dep_image_info['Id']
+            ctx_dep_img = context['job_specification']['dependency_images'][i]
+            ctx_dep_img['container_image_id'] = dep_img['container_image_id']
+
+        # update context file with image ids
+        with open(context_file, 'w') as f:
+            json.dump(context, f, indent=2, sort_keys=True)
+
         # localize urls
         for i in job['localize_urls']:
             url = i['url']
@@ -899,14 +931,34 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        image_name = job.get('container_image_name', None)
-        image_url = job.get('container_image_url', None)
-        image_mappings = job.get('container_mappings', {})
+        docker_params = {}
         if image_name is not None:
-            cmdLineList = get_docker_cmd(image_name, image_url, image_mappings,
-                                         cache_dir_abs, root_work_dir, job_dir,
-                                         cmdLineList)
+            # get docker params
+            docker_params[image_name] = get_docker_params(image_name, image_url, 
+                                                          image_mappings, root_work_dir, 
+                                                          job_dir)
+
+            # get command-line list
+            cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
             logger.info(" docker cmdLineList: %s" % cmdLineList)
+
+        # build docker params for dependency containers
+        for dep_img in job.get('dependency_images', []):
+            docker_params[dep_img['container_image_name']] = \
+                get_docker_params(dep_img['container_image_name'],
+                                  dep_img['container_image_url'],
+                                  dep_img['container_mappings'],
+                                  root_work_dir, job_dir)
+
+        # dump docker params to file
+        try:
+            docker_params_file = os.path.join(job_dir, '_docker_params.json')
+            with open(docker_params_file, 'w') as f:
+                json.dump(docker_params, f, indent=2, sort_keys=True)
+        except Exception, e:
+            tb = traceback.format_exc()
+            err = "Failed to dump docker params to file %s: %s\n%s" % (docker_params_file, str(e), tb)
+            raise(RuntimeError(err))
 
         # make sure command-line list items are string
         cmdLineList = [str(i) for i in cmdLineList]

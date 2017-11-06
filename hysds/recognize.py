@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import sys, os, re, socket, types, pwd, json
-from string import Template
 from pprint import pprint
 
 
@@ -83,6 +82,16 @@ class Recognizer:
                 return self.currentIpath
         raise RecognizerError("No dataset configured for %s. Check %s." % (path, self.dataset_file))
 
+    def setDataset(self, dataset):
+        """Add dataset values to group dict."""
+
+        self.group_dict['dataset'] = dataset
+
+    def setMetadata(self, met):
+        """Add metadata values to group dict."""
+
+        self.group_dict['met'] = met
+
     def getId(self):
         """Generate and return the id."""
         
@@ -94,37 +103,37 @@ class Recognizer:
         
         if self.recognized is None: return None
         else:
-            return Template(self.recognized['version']).substitute(self.group_dict)
+            return self.recognized['version'].format(**self.group_dict)
         
     def getLevel(self):
         """Get the level."""
         
         if self.recognized is None: return None
         else:
-            return Template(self.recognized['level']).substitute(self.group_dict)
+            return self.recognized['level'].format(**self.group_dict)
         
     def getType(self):
         """Get the type."""
         
         if self.recognized is None: return None
         else:
-            return Template(self.recognized['type']).substitute(self.group_dict)
+            return self.recognized['type'].format(**self.group_dict)
         
     def getPublishPath(self):
         """Generate and return the publish path."""
-        
+
         if self.recognized is None: return None
         else:
-            return Template(self.recognized['publish']['location']).substitute(
-                self.group_dict, hostname=self.hostname)
+            return self.recognized['publish']['location'].format(
+                hostname=self.hostname, **self.group_dict)
         
     def getBrowsePath(self):
         """Generate and return the browse path."""
         
         if self.recognized is None: return None
         else:
-            return Template(self.recognized['browse']['location']).substitute(
-                self.group_dict, hostname=self.hostname)
+            return self.recognized['browse']['location'].format(
+                hostname=self.hostname, **self.group_dict)
         
     def getPriority(self):
         """Return processing priority."""
@@ -151,8 +160,8 @@ class Recognizer:
         else:
             pub_urls = []
             for pub_url in self.recognized['publish']['urls']:
-                pub_urls.append(Template(pub_url).substitute(self.group_dict,
-                                                             hostname=self.hostname))
+                pub_urls.append(pub_url.format(hostname=self.hostname,
+                                               **self.group_dict))
             return pub_urls
 
     def getBrowseUrls(self):
@@ -162,8 +171,8 @@ class Recognizer:
         else:
             brs_urls = []
             for brs_url in self.recognized['browse']['urls']:
-                brs_urls.append(Template(brs_url).substitute(self.group_dict,
-                                                             hostname=self.hostname))
+                brs_urls.append(brs_url.format(hostname=self.hostname,
+                                               **self.group_dict))
             return brs_urls
 
     def getBrowseSortOrder(self):

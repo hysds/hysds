@@ -20,10 +20,53 @@ def verify_docker_mount(m):
     return True
 
 
-def get_docker_cmd(image_name, image_url, image_mappings, cache_dir,
-                   root_work_dir, job_dir, cmd_line_list):
-    """Pull docker image into local repo and add call to docker in the 
-       command line list."""
+def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir):
+    """Build docker params."""
+
+    # docker params dict
+    params = {
+        "image_name": image_name,
+        "image_url": image_url,
+        "uid": os.getuid(),
+        "gid": os.getgid(),
+        "working_dir": job_dir,
+        "volumes": [
+            ( "/sys/fs/cgroup", "/sys/fs/cgroup:ro" ),
+            ( "/var/run/docker.sock", "/var/run/docker.sock" ),
+            ( root_work_dir, root_work_dir ),
+        ]
+    }
+
+    # add default image mappings
+    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
+                                     os.path.join(os.path.dirname(app.conf.__file__),
+                                                  "celeryconfig.py"))
+    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in image_mappings.values():
+        image_mappings[celery_cfg_file] = "celeryconfig.py"
+    dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
+                                    os.path.normpath(os.path.join(os.path.dirname(sys.executable),
+                                                                  '..', 'etc', 'datasets.json')))
+    if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
+        image_mappings[dsets_cfg_file] = "datasets.json"
+
+    # add user-defined image mappings
+    for k, v in image_mappings.iteritems():
+        k = os.path.expandvars(k)
+        verify_docker_mount(k)
+        mode = "ro"
+        if isinstance(v, list):
+            if len(v) > 1: v, mode = v[0:2]
+            elif len(v) == 1: v = v[0]
+            else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
+        if v.startswith('/'): mnt = v
+        else: mnt = os.path.join(job_dir, v)
+        params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
+
+    return params
+
+
+def ensure_image_loaded(image_name, image_url, cache_dir):
+    """Pull docker image into local repo."""
 
     # check if image is in local docker repo
     try:
@@ -55,40 +98,33 @@ def get_docker_cmd(image_name, image_url, image_mappings, cache_dir,
             check_output(['docker', 'pull', image_name])
             logger.info("Pulled image %s from docker hub" % image_name)
         image_info = check_output(['docker', 'inspect', image_name])
+    logger.info("image info for %s: %s"  % (image_name, image_info))
+    return json.loads(image_info)[0]
+
+
+def get_base_docker_cmd(params):
+    """Parse docker params and build base docker command line list."""
 
     # build command
-    docker_cmd = [ 
-        "docker", "run", "--rm", "-u", "%s:%s" % (os.getuid(), os.getgid()),
-                                 "-v", "%s:%s" % (root_work_dir, root_work_dir),
-    ]
+    docker_cmd_base = [ "docker", "run", "--rm", "-u", 
+                        "%s:%s" % (params['uid'], params['gid']) ]
 
-    # add default image mappings
-    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
-                                     os.path.join(os.path.dirname(app.conf.__file__),
-                                                  "celeryconfig.py"))
-    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in image_mappings.values():
-        image_mappings[celery_cfg_file] = "celeryconfig.py"
-    dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
-                                    os.path.normpath(os.path.join(os.path.dirname(sys.executable),
-                                                                  '..', 'etc', 'datasets.json')))
-    if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
-        image_mappings[dsets_cfg_file] = "datasets.json"
-
-    # add user-defined image mappings
-    for k, v in image_mappings.iteritems():
-        k = os.path.expandvars(k)
-        verify_docker_mount(k)
-        mode = "ro"
-        if isinstance(v, list):
-            if len(v) > 1: v, mode = v[0:2]
-            elif len(v) == 1: v = v[0]
-            else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
-        if v.startswith('/'): mnt = v
-        else: mnt = os.path.join(job_dir, v)
-        docker_cmd.extend(["-v", "%s:%s:%s" % (k, mnt, mode)])
+    # add volumes
+    for k, v in params['volumes']:
+        docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
 
     # set work directory and image
-    docker_cmd.extend(["-w", job_dir, image_name])
+    docker_cmd_base.extend(["-w", params['working_dir'], params['image_name']])
+
+    return docker_cmd_base
+
+
+def get_docker_cmd(params, cmd_line_list):
+    """Pull docker image into local repo and add call to docker in the 
+       command line list."""
+
+    # build command
+    docker_cmd = get_base_docker_cmd(params)
 
     # set command
     docker_cmd.extend([str(i) for i in cmd_line_list])
