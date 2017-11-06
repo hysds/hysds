@@ -881,6 +881,10 @@ def run_job(job, queue_when_finished=True):
             ctx_dep_img = context['job_specification']['dependency_images'][i]
             ctx_dep_img['container_image_id'] = dep_img['container_image_id']
 
+        # update context file with image ids
+        with open(context_file, 'w') as f:
+            json.dump(context, f, indent=2, sort_keys=True)
+
         # localize urls
         for i in job['localize_urls']:
             url = i['url']
