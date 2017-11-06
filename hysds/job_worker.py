@@ -870,10 +870,13 @@ def run_job(job, queue_when_finished=True):
         image_url = job.get('container_image_url', None)
         image_mappings = job.get('container_mappings', {})
         if image_name is not None:
-            ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            job['container_image_id'] = image_info['Id']
         for dep_img in job.get('dependency_images', []):
-            ensure_image_loaded(dep_img['container_image_name'], 
-                                dep_img['container_image_url'], cache_dir_abs)
+            dep_image_info = ensure_image_loaded(dep_img['container_image_name'], 
+                                                 dep_img['container_image_url'],
+                                                 cache_dir_abs)
+            dep_img['container_image_id'] = dep_image_info['Id']
 
         # localize urls
         for i in job['localize_urls']:
