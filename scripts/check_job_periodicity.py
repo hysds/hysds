@@ -196,7 +196,8 @@ def check_job_execution(url, job_type, periodicity, slack_url=None, email=None):
     result = r.json()
     count = result['hits']['total']
     if count == 0: 
-        error = "No jobs found for job type %s." % job_type
+        subject = "No jobs found for job type %s." % job_type
+        error = "Check yourself before you wreck yourself."
     else:
         latest_job = result['hits']['hits'][0]['_source']
         logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
@@ -211,12 +212,11 @@ def check_job_execution(url, job_type, periodicity, slack_url=None, email=None):
             #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
             #error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
             error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
-            color = "#f23e26"
         else: return
 
     # send notification via slack
     if slack_url:
-        send_slack_notification(slack_url, subject, error, color, attachment_only=True)
+        send_slack_notification(slack_url, subject, error, "#f23e26", attachment_only=True)
 
     # send notification via email
     if email:
