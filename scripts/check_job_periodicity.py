@@ -22,10 +22,21 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
 
 
-def send_slack_notification(channel_url, text, attachments=[]):
+def send_slack_notification(channel_url, subject, text, color=None, subject_link=None, 
+                            attachment_only=False):
     """Send slack notification."""
 
-    r = requests.post(channel_url, data=json.dumps({'text': text, 'attachements': attachments}),
+    attachment = {
+        "title": subject,
+        "text": text, 
+    }
+    if color is not None: attachment['color'] = color
+    if subject_link is not None: attachment['subject_link'] = subject_link
+    payload = {
+        'attachments': [attachment]
+    }
+    if not attachment_only: payload['text'] = text
+    r = requests.post(channel_url, data=json.dumps(payload),
                       headers={ 'Content-Type': 'application/json' })
     r.raise_for_status()
 
@@ -194,21 +205,22 @@ def check_job_execution(url, job_type, periodicity, slack_url=None, email=None):
         delta = (now-end_dt).total_seconds()
         logging.info("delta: %s" % delta)
         if delta > periodicity:
-            error = "Last job for job type %s completed %d minutes ago.\n" % (job_type, int(delta/60))
-            error += "job_id: %s\n" % latest_job['job_id']
-            error += "payload_id: %s\n" % latest_job['payload_id']
-            error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
-            error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
+            subject = 'There has not been a successfully completed job type "%s" for more than %.2f-hours.\n' % (job_type, delta/3600.)
+            error = "job_id: %s\n" % latest_job['job_id']
+            #error += "payload_id: %s\n" % latest_job['payload_id']
+            #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
+            #error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
             error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
+            color = "#f23e26"
         else: return
 
     # send notification via slack
     if slack_url:
-        send_slack_notification(slack_url, error)
+        send_slack_notification(slack_url, subject, error, color, attachment_only=True)
 
     # send notification via email
     if email:
-        send_email_notification(email, job_type, error)
+        send_email_notification(email, job_type, subject + error)
 
 
 if __name__ == "__main__":
