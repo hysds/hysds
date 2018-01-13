@@ -34,7 +34,7 @@ Core component for the Hybrid Science Data System
 
 4. Install hysds:
   ```
-  git clone https://github.jpl.nasa.gov/hysds-org/hysds.git
+  git clone https://github.com/hysds/hysds.git
   cd hysds
   pip install .
   ```
