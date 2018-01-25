@@ -31,6 +31,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:instance_stats]
@@ -42,6 +44,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:user_rules_job]
@@ -53,6 +57,8 @@ numprocs=32
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:user_rules_dataset]
@@ -64,6 +70,8 @@ numprocs=32
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:user_rules_trigger]
@@ -75,6 +83,8 @@ numprocs=4
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:import_prov_es]
@@ -88,4 +98,51 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
+[program:system-jobs-queue]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+environment=HYSDS_ROOT_WORK_DIR="/data/work",
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q system-jobs-queue -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=32
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
+[program:factotum-job_worker-small]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+environment=HYSDS_ROOT_WORK_DIR="/data/work",
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q factotum-job_worker-small -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
+[program:factotum-job_worker-large]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+environment=HYSDS_ROOT_WORK_DIR="/data/work",
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q factotum-job_worker-large -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10

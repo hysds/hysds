@@ -32,6 +32,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:tosca]
@@ -45,4 +47,6 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10

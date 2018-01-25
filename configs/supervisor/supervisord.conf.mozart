@@ -31,6 +31,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:process_events]
@@ -42,9 +44,9 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
-logfile_maxbytes=1024MB
-logfile_backups=100
 
 [program:orchestrator_datasets]
 directory={{ OPS_HOME }}/mozart/ops/hysds
@@ -57,6 +59,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:orchestrator_jobs]
@@ -70,6 +74,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:flower]
@@ -81,6 +87,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:logstash_indexer]
@@ -93,6 +101,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:mozart_job_management]
@@ -106,6 +116,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:figaro]
@@ -119,6 +131,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:watchdog_job_timeouts]
@@ -130,6 +144,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:watchdog_task_timeouts]
@@ -141,6 +157,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:watchdog_worker_timeouts]
@@ -152,6 +170,8 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
 
 [program:sync_ec2_job_metric-{{ MONITORED_QUEUE }}]
@@ -163,4 +183,6 @@ numprocs=1
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
 startsecs=10
