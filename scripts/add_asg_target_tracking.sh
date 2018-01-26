@@ -1,22 +1,23 @@
 #!/bin/bash
 
-aws autoscaling put-scaling-policy --auto-scaling-group-name grfn-ops-amzn-asg --policy-name test-target-tracking --policy-type TargetTrackingScaling --target-tracking-configuration '{
-            "CustomizedMetricSpecification": {
-              "MetricName": "JobsWaitingPerInstance",
-              "Namespace": "HySDS",
-              "Dimensions": [
+QUEUE=$1
+ASG=$2
+aws autoscaling put-scaling-policy --auto-scaling-group-name $ASG --policy-name ${ASG}-target-tracking --policy-type TargetTrackingScaling --target-tracking-configuration "{
+            \"CustomizedMetricSpecification\": {
+              \"MetricName\": \"JobsWaitingPerInstance-${QUEUE}-${ASG}\",
+              \"Namespace\": \"HySDS\",
+              \"Dimensions\": [
                 {
-                  "Name": "AutoScalingGroupName",
-                  "Value": "grfn-ops-amzn-asg"
+                  \"Name\": \"AutoScalingGroupName\",
+                  \"Value\": \"${ASG}\"
                 },
                 {
-                  "Name": "Queue",
-                  "Value": "grfn-job_worker-large"
+                  \"Name\": \"Queue\",
+                  \"Value\": \"${QUEUE}\"
                 }
               ],
-              "Statistic": "Maximum",
-              "Unit": "Count"
+              \"Statistic\": \"Maximum\"
             },
-            "TargetValue": 1.0,
-            "DisableScaleIn": true
-          }'
+            \"TargetValue\": 1.0,
+            \"DisableScaleIn\": true
+          }"
