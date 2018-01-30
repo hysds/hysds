@@ -78,9 +78,11 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
             job_count = float(get_waiting_job_count(queue, user, password))
             logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
             desired_capacity = float(get_desired_capacity(asg))
-            if job_count > 0 and desired_capacity == 0:
-                desired_capacity = float(bootstrap_asg(asg))
-                logging.info("bootstrapped ASG %s to desired=%s" % (asg, desired_capacity))
+            if desired_capacity == 0:
+                if job_count > 0:
+                    desired_capacity = float(bootstrap_asg(asg))
+                    logging.info("bootstrapped ASG %s to desired=%s" % (asg, desired_capacity))
+                else: desired_capacity = 1.0
             metric = job_count/desired_capacity
             submit_metric(queue, asg, metric, namespace)
         except Exception, e:
