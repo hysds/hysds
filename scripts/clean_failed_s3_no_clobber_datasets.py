@@ -86,7 +86,7 @@ def get_matching_s3_keys(client, bucket, prefix='', suffix=''):
         yield obj['Key']
 
 
-def clean(jobs_es_url, grq_es_url, dry_run=False):
+def clean(jobs_es_url, grq_es_url, force=False):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing 
        and clean them out if dataset was not indexed."""
     
@@ -165,21 +165,20 @@ def clean(jobs_es_url, grq_es_url, dry_run=False):
         chunks = [results[bucket][x:x+S3_MAX_DELETE_CHUNK] for x in xrange(0, len(results[bucket]), S3_MAX_DELETE_CHUNK)]
         
         for chunk in chunks:
-            # clean out if not dry run
-            if dry_run:
-                logging.info("Dry run was set. These objects would've been deleted:")
-                for obj in chunk: logging.info(obj)
-            else:
+            if force:
                 del_obj = {"Objects": [{'Key': obj} for obj in chunk]}
                 logging.info(json.dumps(del_obj, indent=2))
                 client.delete_objects(Bucket=bucket, Delete=del_obj)
+            else:
+                logging.info("Running dry-run. These objects would've been deleted:")
+                for obj in chunk: logging.info(obj)
 
 
 if __name__ == "__main__":
     jobs_es_url = app.conf['JOBS_ES_URL']
     grq_es_url = app.conf['GRQ_ES_URL']
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('-d', '--dry_run', help="dry run", action='store_true')
+    parser.add_argument('-f', '--force', help="force deletion", action='store_true')
     args = parser.parse_args()
 
-    clean(jobs_es_url, grq_es_url, args.dry_run)
+    clean(jobs_es_url, grq_es_url, args.force)
