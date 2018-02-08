@@ -211,7 +211,6 @@ def seppuku(logger=None):
                     break
         if spot_fleet is None:
             logging.info("This instance %s is not part of any spot fleet." % id)
-            return
 
     # gracefully shutdown
     while True:
@@ -244,12 +243,17 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     # detach and die
     logging.info("Committing seppuku.")
 
-    if as_group is not None:
-        c = boto3.client('autoscaling')
-        detach_instance(c, as_group, id)
-    else:
-        c = boto3.client('ec2')
-        decrement_fleet(c, spot_fleet)
+    # detach if part of a spot fleet or autoscaling group
+    try:
+        if as_group is not None:
+            c = boto3.client('autoscaling')
+            detach_instance(c, as_group, id)
+        if spot_fleet is not None:
+            c = boto3.client('ec2')
+            decrement_fleet(c, spot_fleet)
+    except Exception, e:
+        logging.error("Got exception in graceful_shutdown(): %s\n%s" %
+                      (str(e), traceback.format_exc()))
 
     time.sleep(60)
 
