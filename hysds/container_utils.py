@@ -81,7 +81,10 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             if not os.path.exists(image_file):
                 logger.info("Downloading image %s (%s) from %s" % 
                             (image_file, image_name, image_url))
-                osaka.main.get(image_url, image_file)
+                try: osaka.main.get(image_url, image_file)
+                except Exception, e:
+                    raise(RuntimeError("Failed to download image %s:\n%s" % 
+                                       (image_url, str(e))))
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
             logger.info("Loading image %s (%s)" % (image_file, image_name))
