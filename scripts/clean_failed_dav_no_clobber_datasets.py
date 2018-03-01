@@ -75,6 +75,12 @@ def clean(jobs_es_url, grq_es_url, force=False):
                         "term": {
                             "short_error.untouched": "Destination, davs://.....ber is set"
                         }
+                    },
+                    {
+                        "query_string": {
+                            "query": "error:\"already exists and no-clobber is set\"",
+                            "default_operator": "OR"
+                        }
                     }
                 ]
             }
