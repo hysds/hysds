@@ -415,6 +415,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         else:
             res = index_dataset(grq_update_url, update_json)
             logger.info("res: %s" % res)
+            update_json['grq_index_result'] = res
 
     # finish if dry run
     if dry_run: return (prod_metrics, update_json)

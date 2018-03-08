@@ -1115,6 +1115,7 @@ def run_job(job, queue_when_finished=True):
                 'system_version': prod_json['system_version'],
                 'dataset_level': prod_json['dataset_level'],
                 'dataset_type': prod_json['dataset_type'],
+                'index': prod_json['grq_index_result']['index'],
             })
 
         # write published products to file
