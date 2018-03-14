@@ -174,23 +174,13 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
-# deprecated in favor of target tracking metric
-#[program:sync_ec2_job_metric-{{ MONITORED_QUEUE }}]
-#directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
-#command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_job_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ MONITORED_QUEUE }}
-#process_name=%(program_name)s
-#priority=1
-#numprocs=1
-#numprocs_start=0
-#redirect_stderr=true
-#stdout_logfile=%(here)s/../log/%(program_name)s.log
-#stdout_logfile_maxbytes=100MB
-#stdout_logfile_backups=10
-#startsecs=10
-
-[program:sync_ec2_target_tracking_metric-{{ MONITORED_QUEUE }}]
+# target tracking metrics
+{% for project in PROJECTS.split() -%}
+{% set project = project | trim -%}
+{% for size in ('large', 'small') %}
+[program:sync_ec2_target_tracking_metric-{{ project }}-{{ size }}]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
-command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_target_tracking_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ MONITORED_QUEUE }} {{ AUTOSCALE_GROUP }}
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_target_tracking_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ project }}-job_worker-{{ size }} {{ AUTOSCALE_GROUP }}-{{ project }}-{{ VENUE }}
 process_name=%(program_name)s
 priority=1
 numprocs=1
@@ -200,3 +190,5 @@ stdout_logfile=%(here)s/../log/%(program_name)s.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
+{% endfor %}
+{%- endfor %}
