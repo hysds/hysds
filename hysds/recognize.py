@@ -138,9 +138,17 @@ class Recognizer:
     def getPriority(self):
         """Return processing priority."""
         
-        if self.recognized is None: return None
-        if 'priority' not in self.recognized: return None
-        return self.recognized['priority']
+        return None if self.recognized is None else self.recognized.get('priority', None)
+        
+    def getIndex(self):
+        """Return explicit index name to use."""
+        
+        return None if self.recognized is None else self.recognized.get('index', None)
+        
+    def getAliases(self):
+        """Return explicit index aliases to use."""
+        
+        return None if self.recognized is None else self.recognized.get('aliases', None)
         
     def getMetadataExtractor(self):
         """Return the metadata extractor."""

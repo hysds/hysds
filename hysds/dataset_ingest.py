@@ -406,6 +406,12 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     update_json.update(dataset)
     #logger.info("update_json: %s" % pformat(update_json))
 
+    # explicit GRQ index names and aliases
+    index = r.getIndex()
+    if index is not None: update_json['index'] = index
+    aliases = r.getAliases()
+    if aliases is not None: update_json['aliases'] = aliases
+
     # update GRQ
     if isinstance(update_json['metadata'], types.DictType) and len(update_json['metadata']) > 0:
         #logger.info("update_json: %s" % pformat(update_json))
