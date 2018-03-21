@@ -141,14 +141,9 @@ class Recognizer:
         return None if self.recognized is None else self.recognized.get('priority', None)
         
     def getIndex(self):
-        """Return explicit index name to use."""
+        """Return custom index parameters."""
         
         return None if self.recognized is None else self.recognized.get('index', None)
-        
-    def getAliases(self):
-        """Return explicit index aliases to use."""
-        
-        return None if self.recognized is None else self.recognized.get('aliases', None)
         
     def getMetadataExtractor(self):
         """Return the metadata extractor."""
