@@ -4,6 +4,9 @@ Watchdog completed job type execution with an expected periodicity.
 """
 
 import os, sys, getpass, requests, json, types, base64, socket
+from requests import HTTPError
+from hysds_commons.request_utils import get_requests_json_response
+from hysds_commons.log_utils import logger
 import traceback, logging, argparse
 from datetime import datetime
 from smtplib import SMTP
@@ -21,6 +24,13 @@ log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
 
+HYSDS_QUEUES = (
+    app.conf['JOBS_PROCESSED_QUEUE'],
+    app.conf['USER_RULES_JOB_QUEUE'],
+    app.conf['DATASET_PROCESSED_QUEUE'],
+    app.conf['USER_RULES_DATASET_QUEUE'],
+    app.conf['USER_RULES_TRIGGER_QUEUE'],
+)
 
 def send_slack_notification(channel_url, subject, text, color=None, subject_link=None, 
                             attachment_only=False):
@@ -135,7 +145,7 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
 
-def do_job_query(url, job_type, job_status):
+def do_queue_query(url, queue_name):
 
     query = {
         "query": {
@@ -143,73 +153,19 @@ def do_job_query(url, job_type, job_status):
                 "must": [
                     {
                         "terms": {
-                            "status": [ job_status ]
-                        }
-                    },
-                    {
-                        "terms": {
                             "resource": [ "job" ]
                         }
                     },
                     {
-                        "terms": {
-                            "type": [ job_type ]
+                        "term": {
+                            "job_queue": queue_name
                         }
                     }
                 ]
             }
         },
-        "sort": [ {"job.job_info.time_end": { "order":"desc" } } ],
-        "_source": [ "job_id", "payload_id", "payload_hash", "uuid",
-                     "job.job_info.time_queued", "job.job_info.time_start",
-                     "job.job_info.time_end", "error", "traceback" ],
-        "size": 1
-    }
-    logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
-
-    # query
-    url_tmpl = "{}/job_status-current/_search"
-    r = requests.post(url_tmpl.format(url), data=json.dumps(query))
-    if r.status_code != 200:
-        logging.error("Failed to query ES. Got status code %d:\n%s" %
-                      (r.status_code, json.dumps(query, indent=2)))
-    r.raise_for_status()
-    result = r.json()
-
-    return result
-
-def do_csk_job_query(url, job_type, job_status):
-
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {
-                        "terms": {
-                            "status": [ job_status ]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "resource": [ "job" ]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "type": [ job_type ]
-                        }
-                    },
-		    {
-          		"query_string": {
-            		"query": "CSK",
-            		"default_operator": "OR"
-          		}
-        	    }
-                ]
-            }
-        },
-        "sort": [ {"job.job_info.time_end": { "order":"desc" } } ],
-        "_source": [ "job_id", "payload_id", "payload_hash", "uuid",
+        "sort": [ {"job.job_info.time_start": { "order":"desc" } } ],
+        "_source": [ "job_id", "status", "job_queue", "payload_id", "payload_hash", "uuid",
                      "job.job_info.time_queued", "job.job_info.time_start",
                      "job.job_info.time_end", "error", "traceback" ],
         "size": 1
@@ -239,45 +195,102 @@ def send_email_notification(emails, job_type, text, attachments=[]):
                bcc_recipients, subject, body, attachments=attachments)
 
 
-def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=None):
-    """Check that if any job of  job type Failed within the expected periodicity."""
+def get_all_queues(rabbitmq_admin_url):
+    '''
+    List the queues available for job-running
+    Note: does not return celery internal queues
+    @param rabbitmq_admin_url: RabbitMQ admin URL
+    @return: list of queues
+    '''
+
+    try:
+        data = get_requests_json_response(os.path.join(rabbitmq_admin_url, "api/queues"))
+        #print(data)
+    except HTTPError, e:
+        if e.response.status_code == 401:
+            logger.error("Failed to authenticate to {}. Ensure credentials are set in .netrc.".format(rabbitmq_admin_url))
+        raise
+    #'''
+    for obj in data:
+	if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES:
+	    if obj["name"] =='Recommended Queues':
+            	continue
+	    
+	    if obj["name"]=="factotum-job_worker-scihub_throttled":
+	        print(obj["name"])
+	        print(obj)
+                print(json.dumps(obj, indent=2, sort_keys=True))
+	        break
+    #'''	    
+    return [ obj for obj in data if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES and obj["name"] !='Recommended Queues' and obj["messages_ready"]>0]
+
+
+
+def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email=None):
+    """Check that job type ran successfully within the expected periodicity."""
 
     logging.info("url: %s" % url)
-    logging.info("job_type: %s" % job_type)
+    logging.info("rabbitmq url: %s" % rabbitmq_url)
     logging.info("periodicity: %s" % periodicity)
-    result=[]
-
-    # build query
-    if "job-csk" in job_type or "extract" in job_type:
-	result = do_csk_job_query(url, job_type, "job-failed")
-    else:
-    	result = do_job_query(url, job_type, "job-failed")
-    count = result['hits']['total']
-    if count == 0: 
-        error+="\n\nNo Failed job found for job type %s." % job_type
-        if ("job-csk_incoming" in job_type or "extract" in job_type):
-            print(error)
-            return
-    else:
-        latest_job = result['hits']['hits'][0]['_source']
-        logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-        end_dt = datetime.strptime(latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
-        now = datetime.utcnow()
-        delta = (now-end_dt).total_seconds()
-	if ("job-csk_incoming" in job_type or "extract" in job_type) and delta > periodicity:
-	    print("The last failed job of type %s was %.2f-hours ago:\n" %(job_type, delta/3600.))
-	    return
-        logging.info("Failed Job delta: %s" % delta)
-        error +="\nThe last failed job of type %s was %.2f-hours ago:\n" %(job_type, delta/3600.)
-        error += "\njob_id: %s\n" % latest_job['job_id']
-        #error += "payload_id: %s\n" % latest_job['payload_id']
-        #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
-        error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
-        error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
-        error += "Error: %s\n" % latest_job['error']
-        error += "Tracebak: %s\n" % latest_job['traceback']
     
-    subject = "\nJob Status checking for job type %s:\n\n" % job_type
+    queue_list = get_all_queues(rabbitmq_url)
+    #print(queue_list)
+    if len(queue_list)==0:
+	print("No non-empty queue found")
+	return
+
+    is_alert=False
+    error=""
+    for obj in queue_list:
+	queue_name=obj["name"]
+	if queue_name=='Recommended Queues':
+	    continue
+ 	messages_ready=obj["messages_ready"]
+	total_messages=obj["messages"]
+	messages_unacked=obj["messages_unacknowledged"]
+	running = total_messages - messages_ready
+	
+	if messages_ready>0 and messages_unacked==0:
+            is_alert=True
+            error +='\nQueue Name : %s' %queue_name
+            error += "\nError : No job running though jobs are waiting in the queue!!"
+	    error +='\nTotal jobs : %s' %total_messages
+            error += '\nJobs WAITING in the queue : %s' %messages_ready
+            error +='\nJobs running : %s' %messages_unacked
+        else:
+	    print("processing job status for queue : %s" %queue_name)
+    	    result = do_queue_query(url, queue_name)
+    	    count = result['hits']['total']
+    	    if count == 0: 
+	    	is_alert=True
+	    	error +='\nQueue Name : %s' %queue_name
+            	error += "\nError : No job found for Queue :  %s!!\n." % queue_name
+    	    else:
+            	latest_job = result['hits']['hits'][0]['_source']
+            	logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
+            	print("job status : %s" %latest_job['status'])
+            	start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
+            	now = datetime.utcnow()
+            	delta = (now-start_dt).total_seconds()
+            	logging.info("Successful Job delta: %s" % delta)
+            	if delta > periodicity:
+		    is_alert=True
+   		    error +='\nQueue Name : %s' %queue_name
+		    error += '\nError: Possible Job hanging in the queue
+		    error +='\nTotal jobs : %s' %total_messages
+		    error += '\nJobs WAITING in the queue : %s' %messages_ready
+		    error +='\nJobs running : %s' %messages_unacked
+            	    error  += '\nThe last job running in Queue "%s" for %.2f-hours.\n' % (queue_name, delta/3600.) 
+            	    error += "job_id: %s\n" % latest_job['job_id']
+            	    error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
+            	    error += "time_started: %s\n" % latest_job['job']['job_info']['time_start']
+            	    color = "#f23e26"
+                else: continue
+
+    if not is_alert:
+	return
+    #Send the queue status now.
+    subject = "\n\nQueue Status Alert\n\n" 
 
     # send notification via slack
     if slack_url:
@@ -285,57 +298,18 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
 
     # send notification via email
     if email:
-        send_email_notification(email, job_type, subject + error)
-    
+        send_email_notification(email, "Queue Status", subject + error)
 
-def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None):
-    """Check that job type ran successfully within the expected periodicity."""
 
-    logging.info("url: %s" % url)
-    logging.info("job_type: %s" % job_type)
-    logging.info("periodicity: %s" % periodicity)
-    
-    result = []
-    # build query
-    if "job-csk" in job_type or "extract" in job_type:
-        result = do_csk_job_query(url, job_type, "job-completed")
-    else:
-        result = do_job_query(url, job_type, "job-completed")
-    count = result['hits']['total']
-    if count == 0: 
-        error = "No successfully completed job found for job type %s!!\n." % job_type
-        if "job-csk_incoming" in job_type or "extract" in job_type:
-            error=""
-
-    else:
-        latest_job = result['hits']['hits'][0]['_source']
-        logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-        end_dt = datetime.strptime(latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
-        now = datetime.utcnow()
-        delta = (now-end_dt).total_seconds()
-        logging.info("Successful Job delta: %s" % delta)
-        if delta > periodicity:
-            error  = '\nThe last successfully completed job of type "%s" was %.2f-hours ago:\n' % (job_type, delta/3600.) 
-            error += "job_id: %s\n" % latest_job['job_id']
-            #error += "payload_id: %s\n" % latest_job['payload_id']
-            #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
-            #error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
-            error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
-            color = "#f23e26"
-        else: return
-    if "job-csk_incoming" in job_type or "extract" in job_type:
-            error=""
-    #check for failed job now.
-    check_failed_job(url, job_type, periodicity, error, slack_url, email)
 
 if __name__ == "__main__":
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('job_type', help="HySDS job type to watchdog")
+    parser.add_argument('rabbitmq_admin_url', help="RabbitMQ Admin Url")
     parser.add_argument('periodicity', type=int,
                         help="successful job execution periodicity in seconds")
     parser.add_argument('-u', '--url', default=host, help="ElasticSearch URL")
     parser.add_argument('-s', '--slack_url', default=None, help="Slack URL for notification")
     parser.add_argument('-e', '--email', default=None, help="email addresses (comma-separated) for notification")
     args = parser.parse_args()
-    check_job_execution(args.url, args.job_type, args.periodicity, args.slack_url, args.email)
+    check_queue_execution(args.url, args.rabbitmq_admin_url, args.periodicity, args.slack_url, args.email)
