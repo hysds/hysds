@@ -178,55 +178,6 @@ def do_job_query(url, job_type, job_status):
 
     return result
 
-def do_csk_job_query(url, job_type, job_status):
-
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {
-                        "terms": {
-                            "status": [ job_status ]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "resource": [ "job" ]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "type": [ job_type ]
-                        }
-                    },
-		    {
-          		"query_string": {
-            		"query": "CSK",
-            		"default_operator": "OR"
-          		}
-        	    }
-                ]
-            }
-        },
-        "sort": [ {"job.job_info.time_end": { "order":"desc" } } ],
-        "_source": [ "job_id", "payload_id", "payload_hash", "uuid",
-                     "job.job_info.time_queued", "job.job_info.time_start",
-                     "job.job_info.time_end", "error", "traceback" ],
-        "size": 1
-    }
-    logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
-
-    # query
-    url_tmpl = "{}/job_status-current/_search"
-    r = requests.post(url_tmpl.format(url), data=json.dumps(query))
-    if r.status_code != 200:
-        logging.error("Failed to query ES. Got status code %d:\n%s" %
-                      (r.status_code, json.dumps(query, indent=2)))
-    r.raise_for_status()
-    result = r.json()
-
-    return result
-
 def send_email_notification(emails, job_type, text, attachments=[]):
     """Send email notification."""
 
@@ -245,28 +196,18 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
     logging.info("url: %s" % url)
     logging.info("job_type: %s" % job_type)
     logging.info("periodicity: %s" % periodicity)
-    result=[]
 
     # build query
-    if "job-csk" in job_type or "extract" in job_type:
-	result = do_csk_job_query(url, job_type, "job-failed")
-    else:
-    	result = do_job_query(url, job_type, "job-failed")
+    result = do_job_query(url, job_type, "job-failed")
     count = result['hits']['total']
     if count == 0: 
-        error+="\n\nNo Failed job found for job type %s." % job_type
-        if ("job-csk_incoming" in job_type or "extract" in job_type):
-            print(error)
-            return
+        error+="\n\nNo Failed jobs found for job type %s." % job_type
     else:
         latest_job = result['hits']['hits'][0]['_source']
         logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
         end_dt = datetime.strptime(latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
         now = datetime.utcnow()
         delta = (now-end_dt).total_seconds()
-	if ("job-csk_incoming" in job_type or "extract" in job_type) and delta > periodicity:
-	    print("The last failed job of type %s was %.2f-hours ago:\n" %(job_type, delta/3600.))
-	    return
         logging.info("Failed Job delta: %s" % delta)
         error +="\nThe last failed job of type %s was %.2f-hours ago:\n" %(job_type, delta/3600.)
         error += "\njob_id: %s\n" % latest_job['job_id']
@@ -294,19 +235,12 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
     logging.info("url: %s" % url)
     logging.info("job_type: %s" % job_type)
     logging.info("periodicity: %s" % periodicity)
-    
-    result = []
+
     # build query
-    if "job-csk" in job_type or "extract" in job_type:
-        result = do_csk_job_query(url, job_type, "job-completed")
-    else:
-        result = do_job_query(url, job_type, "job-completed")
+    result = do_job_query(url, job_type, "job-completed")
     count = result['hits']['total']
     if count == 0: 
-        error = "No successfully completed job found for job type %s!!\n." % job_type
-        if "job-csk_incoming" in job_type or "extract" in job_type:
-            error=""
-
+        error = "No Successfully Completed jobs found for job type %s!!\n." % job_type
     else:
         latest_job = result['hits']['hits'][0]['_source']
         logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
@@ -315,7 +249,8 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
         delta = (now-end_dt).total_seconds()
         logging.info("Successful Job delta: %s" % delta)
         if delta > periodicity:
-            error  = '\nThe last successfully completed job of type "%s" was %.2f-hours ago:\n' % (job_type, delta/3600.) 
+            error  = '\nThere has not been a successfully completed job type "%s" for more than %.2f-hours.\n' % (job_type, delta/3600.) 
+            error += 'The last successfully completed job:\n'
             error += "job_id: %s\n" % latest_job['job_id']
             #error += "payload_id: %s\n" % latest_job['payload_id']
             #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
@@ -323,8 +258,7 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
             error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
             color = "#f23e26"
         else: return
-    if "job-csk_incoming" in job_type or "extract" in job_type:
-            error=""
+
     #check for failed job now.
     check_failed_job(url, job_type, periodicity, error, slack_url, email)
 
@@ -339,3 +273,4 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--email', default=None, help="email addresses (comma-separated) for notification")
     args = parser.parse_args()
     check_job_execution(args.url, args.job_type, args.periodicity, args.slack_url, args.email)
+
