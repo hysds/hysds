@@ -1,16 +1,18 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno
+import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno, shutil
 from datetime import datetime
 from subprocess import check_output
 from urllib2 import urlopen
 from urlparse import urlparse,ParseResult
 from StringIO import StringIO
 from lxml.etree import XMLParser, parse, tostring
+from importlib import import_module
 from celery.result import AsyncResult
 from urlparse import urlparse
-from hysds.log_utils import logger
+
+from hysds.log_utils import logger, log_prov_es
 from hysds.celery import app
 
 import osaka.main
@@ -21,6 +23,33 @@ DU_CALC = {
     "MB": 1024**2,
     "KB": 1024
 }
+
+
+def get_module(m):
+    """Import module and return."""
+
+    try:
+        return import_module(m)
+    except ImportError:
+        logger.error('Failed to import module "%s".' % m)
+        raise
+
+
+def get_func(f):
+    """Import function and return."""
+
+    if '.' in f:
+        mod_name, func_name = f.rsplit('.', 1)
+        mod = get_module(mod_name)
+        try: return getattr(mod, func_name)
+        except AttributeError:
+            logger.error('Failed to get function "%s" from module "%s".' % (func_name, mod_name))
+            raise
+    else:
+        try: return eval(f)
+        except NameError:
+            logger.error('Failed to get function "%s".' % (f))
+            raise
 
 
 @app.task
@@ -234,3 +263,171 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
         return { '_id': hit['_id'],
                  'status': hit['fields']['status'][0],
                  'query_timestamp': datetime.utcnow().isoformat() }
+
+
+def localize_urls(job, ctx):
+    """Localize urls for job inputs. Track metrics."""
+
+    # get job info
+    job_dir = job['job_info']['job_dir']
+
+    # localize urls
+    for i in job['localize_urls']:
+        url = i['url']
+        path = i.get('local_path', None)
+        if path is None: path = '%s/' % job_dir
+        else:
+            if path.startswith('/'): pass
+            else: path = os.path.join(job_dir, path)
+        if os.path.isdir(path) or path.endswith('/'):
+            path = os.path.join(path, os.path.basename(url))
+        dir_path = os.path.dirname(path)
+        makedirs(dir_path)
+        loc_t1 = datetime.utcnow()
+        try: download_file(url, path)
+        except Exception, e:
+            tb = traceback.format_exc()
+            raise(RuntimeError("Failed to download %s: %s\n%s" % (url, str(e), tb)))
+        loc_t2 = datetime.utcnow()
+        loc_dur = (loc_t2 - loc_t1).total_seconds()
+        path_disk_usage = get_disk_usage(path)
+        job['job_info']['metrics']['inputs_localized'].append({
+            'url': url,
+            'path': path,
+            'disk_usage': path_disk_usage,
+            'time_start': loc_t1.isoformat() + 'Z',
+            'time_end': loc_t2.isoformat() + 'Z',
+            'duration': loc_dur,
+            'transfer_rate': path_disk_usage/loc_dur
+        })
+
+    # signal run_job() to continue
+    return True
+
+
+def find_dataset_json(work_dir):
+    """Search for *.dataset.json files."""
+
+    dataset_re = re.compile(r'^(.*)\.dataset\.json$')
+    for root, dirs, files in os.walk(work_dir, followlinks=True):
+        files.sort()
+        dirs.sort()
+        for file in files:
+            match = dataset_re.search(file)
+            if match:
+                dataset_file = os.path.join(root, file)
+                prod_dir = os.path.join(os.path.dirname(root), match.group(1))
+                if prod_dir != root:
+                    logger.info("%s exists in directory %s. Should be in %s. Not uploading."
+                                % (dataset_file, root, prod_dir))
+                elif not os.path.exists(prod_dir):
+                    logger.info("Couldn't find product directory %s for dataset.json %s. Not uploading."
+                                % (prod_dir, dataset_file))
+                else: yield (dataset_file, prod_dir)
+
+
+def publish_datasets(job, ctx):
+    """Find any HySDS datasets and publish. Track metrics."""
+
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job['job_info']['status']
+    if exit_code != 0:
+        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
+        return True
+
+    # get job info
+    job_dir = job['job_info']['job_dir']
+    time_start_iso = job['job_info']['time_start']
+    context_file = job['job_info']['context_file']
+    datasets_cfg_file = job['job_info']['datasets_cfg_file']
+
+    # time start
+    time_start = datetime.strptime(time_start_iso, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+    # upload any products
+    published_prods = []
+    for dataset_file, prod_dir in find_dataset_json(job_dir):
+
+        # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
+        # also overwrite merged PROV-ES JSON file
+        prod_id = os.path.basename(prod_dir)
+        prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
+        prov_es_info = {}
+        if os.path.exists(prov_es_file):
+            with open(prov_es_file) as f:
+                try: prov_es_info = json.load(f)
+                except Exception, e:
+                    tb = traceback.format_exc()
+                    raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
+            log_prov_es(job, prov_es_info, prov_es_file)
+
+        # copy _context.json
+        prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
+        shutil.copy(context_file, prod_context_file)
+
+        # upload
+        tx_t1 = datetime.utcnow()
+        metrics, prod_json = apply(get_func("hysds.dataset_ingest.ingest"),
+                                   (prod_id, datasets_cfg_file,
+                                    app.conf.GRQ_UPDATE_URL,
+                                    app.conf.DATASET_PROCESSED_QUEUE,
+                                    prod_dir, job_dir))
+        tx_t2 = datetime.utcnow()
+        tx_dur = (tx_t2 - tx_t1).total_seconds()
+        prod_dir_usage = get_disk_usage(prod_dir)
+
+        # save json for published product
+        published_prods.append(prod_json)
+
+        # set product provenance
+        prod_prov = {
+            'product_type': metrics['ipath'],
+            'processing_start_time': time_start.isoformat() + 'Z',
+            'availability_time': tx_t2.isoformat() + 'Z',
+            'processing_latency': (tx_t2 - time_start).total_seconds()/60.,
+            'total_latency': (tx_t2 - time_start).total_seconds()/60.,
+        }
+        prod_prov_file = os.path.join(
+            prod_dir, "%s.prod_prov.json" % prod_id)
+        if os.path.exists(prod_prov_file):
+            with open(prod_prov_file) as f:
+                prod_prov.update(json.load(f))
+        if 'acquisition_start_time' in prod_prov:
+            if 'source_production_time' in prod_prov:
+                prod_prov['ground_system_latency'] = (
+                    parse_iso8601(prod_prov['source_production_time']) -
+                    parse_iso8601(prod_prov['acquisition_start_time'])).total_seconds()/60.
+                prod_prov['total_latency'] += prod_prov['ground_system_latency']
+                prod_prov['access_latency'] = ( 
+                    tx_t2 - parse_iso8601(prod_prov['source_production_time'])).total_seconds()/60.
+                prod_prov['total_latency'] += prod_prov['access_latency']
+        # write product provenance of the last product; not writing to an array under the 
+        # product because kibana table panel won't show them correctly:
+        # https://github.com/elasticsearch/kibana/issues/998
+        job['job_info']['metrics']['product_provenance'] = prod_prov
+
+        job['job_info']['metrics']['products_staged'].append({
+            'path': prod_dir,
+            'disk_usage': prod_dir_usage,
+            'time_start': tx_t1.isoformat() + 'Z',
+            'time_end': tx_t2.isoformat() + 'Z',
+            'duration': tx_dur,
+            'transfer_rate': prod_dir_usage/tx_dur,
+            'id': prod_json['id'],
+            'urls': prod_json['urls'],
+            'browse_urls': prod_json['browse_urls'],
+            'dataset': prod_json['dataset'],
+            'ipath': prod_json['ipath'],
+            'system_version': prod_json['system_version'],
+            'dataset_level': prod_json['dataset_level'],
+            'dataset_type': prod_json['dataset_type'],
+            'index': prod_json['grq_index_result']['index'],
+        })
+
+    # write published products to file
+    pub_prods_file = os.path.join(job_dir, '_datasets.json')
+    with open(pub_prods_file, 'w') as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
+
+    # signal run_job() to continue
+    return True

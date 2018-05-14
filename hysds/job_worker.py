@@ -9,17 +9,21 @@ from celery.signals import task_revoked
 
 import hysds
 from hysds.celery import app
-from hysds.log_utils import (logger, log_job_status, log_job_info,
-log_prov_es, get_job_status, log_task_worker, get_task_worker,
-get_worker_status, log_custom_event)
+from hysds.log_utils import (logger, log_job_status, log_job_info, get_job_status, 
+log_task_worker, get_task_worker, get_worker_status, log_custom_event)
 
-from hysds.utils import (download_file, disk_space_info, get_threshold,
-get_disk_usage, parse_iso8601, get_short_error, query_dedup_job, makedirs)
+from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func,
+get_short_error, query_dedup_job, makedirs)
 from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
-from hysds.dataset_ingest import ingest
 from hysds.user_rules_job import queue_finished_job
 
+
+# built-in pre-processors
+PRE_PROCESSORS = ( 'hysds.utils.localize_urls', )
+
+# built-in post-processors
+POST_PROCESSORS = ( 'hysds.utils.publish_datasets', )
 
 # signal names
 SIG_NAMES = {
@@ -133,27 +137,6 @@ def find_pge_metrics(work_dir):
         dirs.sort()
         for file in files:
             if met_re.search(file): yield os.path.join(root, file)
-
-
-def find_dataset_json(work_dir):
-    """Search for *.dataset.json files."""
-
-    dataset_re = re.compile(r'^(.*)\.dataset\.json$')
-    for root, dirs, files in os.walk(work_dir, followlinks=True):
-        files.sort()
-        dirs.sort()
-        for file in files:
-            match = dataset_re.search(file)
-            if match:
-                dataset_file = os.path.join(root, file)
-                prod_dir = os.path.join(os.path.dirname(root), match.group(1))
-                if prod_dir != root:
-                    logger.info("%s exists in directory %s. Should be in %s. Not uploading."
-                                % (dataset_file, root, prod_dir))
-                elif not os.path.exists(prod_dir):
-                    logger.info("Couldn't find product directory %s for dataset.json %s. Not uploading."
-                                % (prod_dir, dataset_file))
-                else: yield (dataset_file, prod_dir)
 
 
 def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.):
@@ -800,6 +783,8 @@ def run_job(job, queue_when_finished=True):
         context_file = os.path.join(job_dir, '_context.json')
         with open(context_file, 'w') as f:
             json.dump(context, f, indent=2, sort_keys=True)
+        job['job_info']['context_file'] = context_file
+        job['job_info']['datasets_cfg_file'] = datasets_cfg_file
     except Exception, e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
@@ -885,35 +870,15 @@ def run_job(job, queue_when_finished=True):
         with open(context_file, 'w') as f:
             json.dump(context, f, indent=2, sort_keys=True)
 
-        # localize urls
-        for i in job['localize_urls']:
-            url = i['url']
-            path = i.get('local_path', None)
-            if path is None: path = '%s/' % job_dir
-            else:
-                if path.startswith('/'): pass
-                else: path = os.path.join(job_dir, path)
-            if os.path.isdir(path) or path.endswith('/'):
-                path = os.path.join(path, os.path.basename(url))
-            dir_path = os.path.dirname(path)
-            makedirs(dir_path)
-            loc_t1 = datetime.utcnow()
-            try: download_file(url, path)
-            except Exception, e:
-                tb = traceback.format_exc()
-                raise(RuntimeError("Failed to download %s: %s\n%s" % (url, str(e), tb)))
-            loc_t2 = datetime.utcnow()
-            loc_dur = (loc_t2 - loc_t1).total_seconds()
-            path_disk_usage = get_disk_usage(path)
-            job['job_info']['metrics']['inputs_localized'].append({
-                'url': url,
-                'path': path,
-                'disk_usage': path_disk_usage,
-                'time_start': loc_t1.isoformat() + 'Z',
-                'time_end': loc_t2.isoformat() + 'Z',
-                'duration': loc_dur,
-                'transfer_rate': path_disk_usage/loc_dur
-            })
+        # run pre-processing steps
+        disable_pre = job.get('params', {}).get('job_specification', {}).get('disable_pre_builtins', False)
+        pre_processors = [] if disable_pre else list(PRE_PROCESSORS)
+        pre_processors.extend(job.get('params', {}).get('job_specification', {}).get('pre', []))
+        pre_processor_sigs = []
+        for pre_processor in pre_processors:
+            func = get_func(pre_processor)
+            logger.info("Running pre-processor: %s" % pre_processor)
+            pre_processor_sigs.append(func(job, context))
 
         # run real-time monitor
         cmdLineList = [job['command']['path']]
@@ -985,15 +950,24 @@ def run_job(job, queue_when_finished=True):
         cmd_start_iso = cmd_start.isoformat() + 'Z'
         job['job_info']['cmd_start'] = cmd_start_iso
 
-        # use pymonitoredrunner by default
-        monitoredRunner = MonitoredRunner(cmdLineList, job_dir, execEnv,
-                                          app.conf.PYMONITOREDRUNNER_CFG, job_id)
-        monitoredRunner.start()
+        # if all pre-processors signaled True, run command
+        if all(pre_processor_sigs):
+            logger.info("Pre-processing steps all signaled continuation.")
 
-        # wait for completion
-        monitoredRunner.join()
-        status = monitoredRunner.getExitCode()
-        pid = monitoredRunner.getPid()
+            # use pymonitoredrunner by default
+            monitoredRunner = MonitoredRunner(cmdLineList, job_dir, execEnv,
+                                              app.conf.PYMONITOREDRUNNER_CFG, job_id)
+            monitoredRunner.start()
+
+            # wait for completion
+            monitoredRunner.join()
+            status = monitoredRunner.getExitCode()
+            pid = monitoredRunner.getPid()
+        else:
+            no_cont = list(compress(pre_processors, [not i for i in pre_processor_sigs]))
+            logger.info("Pre-processing steps that didn't signal continuation: %s" % ", ".join(no_cont))
+            status = 0
+            pid = 0
 
         # command execution end time and duration
         cmd_end = datetime.utcnow()
@@ -1038,90 +1012,6 @@ def run_job(job, queue_when_finished=True):
 
             # append input localization metrics
             job['job_info']['metrics']['inputs_localized'].extend(pge_metrics.get('download', []))
-
-        # upload any products
-        published_prods = []
-        for dataset_file, prod_dir in find_dataset_json(job_dir):
-
-            # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
-            # also overwrite merged PROV-ES JSON file
-            prod_id = os.path.basename(prod_dir)
-            prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
-            prov_es_info = {}
-            if os.path.exists(prov_es_file):
-                with open(prov_es_file) as f:
-                    try: prov_es_info = json.load(f)
-                    except Exception, e:
-                        tb = traceback.format_exc()
-                        raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
-                log_prov_es(job, prov_es_info, prov_es_file)
-
-            # copy _context.json
-            prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
-            shutil.copy(context_file, prod_context_file)
-
-            # upload
-            tx_t1 = datetime.utcnow()
-            metrics, prod_json = ingest(prod_id, datasets_cfg_file,
-                                        app.conf.GRQ_UPDATE_URL,
-                                        app.conf.DATASET_PROCESSED_QUEUE,
-                                        prod_dir, job_dir)
-            tx_t2 = datetime.utcnow()
-            tx_dur = (tx_t2 - tx_t1).total_seconds()
-            prod_dir_usage = get_disk_usage(prod_dir)
-
-            # save json for published product
-            published_prods.append(prod_json)
-
-            # set product provenance
-            prod_prov = {
-                'product_type': metrics['ipath'],
-                'processing_start_time': time_start.isoformat() + 'Z',
-                'availability_time': tx_t2.isoformat() + 'Z',
-                'processing_latency': (tx_t2 - time_start).total_seconds()/60.,
-                'total_latency': (tx_t2 - time_start).total_seconds()/60.,
-            }
-            prod_prov_file = os.path.join(
-                prod_dir, "%s.prod_prov.json" % prod_id)
-            if os.path.exists(prod_prov_file):
-                with open(prod_prov_file) as f:
-                    prod_prov.update(json.load(f))
-            if 'acquisition_start_time' in prod_prov:
-                if 'source_production_time' in prod_prov:
-                    prod_prov['ground_system_latency'] = (
-                        parse_iso8601(prod_prov['source_production_time']) -
-                        parse_iso8601(prod_prov['acquisition_start_time'])).total_seconds()/60.
-                    prod_prov['total_latency'] += prod_prov['ground_system_latency']
-                    prod_prov['access_latency'] = ( 
-                        tx_t2 - parse_iso8601(prod_prov['source_production_time'])).total_seconds()/60.
-                    prod_prov['total_latency'] += prod_prov['access_latency']
-            # write product provenance of the last product; not writing to an array under the 
-            # product because kibana table panel won't show them correctly:
-            # https://github.com/elasticsearch/kibana/issues/998
-            job['job_info']['metrics']['product_provenance'] = prod_prov
-
-            job['job_info']['metrics']['products_staged'].append({
-                'path': prod_dir,
-                'disk_usage': prod_dir_usage,
-                'time_start': tx_t1.isoformat() + 'Z',
-                'time_end': tx_t2.isoformat() + 'Z',
-                'duration': tx_dur,
-                'transfer_rate': prod_dir_usage/tx_dur,
-                'id': prod_json['id'],
-                'urls': prod_json['urls'],
-                'browse_urls': prod_json['browse_urls'],
-                'dataset': prod_json['dataset'],
-                'ipath': prod_json['ipath'],
-                'system_version': prod_json['system_version'],
-                'dataset_level': prod_json['dataset_level'],
-                'dataset_type': prod_json['dataset_type'],
-                'index': prod_json['grq_index_result']['index'],
-            })
-
-        # write published products to file
-        pub_prods_file = os.path.join(job_dir, '_datasets.json')
-        with open(pub_prods_file, 'w') as f:
-            json.dump(published_prods, f, indent=2, sort_keys=True)
 
         # save job duration
         time_end = datetime.utcnow()
@@ -1233,6 +1123,38 @@ def run_job(job, queue_when_finished=True):
             job_status_json['error'] = error
             job_status_json['short_error'] = get_short_error(error)
             job_status_json['traceback'] = tb
+
+    # run post-processing steps
+    try:
+        disable_post = job.get('params', {}).get('job_specification', {}).get('disable_post_builtins', False)
+        post_processors = [] if disable_post else list(POST_PROCESSORS)
+        post_processors.extend(job.get('params', {}).get('job_specification', {}).get('post', []))
+        post_processor_sigs = []
+        for post_processor in post_processors:
+            func = get_func(post_processor)
+            logger.info("Running post-processor: %s" % post_processor)
+            post_processor_sigs.append(func(job, context))
+
+        # if not all post-processors signaled True, raise error
+        if not all(post_processor_sigs):
+            no_cont = list(compress(post_processors, [not i for i in post_processor_sigs]))
+            err = "Post-processing steps that didn't signal continuation: %s" % ", ".join(no_cont)
+            raise(RuntimeError(err))
+    except Exception, e:
+        error = str(e)
+        job_status_json = { 'uuid': job['task_id'],
+                            'job_id': job['job_id'],
+                            'payload_id': payload_id,
+                            'payload_hash': payload_hash,
+                            'dedup': dedup,
+                            'status': 'job-failed',
+                            'job': job,
+                            'context': context,
+                            'error': error,
+                            'short_error': get_short_error(error),
+                            'traceback': traceback.format_exc(),
+                            'celery_hostname': run_job.request.hostname }
+        fail_job(job_status_json, jd_file)
 
     # close up job execution
     try:
