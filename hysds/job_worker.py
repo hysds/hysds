@@ -1135,11 +1135,10 @@ def run_job(job, queue_when_finished=True):
             logger.info("Running post-processor: %s" % post_processor)
             post_processor_sigs.append(func(job, context))
 
-        # if not all post-processors signaled True, raise error
+        # if not all post-processors signaled True, log them out
         if not all(post_processor_sigs):
             no_cont = list(compress(post_processors, [not i for i in post_processor_sigs]))
-            err = "Post-processing steps that didn't signal continuation: %s" % ", ".join(no_cont)
-            raise(RuntimeError(err))
+            logger.info("Post-processing steps that didn't signal continuation: %s" % ", ".join(no_cont))
     except Exception, e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],

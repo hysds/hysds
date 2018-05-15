@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno, shutil
+import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno
+import shutil, traceback
+from glob import glob
 from datetime import datetime
 from subprocess import check_output
 from urllib2 import urlopen
@@ -326,14 +328,8 @@ def find_dataset_json(work_dir):
                 else: yield (dataset_file, prod_dir)
 
 
-def publish_datasets(job, ctx):
+def publish(job, ctx):
     """Find any HySDS datasets and publish. Track metrics."""
-
-    # if exit code of job command is non-zero, don't publish anything
-    exit_code = job['job_info']['status']
-    if exit_code != 0:
-        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
-        return True
 
     # get job info
     job_dir = job['job_info']['job_dir']
@@ -431,3 +427,62 @@ def publish_datasets(job, ctx):
 
     # signal run_job() to continue
     return True
+
+
+def publish_datasets(job, ctx):
+    """Perform dataset publishing if job exited with zero status code."""
+
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job['job_info']['status']
+    if exit_code != 0:
+        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
+        return True
+
+    # publish
+    return publish(job, ctx)
+
+
+def triage(job, ctx):
+    """Triage failed job's context and job json as well as _run.sh."""
+
+    # if exit code of job command is zero, don't triage anything
+    exit_code = job['job_info']['status']
+    if exit_code == 0:
+        logger.info("Job exited with exit code %s. No need to triage." % exit_code)
+        return True
+
+    # get job info
+    job_dir = job['job_info']['job_dir']
+    job_id = job['job_info']['id']
+
+    # create triage dataset
+    triage_id = "triaged_job-{}".format(job_id)
+    triage_dir = os.path.join(job_dir, triage_id)
+    makedirs(triage_dir)
+
+    # create dataset json
+    ds_file = os.path.join(triage_dir, '{}.dataset.json'.format(triage_id))
+    ds = {
+        'version': 'v0.1',
+        'label': 'triage for job {}'.format(job_id),
+        'starttime': job['job_info']['cmd_start'],
+        'endtime': job['job_info']['cmd_end'],
+    }
+    with open(ds_file, 'w') as f:
+        json.dump(ds, f, sort_keys=True, indent=2)
+
+    # create met json
+    met_file = os.path.join(triage_dir, '{}.met.json'.format(triage_id))
+    with open(met_file, 'w') as f:
+        json.dump(job['job_info'], f, sort_keys=True, indent=2)
+
+    # triage job-related files
+    for f in glob(os.path.join(job_dir, '_*')):
+        shutil.copy(f, triage_dir)
+
+    # triage log files
+    for f in glob(os.path.join(job_dir, '*.log')):
+        shutil.copy(f, triage_dir)
+
+    # publish
+    return publish(job, ctx)
