@@ -480,9 +480,11 @@ def triage(job, ctx):
     ds = {
         'version': 'v{}'.format(hysds.__version__),
         'label': 'triage for job {}'.format(job_id),
-        'starttime': job['job_info']['cmd_start'],
-        'endtime': job['job_info']['cmd_end'],
     }
+    if 'cmd_start' in job['job_info']:
+        ds['starttime'] = job['job_info']['cmd_start']
+    if 'cmd_end' in job['job_info']:
+        ds['endtime'] = job['job_info']['cmd_end']
     with open(ds_file, 'w') as f:
         json.dump(ds, f, sort_keys=True, indent=2)
 
