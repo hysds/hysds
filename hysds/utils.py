@@ -417,8 +417,17 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     return prod_json
 
 
-def find_and_publish_datasets(job, ctx):
-    """Find any HySDS datasets and publish."""
+def publish_datasets(job, ctx):
+    """Perform dataset publishing if job exited with zero status code."""
+
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job['job_info']['status']
+    if exit_code != 0:
+        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
+        return True
+
+    # get job info
+    job_dir = job['job_info']['job_dir']
 
     # find and publish
     published_prods = []
@@ -437,19 +446,6 @@ def find_and_publish_datasets(job, ctx):
 
     # signal run_job() to continue
     return True
-
-
-def publish_datasets(job, ctx):
-    """Perform dataset publishing if job exited with zero status code."""
-
-    # if exit code of job command is non-zero, don't publish anything
-    exit_code = job['job_info']['status']
-    if exit_code != 0:
-        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
-        return True
-
-    # find and publish; signal run_job() to continue
-    return find_and_publish_datasets(job, ctx)
 
 
 def triage(job, ctx):
