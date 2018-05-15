@@ -14,6 +14,7 @@ from importlib import import_module
 from celery.result import AsyncResult
 from urlparse import urlparse
 
+import hysds
 from hysds.log_utils import logger, log_prov_es
 from hysds.celery import app
 
@@ -328,8 +329,8 @@ def find_dataset_json(work_dir):
                 else: yield (dataset_file, prod_dir)
 
 
-def publish(job, ctx):
-    """Find any HySDS datasets and publish. Track metrics."""
+def publish_dataset(prod_dir, dataset_file, job, ctx):
+    """Publish a dataset. Track metrics."""
 
     # get job info
     job_dir = job['job_info']['job_dir']
@@ -340,85 +341,94 @@ def publish(job, ctx):
     # time start
     time_start = datetime.strptime(time_start_iso, '%Y-%m-%dT%H:%M:%S.%fZ')
 
-    # upload any products
+    # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
+    # also overwrite merged PROV-ES JSON file
+    prod_id = os.path.basename(prod_dir)
+    prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
+    prov_es_info = {}
+    if os.path.exists(prov_es_file):
+        with open(prov_es_file) as f:
+            try: prov_es_info = json.load(f)
+            except Exception, e:
+                tb = traceback.format_exc()
+                raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
+        log_prov_es(job, prov_es_info, prov_es_file)
+
+    # copy _context.json
+    prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
+    shutil.copy(context_file, prod_context_file)
+
+    # upload
+    tx_t1 = datetime.utcnow()
+    metrics, prod_json = apply(get_func("hysds.dataset_ingest.ingest"),
+                               (prod_id, datasets_cfg_file,
+                                app.conf.GRQ_UPDATE_URL,
+                                app.conf.DATASET_PROCESSED_QUEUE,
+                                prod_dir, job_dir))
+    tx_t2 = datetime.utcnow()
+    tx_dur = (tx_t2 - tx_t1).total_seconds()
+    prod_dir_usage = get_disk_usage(prod_dir)
+
+    # set product provenance
+    prod_prov = {
+        'product_type': metrics['ipath'],
+        'processing_start_time': time_start.isoformat() + 'Z',
+        'availability_time': tx_t2.isoformat() + 'Z',
+        'processing_latency': (tx_t2 - time_start).total_seconds()/60.,
+        'total_latency': (tx_t2 - time_start).total_seconds()/60.,
+    }
+    prod_prov_file = os.path.join(
+        prod_dir, "%s.prod_prov.json" % prod_id)
+    if os.path.exists(prod_prov_file):
+        with open(prod_prov_file) as f:
+            prod_prov.update(json.load(f))
+    if 'acquisition_start_time' in prod_prov:
+        if 'source_production_time' in prod_prov:
+            prod_prov['ground_system_latency'] = (
+                parse_iso8601(prod_prov['source_production_time']) -
+                parse_iso8601(prod_prov['acquisition_start_time'])).total_seconds()/60.
+            prod_prov['total_latency'] += prod_prov['ground_system_latency']
+            prod_prov['access_latency'] = ( 
+                tx_t2 - parse_iso8601(prod_prov['source_production_time'])).total_seconds()/60.
+            prod_prov['total_latency'] += prod_prov['access_latency']
+    # write product provenance of the last product; not writing to an array under the 
+    # product because kibana table panel won't show them correctly:
+    # https://github.com/elasticsearch/kibana/issues/998
+    job['job_info']['metrics']['product_provenance'] = prod_prov
+
+    job['job_info']['metrics']['products_staged'].append({
+        'path': prod_dir,
+        'disk_usage': prod_dir_usage,
+        'time_start': tx_t1.isoformat() + 'Z',
+        'time_end': tx_t2.isoformat() + 'Z',
+        'duration': tx_dur,
+        'transfer_rate': prod_dir_usage/tx_dur,
+        'id': prod_json['id'],
+        'urls': prod_json['urls'],
+        'browse_urls': prod_json['browse_urls'],
+        'dataset': prod_json['dataset'],
+        'ipath': prod_json['ipath'],
+        'system_version': prod_json['system_version'],
+        'dataset_level': prod_json['dataset_level'],
+        'dataset_type': prod_json['dataset_type'],
+        'index': prod_json['grq_index_result']['index'],
+    })
+
+    return prod_json
+
+
+def find_and_publish_datasets(job, ctx):
+    """Find any HySDS datasets and publish."""
+
+    # find and publish
     published_prods = []
     for dataset_file, prod_dir in find_dataset_json(job_dir):
 
-        # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
-        # also overwrite merged PROV-ES JSON file
-        prod_id = os.path.basename(prod_dir)
-        prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
-        prov_es_info = {}
-        if os.path.exists(prov_es_file):
-            with open(prov_es_file) as f:
-                try: prov_es_info = json.load(f)
-                except Exception, e:
-                    tb = traceback.format_exc()
-                    raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
-            log_prov_es(job, prov_es_info, prov_es_file)
-
-        # copy _context.json
-        prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
-        shutil.copy(context_file, prod_context_file)
-
-        # upload
-        tx_t1 = datetime.utcnow()
-        metrics, prod_json = apply(get_func("hysds.dataset_ingest.ingest"),
-                                   (prod_id, datasets_cfg_file,
-                                    app.conf.GRQ_UPDATE_URL,
-                                    app.conf.DATASET_PROCESSED_QUEUE,
-                                    prod_dir, job_dir))
-        tx_t2 = datetime.utcnow()
-        tx_dur = (tx_t2 - tx_t1).total_seconds()
-        prod_dir_usage = get_disk_usage(prod_dir)
+        # publish
+        prod_json = publish_dataset(prod_dir, dataset_file, job, ctx)
 
         # save json for published product
         published_prods.append(prod_json)
-
-        # set product provenance
-        prod_prov = {
-            'product_type': metrics['ipath'],
-            'processing_start_time': time_start.isoformat() + 'Z',
-            'availability_time': tx_t2.isoformat() + 'Z',
-            'processing_latency': (tx_t2 - time_start).total_seconds()/60.,
-            'total_latency': (tx_t2 - time_start).total_seconds()/60.,
-        }
-        prod_prov_file = os.path.join(
-            prod_dir, "%s.prod_prov.json" % prod_id)
-        if os.path.exists(prod_prov_file):
-            with open(prod_prov_file) as f:
-                prod_prov.update(json.load(f))
-        if 'acquisition_start_time' in prod_prov:
-            if 'source_production_time' in prod_prov:
-                prod_prov['ground_system_latency'] = (
-                    parse_iso8601(prod_prov['source_production_time']) -
-                    parse_iso8601(prod_prov['acquisition_start_time'])).total_seconds()/60.
-                prod_prov['total_latency'] += prod_prov['ground_system_latency']
-                prod_prov['access_latency'] = ( 
-                    tx_t2 - parse_iso8601(prod_prov['source_production_time'])).total_seconds()/60.
-                prod_prov['total_latency'] += prod_prov['access_latency']
-        # write product provenance of the last product; not writing to an array under the 
-        # product because kibana table panel won't show them correctly:
-        # https://github.com/elasticsearch/kibana/issues/998
-        job['job_info']['metrics']['product_provenance'] = prod_prov
-
-        job['job_info']['metrics']['products_staged'].append({
-            'path': prod_dir,
-            'disk_usage': prod_dir_usage,
-            'time_start': tx_t1.isoformat() + 'Z',
-            'time_end': tx_t2.isoformat() + 'Z',
-            'duration': tx_dur,
-            'transfer_rate': prod_dir_usage/tx_dur,
-            'id': prod_json['id'],
-            'urls': prod_json['urls'],
-            'browse_urls': prod_json['browse_urls'],
-            'dataset': prod_json['dataset'],
-            'ipath': prod_json['ipath'],
-            'system_version': prod_json['system_version'],
-            'dataset_level': prod_json['dataset_level'],
-            'dataset_type': prod_json['dataset_type'],
-            'index': prod_json['grq_index_result']['index'],
-        })
 
     # write published products to file
     pub_prods_file = os.path.join(job_dir, '_datasets.json')
@@ -438,8 +448,8 @@ def publish_datasets(job, ctx):
         logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
         return True
 
-    # publish
-    return publish(job, ctx)
+    # find and publish; signal run_job() to continue
+    return find_and_publish_datasets(job, ctx)
 
 
 def triage(job, ctx):
@@ -449,6 +459,11 @@ def triage(job, ctx):
     exit_code = job['job_info']['status']
     if exit_code == 0:
         logger.info("Job exited with exit code %s. No need to triage." % exit_code)
+        return True
+
+    # disable triage
+    if ctx.get('_triage_disabled', False):
+        logger.info("Flag _triage_disabled set to True. Not performing triage.")
         return True
 
     # get job info
@@ -463,7 +478,7 @@ def triage(job, ctx):
     # create dataset json
     ds_file = os.path.join(triage_dir, '{}.dataset.json'.format(triage_id))
     ds = {
-        'version': 'v0.1',
+        'version': 'v{}'.format(hysds.__version__),
         'label': 'triage for job {}'.format(job_id),
         'starttime': job['job_info']['cmd_start'],
         'endtime': job['job_info']['cmd_end'],
@@ -484,5 +499,21 @@ def triage(job, ctx):
     for f in glob(os.path.join(job_dir, '*.log')):
         shutil.copy(f, triage_dir)
 
+    # triage additional globs
+    for g in ctx.get('_triage_additional_globs', []):
+        for f in glob(os.path.join(job_dir, g)):
+            if os.path.isdir(f):
+                shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
+            else:
+                shutil.copy(f, triage_dir)
+
     # publish
-    return publish(job, ctx)
+    prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
+
+    # write published triage to file
+    pub_triage_file = os.path.join(job_dir, '_triaged.json')
+    with open(pub_triage_file, 'w') as f:
+        json.dump(prod_json, f, indent=2, sort_keys=True)
+
+    # signal run_job() to continue
+    return True
