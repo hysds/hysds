@@ -175,12 +175,12 @@ stdout_logfile_backups=10
 startsecs=10
 
 # target tracking metrics
-{% for project in PROJECTS.split() -%}
-{% set project = project | trim -%}
+{% for queue_prefix in QUEUE_PREFIXES.split() -%}
+{% set queue_prefix = queue_prefix | trim -%}
 {% for size in ('large', 'small') %}
-[program:sync_ec2_target_tracking_metric-{{ project }}-{{ size }}]
+[program:sync_ec2_target_tracking_metric-{{ queue_prefix }}-{{ size }}]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
-command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_target_tracking_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ project }}-job_worker-{{ size }} {{ AUTOSCALE_GROUP }}-{{ project }}-{{ VENUE }}
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_target_tracking_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ queue_prefix }}-job_worker-{{ size }} {{ AUTOSCALE_GROUP }}-{{ queue_prefix }}-{{ VENUE }}
 process_name=%(program_name)s
 priority=1
 numprocs=1
