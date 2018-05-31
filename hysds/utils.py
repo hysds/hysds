@@ -426,6 +426,12 @@ def publish_datasets(job, ctx):
         logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
         return True
 
+    # if job command never ran, don't publish anything
+    pid = job['job_info']['pid']
+    if pid == 0:
+        logger.info("Job command never ran. Bypassing dataset publishing.")
+        return True
+
     # get job info
     job_dir = job['job_info']['job_dir']
 
