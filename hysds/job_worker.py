@@ -1153,7 +1153,6 @@ def run_job(job, queue_when_finished=True):
                             'short_error': get_short_error(error),
                             'traceback': traceback.format_exc(),
                             'celery_hostname': run_job.request.hostname }
-        fail_job(job_status_json, jd_file)
 
     # close up job execution
     try:
