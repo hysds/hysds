@@ -46,7 +46,7 @@ def bootstrap_asg(asg):
 def submit_metric(queue, asg, metric, metric_ns):
     """Submit EC2 custom metric data."""
 
-    metric_name = 'JobsWaitingPerInstance-%s-%s' % (queue, asg)
+    metric_name = 'JobsWaitingPerInstance-%s' % (asg)
     client = boto3.client('cloudwatch')
     client.put_metric_data(Namespace=metric_ns,
                            MetricData=[{
