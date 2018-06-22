@@ -42,6 +42,21 @@ def backoff_max_tries():
     return app.conf.BACKOFF_MAX_TRIES
 
 
+def hard_time_limit_gap():
+    """Return minimum gap time after soft time limit."""
+    return app.conf.HARD_TIME_LIMIT_GAP
+
+
+def ensure_hard_time_limit_gap(soft_time_limit, time_limit):
+    """Ensure hard time limit gap."""
+
+    gap = hard_time_limit_gap()
+    if soft_time_limit is not None and (time_limit is None or
+                                        time_limit <= soft_time_limit+gap):
+        time_limit = soft_time_limit + gap
+    return soft_time_limit, time_limit
+
+
 def set_redis_job_status_pool():
     """Set redis connection pool for job status."""
 
