@@ -8,7 +8,7 @@ from celery import uuid
 
 from hysds.celery import app
 from hysds.log_utils import (logger, log_job_status, backoff_max_tries,
-backoff_max_value)
+backoff_max_value, ensure_hard_time_limit_gap)
 from hysds.job_worker import run_job
 from hysds.utils import (error_handler, get_short_error, get_payload_hash,
 query_dedup_job)
@@ -297,9 +297,10 @@ def submit_job(j):
         # set context
         job.setdefault('context', {}).update(context)
 
-        # override hard/soft time limits
-        time_limit = jc.get('time_limit', time_limit)
-        soft_time_limit = jc.get('soft_time_limit', soft_time_limit)
+        # override hard/soft time limits and ensure gap
+        soft_time_limit, time_limit = ensure_hard_time_limit_gap(
+            jc.get('soft_time_limit', soft_time_limit),
+            jc.get('time_limit', time_limit))
 
         # queue jobs
         for queue in jc['job_queues']:
