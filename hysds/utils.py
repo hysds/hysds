@@ -13,6 +13,8 @@ from lxml.etree import XMLParser, parse, tostring
 from importlib import import_module
 from celery.result import AsyncResult
 from urlparse import urlparse
+from atomicwrites import atomic_write
+from bisect import insort
 
 import hysds
 from hysds.log_utils import logger, log_prov_es
@@ -65,13 +67,51 @@ def error_handler(uuid):
                 (uuid, exc, result.traceback))
 
 
-class download_file_error(Exception): pass
+def download_file(url, path, cache=False):
+    """Download file/dir for input."""
+
+    if cache:
+        url_hash = hashlib.md5(url).hexdigest()
+        cache_dir = os.path.join(app.conf.ROOT_WORK_DIR, 'cache', url_hash)
+        makedirs(cache_dir)
+        signal_file = os.path.join(cache_dir, '.localized')
+        if os.path.exists(signal_file):
+            logger.info("cache hit for {} at {}".format(url, cache_dir))
+        else:
+            logger.info("cache miss for {}".format(url))
+            try: osaka.main.get(url, cache_dir)
+            except Exception, e:
+                shutil.rmtree(cache_dir)
+                tb = traceback.format_exc()
+                raise(RuntimeError("Failed to download %s to cache %s: %s\n%s" % \
+                    (url, cache_dir, str(e), tb)))
+            with atomic_write(signal_file, overwrite=True) as f:
+                f.write("%sZ\n" % datetime.utcnow().isoformat())
+        for i in os.listdir(cache_dir):
+            if i == '.localized': continue
+            cached_obj = os.path.join(cache_dir, i)
+            if os.path.isdir(cached_obj):
+                if os.path.isdir(path):
+                    shutil.copytree(cached_obj, os.path.join(path, i))
+                else: shutil.copytree(cached_obj, path)
+            else: shutil.copy2(cached_obj, path)
+    else: return osaka.main.get(url, path)
 
 
-def download_file(url, path, oauth_url=None, s3_region=None):
-    """Download file for input."""
-    return osaka.main.get(url, path, params={ "oauth": oauth_url,
-                                              "s3-region": s3_region })
+def find_cache_dir(cache_dir):
+    """Search for *.localized files."""
+
+    cache_dirs = []
+    for root, dirs, files in os.walk(cache_dir, followlinks=True):
+        files.sort()
+        dirs.sort()
+        for file in files:
+            if file == '.localized':
+                signal_file = os.path.join(root, file)
+                with open(signal_file) as f:
+                    timestamp = f.read()
+                insort(cache_dirs, (timestamp, signal_file, root))
+    return cache_dirs[::-1]
 
 
 def disk_space_info(path):
@@ -278,6 +318,7 @@ def localize_urls(job, ctx):
     for i in job['localize_urls']:
         url = i['url']
         path = i.get('local_path', None)
+        cache = i.get('cache', True)
         if path is None: path = '%s/' % job_dir
         else:
             if path.startswith('/'): pass
@@ -287,7 +328,7 @@ def localize_urls(job, ctx):
         dir_path = os.path.dirname(path)
         makedirs(dir_path)
         loc_t1 = datetime.utcnow()
-        try: download_file(url, path)
+        try: download_file(url, path, cache=cache)
         except Exception, e:
             tb = traceback.format_exc()
             raise(RuntimeError("Failed to download %s: %s\n%s" % (url, str(e), tb)))

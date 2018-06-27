@@ -166,7 +166,7 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.):
 
     # cleanup cached products if free disk space not met
     if percent_free <= threshold:
-        evict_cached_products(work_path, cache_path, percent_free, threshold)
+        evict_localize_cache(work_path, cache_path, percent_free, threshold)
 
     # log final disk stats
     capacity, free, used, percent_free = disk_space_info(work_path)
@@ -224,19 +224,14 @@ def cleanup_old_jobs(work_path, jobs_path, percent_free, threshold=10., zero_sta
     return percent_free
             
     
-def evict_cached_products(work_path, cache_path, percent_free, threshold=10.):
-    """If free disk space is below percent threshold, start evicting cached products."""
+def evict_localize_cache(work_path, cache_path, percent_free, threshold=10.):
+    """If free disk space is below percent threshold, start evicting cache directories."""
 
     if percent_free <= threshold:
-        logger.info("Evicting cached products to clean out to %02.2f%% free disk space." % threshold)
-        for dataset_file, prod_dir in find_dataset_json(cache_path):
-            prod_id = os.path.basename(prod_dir)
-            logger.info("Eviction algorithm unimplemented.")
-            #prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
-            #if os.path.exists(prov_es_file):
-            #if '.done' not in files or '_context.json' not in files or '_job.json' not in files: continue
-            #logger.info("Cleaning out old product %s" % root)
-            #shutil.rmtree(root, ignore_errors=True)
+        logger.info("Evicting cached dirs to clean out to %02.2f%% free disk space." % threshold)
+        for timestamp, signal_file, cache_dir in find_cache_dir(cache_path):
+            logger.info("Cleaning out cache dir %s" % cache_dir)
+            shutil.rmtree(cache_dir, ignore_errors=True)
             capacity, free, used, percent_free = disk_space_info(work_path)
             if percent_free <= threshold: continue
             logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)

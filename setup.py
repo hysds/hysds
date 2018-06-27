@@ -17,6 +17,7 @@ setup(
         'filechunkio>=1.6.0', 'boto>=2.38.0', 'msgpack-python>=0.4.6', 
         'boto3>=1.2.6', 'backoff>=1.3.1', 'protobuf>=3.1.0.post1', 
         'google-cloud>=0.22.0', 'google-cloud-monitoring>=0.22.0', 
-        'osaka>=0.0.1', 'prov_es==0.1.1', 'hysds_commons>=0.1'
+        'osaka>=0.0.1', 'prov_es==0.1.1', 'hysds_commons>=0.1',
+        'atomicwrites>=1.1.5'
     ]
 )
