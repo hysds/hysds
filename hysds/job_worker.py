@@ -20,10 +20,15 @@ from hysds.user_rules_job import queue_finished_job
 
 
 # built-in pre-processors
-PRE_PROCESSORS = ( 'hysds.utils.localize_urls', )
+PRE_PROCESSORS = (
+    'hysds.utils.localize_urls',
+    'hysds.utils.mark_localized_datasets',
+)
 
 # built-in post-processors
-POST_PROCESSORS = ( 'hysds.utils.publish_datasets', )
+POST_PROCESSORS = (
+    'hysds.utils.publish_datasets',
+)
 
 # signal names
 SIG_NAMES = {

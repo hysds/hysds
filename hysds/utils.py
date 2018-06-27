@@ -480,6 +480,12 @@ def publish_datasets(job, ctx):
     published_prods = []
     for dataset_file, prod_dir in find_dataset_json(job_dir):
 
+        # skip if marked as localized input
+        signal_file = os.path.join(prod_dir, '.localized')
+        if os.path.exists(signal_file):
+            logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+            continue
+
         # publish
         prod_json = publish_dataset(prod_dir, dataset_file, job, ctx)
 
@@ -559,6 +565,22 @@ def triage(job, ctx):
     pub_triage_file = os.path.join(job_dir, '_triaged.json')
     with open(pub_triage_file, 'w') as f:
         json.dump(prod_json, f, indent=2, sort_keys=True)
+
+    # signal run_job() to continue
+    return True
+
+
+def mark_localize_datasets(job, ctx):
+    """Mark localized datasets to prevent republishing."""
+
+    # get job info
+    job_dir = job['job_info']['job_dir']
+
+    # find localized datasets and mark
+    for dataset_file, prod_dir in find_dataset_json(job_dir):
+        signal_file = os.path.join(prod_dir, '.localized')
+        with atomic_write(signal_file, overwrite=True) as f:
+            f.write("%sZ\n" % datetime.utcnow().isoformat())
 
     # signal run_job() to continue
     return True
