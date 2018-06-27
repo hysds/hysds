@@ -72,7 +72,8 @@ def download_file(url, path, cache=False):
 
     if cache:
         url_hash = hashlib.md5(url).hexdigest()
-        cache_dir = os.path.join(app.conf.ROOT_WORK_DIR, 'cache', url_hash)
+        hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, 'cache', *url_hash[0:4])
+        cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
         signal_file = os.path.join(cache_dir, '.localized')
         if os.path.exists(signal_file):
