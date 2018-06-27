@@ -570,7 +570,7 @@ def triage(job, ctx):
     return True
 
 
-def mark_localize_datasets(job, ctx):
+def mark_localized_datasets(job, ctx):
     """Mark localized datasets to prevent republishing."""
 
     # get job info
