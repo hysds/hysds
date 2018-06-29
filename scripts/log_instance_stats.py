@@ -64,7 +64,10 @@ def daemon(redis_url, redis_key, interval):
                           'mount_point': mnt_point,
                           'fs_type': fs_type,
                           'fs_opts': fs_opts }
-            disk_info.update(psutil.disk_usage(mnt_point)._asdict())
+            try: disk_info.update(psutil.disk_usage(mnt_point)._asdict())
+            except Exception, e:
+                logging.error("Got exception trying to get disk usage for %s: %s\nSkipping." % (mnt_point, str(e)))
+                continue
             stats['disk']['all'].append(disk_info)
             if mnt_point == '/':
                 stats['disk']['root'] = disk_info
