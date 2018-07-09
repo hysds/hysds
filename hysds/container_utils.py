@@ -1,13 +1,19 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import os, sys, json
+import os, sys, json, backoff
+from datetime import datetime
 from subprocess import check_output, Popen, PIPE
+from atomicwrites import atomic_write
 
 from hysds.log_utils import logger
 from hysds.celery import app
 
 import osaka.main
+
+
+# max time to wait for image to load
+IMAGE_LOAD_TIME_MAX = 600
 
 
 def verify_docker_mount(m):
@@ -65,6 +71,11 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     return params
 
 
+@backoff.on_exception(backoff.expo, Exception, max_time=IMAGE_LOAD_TIME_MAX)
+def inspect_image(image):
+    return check_output(['docker', 'inspect', image])
+
+
 def ensure_image_loaded(image_name, image_url, cache_dir):
     """Pull docker image into local repo."""
 
@@ -87,14 +98,25 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                                        (image_url, str(e))))
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
-            logger.info("Loading image %s (%s)" % (image_file, image_name))
-            p = Popen(['docker', 'load', '-i', image_file], stderr=PIPE, stdout=PIPE)
-            stdout, stderr = p.communicate()
-            if p.returncode != 0:
-                raise(RuntimeError("Failed to load image %s (%s): %s" % (image_file, image_name, stderr)))
-            logger.info("Loaded image %s (%s)" % (image_file, image_name))
-            try: os.unlink(image_file)
-            except: pass
+            load_lock = "{}.load.lock".format(image_file)
+            try:
+                with atomic_write(load_lock) as f:
+                    f.write("%sZ\n" % datetime.utcnow().isoformat())
+                logger.info("Loading image %s (%s)" % (image_file, image_name))
+                p = Popen(['docker', 'load', '-i', image_file], stderr=PIPE, stdout=PIPE)
+                stdout, stderr = p.communicate()
+                if p.returncode != 0:
+                    raise(RuntimeError("Failed to load image %s (%s): %s" % (image_file, image_name, stderr)))
+                logger.info("Loaded image %s (%s)" % (image_file, image_name))
+                try: os.unlink(image_file)
+                except: pass
+                try: os.unlink(load_lock)
+                except: pass
+            except OSError, e:
+                if e.errno == 17:
+                    logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
+                    inspect_image(image_name)
+                else: raise
         else:
             # pull image from docker hub
             logger.info("Pulling image %s from docker hub" % image_name)
