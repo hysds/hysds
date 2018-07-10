@@ -13,7 +13,7 @@ from hysds.log_utils import (logger, log_job_status, log_job_info, get_job_statu
 log_task_worker, get_task_worker, get_worker_status, log_custom_event)
 
 from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func,
-get_short_error, query_dedup_job, makedirs, find_dataset_json)
+get_short_error, query_dedup_job, makedirs, find_dataset_json, find_cache_dir)
 from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
