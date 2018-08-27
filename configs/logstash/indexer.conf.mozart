@@ -1,6 +1,7 @@
 input {
   redis {
     host => "{{ MOZART_REDIS_PVT_IP }}"
+    {% if MOZART_REDIS_PASSWORD != "" %}password => "{{ MOZART_REDIS_PASSWORD }}"{% endif %}
     # these settings should match the output of the agent
     data_type => "list"
     key => "logstash"
