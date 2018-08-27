@@ -1,6 +1,7 @@
 input { 
   redis {
     host => "{{ METRICS_REDIS_PVT_IP }}"
+    {% if METRICS_REDIS_PASSWORD != "" %}password => "{{ METRICS_REDIS_PASSWORD }}"{% endif %}
     # these settings should match the output of the agent
     data_type => "list"
     key => "logstash"
