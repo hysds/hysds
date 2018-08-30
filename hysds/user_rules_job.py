@@ -7,6 +7,39 @@ from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 
  
+@backoff.on_exception(backoff.expo,
+                      Exception,
+                      max_tries=backoff_max_tries,
+                      max_value=backoff_max_value)
+def ensure_job_indexed(job_id, es_url, alias):
+    """Ensure job is indexed."""
+
+    query = {
+        "query":{
+            "bool":{
+                "must":[
+                    { 'term': { '_id': job_id }}
+                ]
+            }
+        },
+        "fields": [],
+    }
+    logger.info("ensure_job_indexed query: %s" % json.dumps(query, indent=2))
+    if es_url.endswith('/'):
+        search_url = '%s%s/_search' % (es_url, alias)
+    else:
+        search_url = '%s/%s/_search' % (es_url, alias)
+    logger.info("ensure_job_indexed url: %s" % search_url)
+    r = requests.post(search_url, data=json.dumps(query))
+    logger.info("ensure_job_indexed status: %s" % r.status_code)
+    r.raise_for_status()
+    result = r.json()
+    logger.info("ensure_job_indexed result: %s" % json.dumps(result, indent=2))
+    total = result['hits']['total']
+    if total == 0:
+        raise RuntimeError("Failed to find indexed job: %s" % job_id)
+
+
 def get_job(job_id, rule, result):
     """Return generic json job configuration."""
 
@@ -69,6 +102,9 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
 
     # sleep 10 seconds to allow ES documents to be indexed
     time.sleep(10)
+
+    # ensure job is indexed
+    ensure_job_indexed(job_id, es_url, alias)
 
     # get all enabled user rules
     query = { "query": { "term": { "enabled": True } } }

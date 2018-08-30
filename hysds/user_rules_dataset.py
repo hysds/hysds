@@ -7,6 +7,40 @@ from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
  
 
+@backoff.on_exception(backoff.expo,
+                      Exception,
+                      max_tries=backoff_max_tries,
+                      max_value=backoff_max_value)
+def ensure_dataset_indexed(objectid, system_version, es_url, alias):
+    """Ensure dataset is indexed."""
+
+    query = {
+        "query":{
+            "bool":{
+                "must":[
+                    { 'term': { '_id': objectid }},
+                    { 'term': { 'system_version.raw': system_version }}
+                ]
+            }
+        },
+        "fields": [],
+    }
+    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query, indent=2))
+    if es_url.endswith('/'):
+        search_url = '%s%s/_search' % (es_url, alias)
+    else:
+        search_url = '%s/%s/_search' % (es_url, alias)
+    logger.info("ensure_dataset_indexed url: %s" % search_url)
+    r = requests.post(search_url, data=json.dumps(query))
+    logger.info("ensure_dataset_indexed status: %s" % r.status_code)
+    r.raise_for_status()
+    result = r.json()
+    logger.info("ensure_dataset_indexed result: %s" % json.dumps(result, indent=2))
+    total = result['hits']['total']
+    if total == 0:
+        raise RuntimeError("Failed to find indexed dataset: %s (%s)" % (objectid, system_version))
+
+
 def update_query(objectid, system_version, rule):
     """Update final query."""
 
@@ -57,6 +91,9 @@ def evaluate_user_rules_dataset(objectid, system_version,
 
     # sleep for 10 seconds; let any documents finish indexing in ES
     time.sleep(10)
+
+    # ensure dataset is indexed
+    ensure_dataset_indexed(objectid, system_version, es_url, alias)
 
     # get all enabled user rules
     query = { "query": { "term": { "enabled": True } } }
