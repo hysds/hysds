@@ -103,7 +103,18 @@ def is_jobless(root_work, inactivity_secs, logger=None):
 @backoff.on_exception(backoff.expo, ClientError, max_tries=10, max_value=512)
 def get_all_groups(c):
     """Get all AutoScaling groups."""
-    return c.describe_auto_scaling_groups()['AutoScalingGroups']
+
+    groups = []
+    next_token = None
+    while True:
+        if next_token is None:
+            resp = c.describe_auto_scaling_groups()
+        else:
+            resp = c.describe_auto_scaling_groups(NextToken=next_token)
+        groups.extend(resp['AutoScalingGroups'])
+        next_token = resp.get('NextToken', None)
+        if next_token is None: break
+    return groups
 
 
 @backoff.on_exception(backoff.expo, ClientError, max_tries=10, max_value=512)
