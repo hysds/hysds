@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-import os, sys, json, requests, time, backoff, socket
+import os, sys, json, requests, time, backoff, socket, traceback
 
 import hysds
 from hysds.celery import app
@@ -132,8 +132,13 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
         # check for matching rules
         update_query(job_id, rule)
         final_qs = rule['query_string']
-        r = requests.post('%s/job_status-current/job/_search' % es_url, data=final_qs)
-        r.raise_for_status()
+        try:
+            r = requests.post('%s/job_status-current/job/_search' % es_url, data=final_qs)
+            r.raise_for_status()
+        except:
+            logger.error("Failed to query ES. Got status code %d:\n%s" %
+                         (r.status_code, traceback.format_exc()))
+            continue
         result = r.json()
         if result['hits']['total'] == 0:
             logger.info("Rule '%s' didn't match for %s" % (rule['rule_name'], job_id))
