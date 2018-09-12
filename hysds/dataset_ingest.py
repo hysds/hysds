@@ -279,129 +279,147 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     # get type
     dtype = r.getType()
 
-    # get publish path
-    pub_path_url = r.getPublishPath()
-
-    # get publish urls
-    pub_urls = [i for i in r.getPublishUrls()]
-
-    # get S3 profile name and api keys for dataset publishing
-    s3_secret_key, s3_access_key = r.getS3Keys()
-    s3_profile = r.getS3Profile()
-
-    # set osaka params
-    osaka_params = {}
-
-    # S3 profile takes precedence over explicit api keys
-    if s3_profile is not None:
-        osaka_params['profile_name'] = s3_profile
-    else:
-        if s3_secret_key is not None and s3_access_key is not None:
-            osaka_params['aws_access_key_id'] = s3_access_key
-            osaka_params['aws_secret_access_key'] = s3_secret_key
-
-    # get browse path and urls
-    browse_path = r.getBrowsePath()
-    browse_urls = r.getBrowseUrls()
-
-    # get S3 profile name and api keys for browse image publishing
-    s3_secret_key_browse, s3_access_key_browse = r.getS3Keys("browse")
-    s3_profile_browse = r.getS3Profile("browse")
-
-    # set osaka params for browse
-    osaka_params_browse = {}
-
-    # S3 profile takes precedence over explicit api keys
-    if s3_profile_browse is not None:
-        osaka_params_browse['profile_name'] = s3_profile_browse
-    else:
-        if s3_secret_key_browse is not None and s3_access_key_browse is not None:
-            osaka_params_browse['aws_access_key_id'] = s3_access_key_browse
-            osaka_params_browse['aws_secret_access_key'] = s3_secret_key_browse
-
-    # get pub host and path
-    logger.info("Configured pub host & path: %s" % (pub_path_url))
-
-    # check scheme
-    if not osaka.main.supported(pub_path_url):
-        raise RuntimeError("Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
-
-    # upload dataset to repo; track disk usage and start/end times of transfer
-    prod_dir_usage = get_disk_usage(local_prod_path)
-    tx_t1 = datetime.utcnow()
-    if dry_run:
-        logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
-    else:
-        publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
-    tx_t2 = datetime.utcnow()
-
-    # add metadata for all browse images and upload to browse location
-    imgs_metadata = []
-    imgs = glob('%s/*browse.png' % local_prod_path)
-    for img in imgs:
-        img_metadata = { 'img': os.path.basename(img) }
-        small_img = img.replace('browse.png', 'browse_small.png')
-        if os.path.exists(small_img):
-            small_img_basename = os.path.basename(small_img)
-            if browse_path is not None:
-                this_browse_path = os.path.join(browse_path, small_img_basename)
-                if dry_run:
-                    logger.info("Would've uploaded %s to %s" % (small_img, browse_path))
-                else:
-                    logger.info("Uploading %s to %s" % (small_img, browse_path))
-                    osaka.main.put(small_img, this_browse_path,
-                                   params=osaka_params_browse, noclobber=False)
-        else: small_img_basename = None
-        img_metadata['small_img'] = small_img_basename
-        tooltip_match = BROWSE_RE.search(img_metadata['img'])
-        if tooltip_match: img_metadata['tooltip'] = tooltip_match.group(1)
-        else: img_metadata['tooltip'] = ""
-        imgs_metadata.append(img_metadata)
-
-    # sort browse images
-    browse_sort_order = r.getBrowseSortOrder()
-    if isinstance(browse_sort_order, types.ListType) and len(browse_sort_order) > 0:
-        bso_regexes = [re.compile(i) for i in browse_sort_order]
-        sorter =  {}
-        unrecognized = []
-        for img in imgs_metadata:
-            matched = None
-            for i, bso_re in enumerate(bso_regexes):
-                if bso_re.search(img['img']):
-                    matched = img
-                    sorter[i] = matched
-                    break
-            if matched is None: unrecognized.append(img)
-        imgs_metadata = [sorter[i] for i in sorted(sorter)]
-        imgs_metadata.extend(unrecognized)
-
-    # save dataset metrics on size and transfer
-    tx_dur = (tx_t2 - tx_t1).total_seconds()
+    # set product metrics
     prod_metrics = {
         'ipath': ipath,
-        'url': urlparse(pub_path_url).path,
-        'path': local_prod_path,
-        'disk_usage': prod_dir_usage,
-        'time_start': tx_t1.isoformat() + 'Z',
-        'time_end': tx_t2.isoformat() + 'Z',
-        'duration': tx_dur,
-        'transfer_rate': prod_dir_usage/tx_dur
+        'path': local_prod_path
     }
 
+    # publish dataset
+    if r.publishConfigured():
+        logger.info("Dataset publish is configured.")
+
+        # get publish path
+        pub_path_url = r.getPublishPath()
+
+        # get publish urls
+        pub_urls = [i for i in r.getPublishUrls()]
+
+        # get S3 profile name and api keys for dataset publishing
+        s3_secret_key, s3_access_key = r.getS3Keys()
+        s3_profile = r.getS3Profile()
+
+        # set osaka params
+        osaka_params = {}
+
+        # S3 profile takes precedence over explicit api keys
+        if s3_profile is not None:
+            osaka_params['profile_name'] = s3_profile
+        else:
+            if s3_secret_key is not None and s3_access_key is not None:
+                osaka_params['aws_access_key_id'] = s3_access_key
+                osaka_params['aws_secret_access_key'] = s3_secret_key
+
+        # get pub host and path
+        logger.info("Configured pub host & path: %s" % (pub_path_url))
+
+        # check scheme
+        if not osaka.main.supported(pub_path_url):
+            raise RuntimeError("Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
+
+        # upload dataset to repo; track disk usage and start/end times of transfer
+        prod_dir_usage = get_disk_usage(local_prod_path)
+        tx_t1 = datetime.utcnow()
+        if dry_run:
+            logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
+        else:
+            publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
+        tx_t2 = datetime.utcnow()
+        tx_dur = (tx_t2 - tx_t1).total_seconds()
+
+        # save dataset metrics on size and transfer
+        prod_metrics.update({
+            'url': urlparse(pub_path_url).path,
+            'disk_usage': prod_dir_usage,
+            'time_start': tx_t1.isoformat() + 'Z',
+            'time_end': tx_t2.isoformat() + 'Z',
+            'duration': tx_dur,
+            'transfer_rate': prod_dir_usage/tx_dur
+        })
+    else:
+        logger.info("Dataset publish is not configured.")
+        pub_urls = []
+
+    # publish browse
+    if r.browseConfigured():
+        logger.info("Browse publish is configured.")
+
+        # get browse path and urls
+        browse_path = r.getBrowsePath()
+        browse_urls = r.getBrowseUrls()
+
+        # get S3 profile name and api keys for browse image publishing
+        s3_secret_key_browse, s3_access_key_browse = r.getS3Keys("browse")
+        s3_profile_browse = r.getS3Profile("browse")
+
+        # set osaka params for browse
+        osaka_params_browse = {}
+
+        # S3 profile takes precedence over explicit api keys
+        if s3_profile_browse is not None:
+            osaka_params_browse['profile_name'] = s3_profile_browse
+        else:
+            if s3_secret_key_browse is not None and s3_access_key_browse is not None:
+                osaka_params_browse['aws_access_key_id'] = s3_access_key_browse
+                osaka_params_browse['aws_secret_access_key'] = s3_secret_key_browse
+
+        # add metadata for all browse images and upload to browse location
+        imgs_metadata = []
+        imgs = glob('%s/*browse.png' % local_prod_path)
+        for img in imgs:
+            img_metadata = { 'img': os.path.basename(img) }
+            small_img = img.replace('browse.png', 'browse_small.png')
+            if os.path.exists(small_img):
+                small_img_basename = os.path.basename(small_img)
+                if browse_path is not None:
+                    this_browse_path = os.path.join(browse_path, small_img_basename)
+                    if dry_run:
+                        logger.info("Would've uploaded %s to %s" % (small_img, browse_path))
+                    else:
+                        logger.info("Uploading %s to %s" % (small_img, browse_path))
+                        osaka.main.put(small_img, this_browse_path,
+                                       params=osaka_params_browse, noclobber=False)
+            else: small_img_basename = None
+            img_metadata['small_img'] = small_img_basename
+            tooltip_match = BROWSE_RE.search(img_metadata['img'])
+            if tooltip_match: img_metadata['tooltip'] = tooltip_match.group(1)
+            else: img_metadata['tooltip'] = ""
+            imgs_metadata.append(img_metadata)
+
+        # sort browse images
+        browse_sort_order = r.getBrowseSortOrder()
+        if isinstance(browse_sort_order, types.ListType) and len(browse_sort_order) > 0:
+            bso_regexes = [re.compile(i) for i in browse_sort_order]
+            sorter =  {}
+            unrecognized = []
+            for img in imgs_metadata:
+                matched = None
+                for i, bso_re in enumerate(bso_regexes):
+                    if bso_re.search(img['img']):
+                        matched = img
+                        sorter[i] = matched
+                        break
+                if matched is None: unrecognized.append(img)
+            imgs_metadata = [sorter[i] for i in sorted(sorter)]
+            imgs_metadata.extend(unrecognized)
+    else:
+        logger.info("Browse publish is not configured.")
+        browse_urls = []
+        imgs_metadata = []
+
     # set update json
-    ipath = r.currentIpath
     update_json = {
         'id': objectid,
         'objectid': objectid,
         'metadata': metadata,
-        'urls': pub_urls,
-        'browse_urls': browse_urls,
-        'images': imgs_metadata,
         'dataset': ipath.split('/')[1],
         'ipath': ipath,
         'system_version': version,
         'dataset_level': level,
         'dataset_type': dtype,
+        'urls': pub_urls,
+        'browse_urls': browse_urls,
+        'images': imgs_metadata,
     }
     update_json.update(dataset)
     #logger.info("update_json: %s" % pformat(update_json))

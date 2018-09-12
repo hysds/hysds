@@ -119,6 +119,13 @@ class Recognizer:
         else:
             return self.recognized['type'].format(**self.group_dict)
         
+    def publishConfigured(self):
+        """Return True if dataset publish is configured. False otherwise."""
+
+        if isinstance(self.recognized, dict) and 'publish' in self.recognized:
+            return True
+        else: return False
+        
     def getPublishPath(self):
         """Generate and return the publish path."""
 
@@ -127,6 +134,13 @@ class Recognizer:
             return self.recognized['publish']['location'].format(
                 hostname=self.hostname, **self.group_dict)
         
+    def browseConfigured(self):
+        """Return True if browse publish is configured. False otherwise."""
+
+        if isinstance(self.recognized, dict) and 'browse' in self.recognized:
+            return True
+        else: return False
+
     def getBrowsePath(self):
         """Generate and return the browse path."""
         
