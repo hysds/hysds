@@ -219,7 +219,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
     # tag jobs for requeue
     logging.info("The dataset of these no-clobber jobs are detected to not be ingested in s3:")
     for job in sorted(results_to_requeue):
-        src = job['fields']['_source']
+        src = job['fields']['_source'][0]
         job_name = src.get('job', {}).get('name')
         job_id = job['_id']
         logging.info("id: %s name: %s" % (job_id, job_name))
