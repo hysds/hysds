@@ -169,7 +169,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
     # get list of results and sort by bucket
     results_to_clean = {}
-    results_to_requeue = {}
+    results_to_requeue = []
     while True:
         r = requests.post('%s/_search/scroll?scroll=10m' % jobs_es_url, data=scroll_id)
         res = r.json()
@@ -194,7 +194,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
             results_to_clean.setdefault(bucket, []).extend(dataset_objs)
 
             # get list of jobs in mozart es that needs to be tagged for requeue
-            results_to_requeue.update(hit)
+            results_to_requeue.append(hit)
 
 
     # print results per bucket
