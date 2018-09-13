@@ -162,6 +162,8 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
     r.raise_for_status()
     scan_result = r.json()
     count = scan_result['hits']['total']
+    logging.info("%d hits from no-clobber error query: " % count)
+
     scroll_id = scan_result['_scroll_id']
 
     # get boto client
