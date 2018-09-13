@@ -1013,8 +1013,14 @@ def run_job(job, queue_when_finished=True):
 
             # append input localization metrics
             job['job_info']['metrics']['inputs_localized'].extend(pge_metrics.get('download', []))
+
+        # add prov associations
         if len(job['job_info']['metrics']['inputs_localized']) > 0:
             context['_prov']['wasDerivedFrom'] = [i['url'] for i in job['job_info']['metrics']['inputs_localized']]
+
+            # update context file with prov associations
+            with open(context_file, 'w') as f:
+                json.dump(context, f, indent=2, sort_keys=True)
 
         # save job duration
         time_end = datetime.utcnow()
