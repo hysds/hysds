@@ -317,7 +317,6 @@ def localize_urls(job, ctx):
 
     # localize urls
     for i in job['localize_urls']:
-        id = i.get('id', None)
         url = i['url']
         path = i.get('local_path', None)
         cache = i.get('cache', True)
@@ -338,7 +337,6 @@ def localize_urls(job, ctx):
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
         job['job_info']['metrics']['inputs_localized'].append({
-            'id': id,
             'url': url,
             'path': path,
             'disk_usage': path_disk_usage,

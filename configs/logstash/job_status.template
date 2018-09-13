@@ -213,10 +213,6 @@
                         "path": {
                           "index": "not_analyzed", 
                           "type": "string"
-                        },
-                        "id": {
-                          "index": "not_analyzed", 
-                          "type": "string"
                         }
                       }
                     }, 

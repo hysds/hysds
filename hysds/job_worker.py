@@ -1016,9 +1016,7 @@ def run_job(job, queue_when_finished=True):
 
         # add prov associations
         if len(job['job_info']['metrics']['inputs_localized']) > 0:
-            context['_prov']['wasDerivedFrom'] = []
-            for i in job['job_info']['metrics']['inputs_localized']:
-                context['_prov']['wasDerivedFrom'].append(i['url'] if i.get('id', None) is None else i['id'])
+            context['_prov']['wasDerivedFrom'] = [i['url'] for i in job['job_info']['metrics']['inputs_localized']]
 
             # update context file with prov associations
             with open(context_file, 'w') as f:
