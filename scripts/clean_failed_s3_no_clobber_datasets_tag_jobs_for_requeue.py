@@ -16,14 +16,19 @@ S3_RE = re.compile(r'Destination,\s+s3://.+?/(.+?)/(.+/(.+))/.+?, already exists
 S3_MAX_DELETE_CHUNK = 1000
 
 
-def check_dataset(es_url, id, es_index="grq"):
+def check_dataset(es_url, dataset_name, es_index="grq"):
     """Query for dataset with specified input ID."""
 
     query = {
         "query": {
             "bool": {
                 "must": [
-                    {"term": {"_id": id}},
+                    {
+                        "query_string": {
+                            "query": dataset_name,
+                            "default_operator": "OR"
+                        }
+                    }
                 ]
             }
         },
