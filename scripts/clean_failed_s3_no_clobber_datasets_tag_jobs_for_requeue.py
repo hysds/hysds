@@ -129,7 +129,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                     },
                     {
                         "term": {
-                            "tags.untouched": "job-sling:release-20180129"
+                            "type": "job-sling:release-20180129"
                         }
                     },
                     {
