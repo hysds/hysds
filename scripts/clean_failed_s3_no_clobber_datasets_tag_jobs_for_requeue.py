@@ -195,7 +195,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
             # get list of jobs in mozart es that needs to be tagged for requeue
             results_to_requeue.update(hit)
-            logging.info(hit)
 
 
     # print results per bucket
@@ -219,6 +218,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
     # tag jobs for requeue
     logging.info("The dataset of these no-clobber jobs are detected to not be ingested in s3:")
+    logging.info(results_to_requeue)
     for job in sorted(results_to_requeue):
         logging.info("%s" % job)
         src = job['fields']['_source'][0]
