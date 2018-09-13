@@ -780,6 +780,7 @@ def run_job(job, queue_when_finished=True):
         context['container_image_name'] = job.get('container_image_name', None)
         context['container_image_url'] = job.get('container_image_url', None)
         context['container_mappings'] = job.get('container_mappings', {})
+        context['_prov'] = { 'wasGeneratedBy': job['task_id'] }
         context_file = os.path.join(job_dir, '_context.json')
         with open(context_file, 'w') as f:
             json.dump(context, f, indent=2, sort_keys=True)
@@ -1012,6 +1013,8 @@ def run_job(job, queue_when_finished=True):
 
             # append input localization metrics
             job['job_info']['metrics']['inputs_localized'].extend(pge_metrics.get('download', []))
+        if len(job['job_info']['metrics']['inputs_localized']) > 0:
+            context['_prov']['wasDerivedFrom'] = [i['url'] for i in job['job_info']['metrics']['inputs_localized']]
 
         # save job duration
         time_end = datetime.utcnow()

@@ -420,6 +420,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         'urls': pub_urls,
         'browse_urls': browse_urls,
         'images': imgs_metadata,
+        'prov': context.get('_prov', {}),
     }
     update_json.update(dataset)
     #logger.info("update_json: %s" % pformat(update_json))
