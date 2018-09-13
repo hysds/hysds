@@ -23,7 +23,10 @@ def check_dataset(es_url, id, es_index="grq"):
         "query": {
             "bool": {
                 "must": [
-                    {"term": {"id": id}},
+                    {"query_string": {
+                        "query": "id:\"%s\"" % id,
+                        "default_operator": "OR"}}
+
                 ]
             }
         },
