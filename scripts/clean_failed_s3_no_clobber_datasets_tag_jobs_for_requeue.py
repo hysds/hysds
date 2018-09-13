@@ -217,7 +217,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                 for obj in chunk: logging.info(obj)
 
     # tag jobs for requeue
-    logging.info("The dataset of these no-clobber jobs are detected to not be ingested in s3:")
+    logging.info("Found %d jobs which can be requeued if s3 has been cleared:" % len(results_to_requeue))
     for job in sorted(results_to_requeue):
         src = job['fields']['_source'][0]
         job_name = src.get('job', {}).get('name')
