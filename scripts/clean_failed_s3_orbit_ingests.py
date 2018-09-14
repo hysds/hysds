@@ -252,7 +252,7 @@ if __name__ == "__main__":
     grq_es_url = app.conf['GRQ_ES_URL']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
-    parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3")
+    parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
 
     args = parser.parse_args()
 
