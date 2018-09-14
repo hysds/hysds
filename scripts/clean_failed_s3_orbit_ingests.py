@@ -116,7 +116,7 @@ def get_matching_s3_keys(client, bucket, prefix='', suffix=''):
         yield obj['Key']
 
 
-def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
+def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type="job*"):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing
        and clean them out if dataset was not indexed."""
 
@@ -132,7 +132,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                     },
                     {
                         "term": {
-                            "type": "job-s1_orbit_ingest:release-20180627"
+                            "type": job_type
                         }
                     },
                     {
@@ -253,6 +253,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
     parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
+    parser.add_argument('-jt', '--job-type', help="which job type to filter in, 'job*' for all")
 
     args = parser.parse_args()
 
