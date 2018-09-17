@@ -16,7 +16,7 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 
 # S3_RE = re.compile('s3://.+?/(.+?)/(.+/(.+))/.+?')
 
-SLING_NAME_RE = re.compile('sling__release-20180129-factotum-job_worker-(.*)-(.*)-(.*)-(.*)-(.*)')
+SLING_NAME_RE = re.compile('sling__(.*)factotum-job_worker(.*)throttled-(.{67})-(.*)')
 dtreg = re.compile(r'S1[AB].*?_(\d{4})(\d{2})(\d{2})')
 S3_URL = 'incoming/v0.1/%s/%s/%s/%s/'
 S3_BUCKET = "ntu-hysds-dataset"
@@ -211,7 +211,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
 
             if not match_id: raise RuntimeError("Failed to id in job name: %s" % job_name)
-            id = match_id.group(2)
+            id = match_id.group(3)
 
             match_date = dtreg.search(id)
             if match_date:
