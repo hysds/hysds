@@ -193,7 +193,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
             match = S3_RE.search(error)
             if not match: raise RuntimeError("Failed to find S3 url in error: %s" % error)
             bucket, prefix, dataset_id = match.groups()
-            logging.info("%s %s %s" % (bucket, prefix, dataset_id ))
 
             if dataset_id not in dataset_name_list:
                 dataset_name_list.append(dataset_id)
