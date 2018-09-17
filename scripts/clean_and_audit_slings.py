@@ -18,7 +18,7 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 
 SLING_NAME_RE = re.compile('sling__release-20180129-factotum-job_worker-(.*)-(.*)-(.*)-(.*)-(.*)')
 dtreg = re.compile(r'S1[AB].*?_(\d{4})(\d{2})(\d{2})')
-S3_URL = 'incoming/v0.1/%s/%s/%s/%s/%s'
+S3_URL = 'incoming/v0.1/%s/%s/%s/%s/'
 S3_BUCKET = "ntu-hysds-dataset"
 
 S3_MAX_DELETE_CHUNK = 1000
