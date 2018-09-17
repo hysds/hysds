@@ -241,7 +241,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                     results_to_clear_redis.append(dataset_id)
             else:
                 # for repeated failed jobs
-                results_dedup.append(dataset_id)
+                results_dedup.append(hit)
                 logging.info("%s already registered, skipping checks." % dataset_id)
                 continue
 
@@ -291,6 +291,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
         if add_tag:
             tag_job(jobs_es_url, job, "dataset-not-in-grq-requeue")
 
+    # tag jobs for skipped checks
     logging.info("Found %d jobs which have been deduped, skipped checks" % len(results_dedup))
     for job in sorted(results_dedup):
         src = job['fields']['_source'][0]
