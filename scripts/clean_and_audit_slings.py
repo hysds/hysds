@@ -8,6 +8,7 @@ and:
 """
 
 import os, sys, re, requests, json, logging, argparse, boto3, types
+from hysds.celery import app
 from redis import ConnectionPool, StrictRedis
 
 log_format = "[%(asctime)s: %(levelname)s/clean_failed_s3_no_clobber_datasets] %(message)s"
