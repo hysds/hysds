@@ -132,11 +132,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
                     },
                     {
                         "term": {
-                            "type": job_type
-                        }
-                    },
-                    {
-                        "term": {
                             "short_error.untouched": "Destination, s3://s3.....ber is set"
                         }
                     },
@@ -158,10 +153,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
         }
     }
 
-    logging.info(bool(job_type))
-
     if job_type:
-        logging.info(bool(job_type))
         job_type_query = {
             "term": {
                 "type": job_type
@@ -268,7 +260,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
     parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
-    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty for all jobs")
+    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty to disable job-type filter")
 
     args = parser.parse_args()
 
