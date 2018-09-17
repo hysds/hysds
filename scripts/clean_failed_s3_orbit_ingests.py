@@ -167,6 +167,8 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
 
         jobs_query['query']['bool']['must'].append(job_type_query)
 
+    logging.info(jobs_query)
+
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(jobs_es_url), data=json.dumps(jobs_query))
     if r.status_code != 200:
