@@ -207,7 +207,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
             job_status = hit['fields']['_source'][0]['status']
             match_id = SLING_NAME_RE.search(job_name)
             logging.info("Job name: %s " % job_name)
-            logging.info("Status: %s" % job_status)
+            logging.info("Status:   %s" % job_status)
 
 
             if not match_id: raise RuntimeError("Failed to id in job name: %s" % job_name)
