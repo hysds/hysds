@@ -160,7 +160,8 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
 
     logging.info(bool(job_type))
 
-    if job_type is not None:
+    if job_type:
+        logging.info(bool(job_type))
         job_type_query = {
             "term": {
                 "type": job_type
