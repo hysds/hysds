@@ -162,8 +162,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
 
         jobs_query['query']['bool']['must'].append(job_type_query)
 
-    logging.info(jobs_query)
-
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(jobs_es_url), data=json.dumps(jobs_query))
     if r.status_code != 200:
@@ -195,6 +193,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
             match = S3_RE.search(error)
             if not match: raise RuntimeError("Failed to find S3 url in error: %s" % error)
             bucket, prefix, dataset_id = match.groups()
+            loggin.info("%s %s %s" % (bucket, prefix, dataset_id ))
 
             if dataset_id not in dataset_name_list:
                 dataset_name_list.append(dataset_id)
