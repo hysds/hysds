@@ -157,6 +157,16 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
             }
         }
     }
+
+    if job_type:
+        job_type_query = {
+            "term": {
+                "type": job_type
+            }
+        }
+
+        jobs_query['query']['bool']['must'].append(job_type_query)
+
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(jobs_es_url), data=json.dumps(jobs_query))
     if r.status_code != 200:
@@ -253,7 +263,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
     parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
-    parser.add_argument('-jt', '--jobtype', help="which job type to filter in")
+    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty for all jobs")
 
     args = parser.parse_args()
 
