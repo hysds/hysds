@@ -189,7 +189,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
     results_to_clear_s3 = {}
     results_to_clear_redis = []
     results_to_requeue = []
-
+    results_dedup = []
     results_okay = []
     dataset_name_list = []
     while True:
@@ -241,6 +241,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                     results_to_clear_redis.append(dataset_id)
             else:
                 # for repeated failed jobs
+                results_dedup.append(dataset_id)
                 logging.info("%s already registered, skipping checks." % dataset_id)
                 continue
 
@@ -289,6 +290,16 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
         logging.info("id: %s name: %s" % (job_id, job_name))
         if add_tag:
             tag_job(jobs_es_url, job, "dataset-not-in-grq-requeue")
+
+    logging.info("Found %d jobs which have been deduped, skipped checks" % len(results_dedup))
+    for job in sorted(results_dedup):
+        src = job['fields']['_source'][0]
+        job_name = src.get('job', {}).get('name')
+        job_id = job['_id']
+        logging.info("id: %s name: %s" % (job_id, job_name))
+        if add_tag:
+            tag_job(jobs_es_url, job, "dataset-check-deduped")
+
 
     logging.info("Found %d jobs which have been completed, dataset in GRQ and need not run" % len(results_okay))
     for job in sorted(results_okay):
