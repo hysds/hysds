@@ -265,7 +265,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
     parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
-    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty for all jobs", default=None)
+    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty for all jobs")
 
     args = parser.parse_args()
 
