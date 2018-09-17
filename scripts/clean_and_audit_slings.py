@@ -8,8 +8,7 @@ and:
 """
 
 import os, sys, re, requests, json, logging, argparse, boto3, types
-
-from hysds.celery import app
+from redis import ConnectionPool, StrictRedis
 
 log_format = "[%(asctime)s: %(levelname)s/clean_failed_s3_no_clobber_datasets] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -82,7 +81,6 @@ def tag_job(jobs_es_url, job_es_hit, tag_str):
         logging.info("Tagged %s as %s." % (id, tag_str))
     else:
         logging.info("%s already tagged as %s" % (id, tag_str))
-
 
 def dataset_exists(es_url, id, es_index="grq"):
     """Return true if dataset id exists."""
@@ -188,8 +186,10 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
     # get list of results and sort by bucket
     results_to_clear_s3 = {}
-    results_okay = []
+    results_to_clear_redis = []
     results_to_requeue = []
+
+    results_okay = []
     dataset_name_list = []
     while True:
         r = requests.post('%s/_search/scroll?scroll=10m' % jobs_es_url, data=scroll_id)
@@ -235,21 +235,19 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
                     # get list of jobs in mozart es that needs to be tagged for requeue
                     results_to_requeue.append(hit)
+
+                    # get members in redis server of factotum to clear out
+                    results_to_clear_redis.append(dataset_id)
             else:
                 # for repeated failed jobs
                 logging.info("%s already registered, skipping checks." % dataset_id)
                 continue
 
-
-
-
-
-
     # print results per bucket
     for bucket in sorted(results_to_clear_s3):
         logging.info("Found %d osaka no-clobber errors for bucket %s" % (len(results_to_clear_s3[bucket]), bucket))
 
-    # perform cleanup
+    # perform cleanup in s3
     for bucket in sorted(results_to_clear_s3):
         # chunk
         chunks = [results_to_clear_s3[bucket][x:x + S3_MAX_DELETE_CHUNK] for x in
@@ -264,8 +262,24 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                 logging.info("Running dry-run. These objects would've been deleted:")
                 for obj in chunk: logging.info(obj)
 
+    # perform cleanup in redis
+    logging.info("Found %d jobs which has to be cleared in redis for requeue by qquery as dataset not in grq:" % len(results_to_clear_redis))
+    global POOL
+    POOL = ConnectionPool(host='172.31.46.101', port=6379, db=0)
+    rd = StrictRedis(connection_pool=POOL)
+    key = "granules-s1a_slc"
+    for member in results_to_clear_redis:
+        ismember = rd.sismember(key, member)
+        if ismember:
+            logging.info("Redis: %s found in %s." % (member, key))
+            if force:
+                logging.info("Redis: removed %s from %s." % (member, key))
+                rd.srem(key, member)
+        else:
+            logging.info("Redis: %s not in %s. Doing nothing." % (member, key))
+
     # tag jobs for requeue
-    logging.info("Found %d jobs which can be requeued if s3 has been cleared:" % len(results_to_requeue))
+    logging.info("Found %d jobs which can be requeued as it is not in grq:" % len(results_to_requeue))
 
     for job in sorted(results_to_requeue):
         src = job['fields']['_source'][0]
@@ -275,6 +289,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
         if add_tag:
             tag_job(jobs_es_url, job, "dataset-not-in-grq-requeue")
 
+    logging.info("Found %d jobs which have been completed, dataset in GRQ and need not run" % len(results_okay))
     for job in sorted(results_okay):
         src = job['fields']['_source'][0]
         job_name = src.get('job', {}).get('name')
