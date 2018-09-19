@@ -24,7 +24,7 @@ def check_dataset(es_url, id, es_index="grq"):
             "bool": {
                 "must": [
                     {"query_string": {
-                        "query": "id:\"%s\"" % id,
+                        "query": "_id:\"%s\"" % id,
                         "default_operator": "OR"}}
 
                 ]
@@ -187,7 +187,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
         scroll_id = res['_scroll_id']
         if len(res['hits']['hits']) == 0: break
         for hit in res['hits']['hits']:
-            logging.info(hit) # TODO: Remove for debug
             error = hit['fields']['_source'][0]['error']
 
             # extract s3 url bucket and dataset id
