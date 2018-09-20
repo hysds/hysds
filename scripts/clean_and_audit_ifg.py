@@ -16,7 +16,7 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 # S3_RE = re.compile('s3://.+?/(.+?)/(.+/(.+))/.+?')
 
 IFG_NAME_RE = re.compile('sentinel_ifg-singlescene-(.{62})-(.*)')
-dtreg = re.compile(r'S1-IFG_RM_M1S[12]_TN(\d{3})_{\d{8}T\d{6}-(\d{4})(\d{2})(\d{2})(.*)')
+dtreg = re.compile(r'S1-IFG_RM_M1S[12]_TN(\d{3})_\d{8}T\d{6}-(\d{4})(\d{2})(\d{2})(.*)')
 S3_URL = 'datasets/interferogram/v1.2.1/%s/%s/%s/%s'
 S3_BUCKET = "ntu-hysds-dataset"
 
