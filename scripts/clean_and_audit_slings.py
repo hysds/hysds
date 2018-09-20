@@ -198,12 +198,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
         scroll_id = res['_scroll_id']
         if len(res['hits']['hits']) == 0: break
         for hit in res['hits']['hits']:
-            # error = hit['fields']['_source'][0]['error']
-
-            # extract s3 url bucket and dataset id
-            # match = S3_RE.search(error)
-            # if not match: raise RuntimeError("Failed to find S3 url in error: %s" % error)
-            # sling__release-20180129-factotum-job_worker-scihub_throttled-S1A_IW_SLC__1SDV_20180204T012542_20180204T012609_020450_022F70_D4B2-13_Aug_2018_11__44__16-AOI_Karachi-20180813T114416.959892Z
             job_name = hit['fields']['_source'][0]['job']['name']
             job_status = hit['fields']['_source'][0]['status']
             match_id = SLING_NAME_RE.search(job_name)

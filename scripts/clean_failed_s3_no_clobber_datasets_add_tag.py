@@ -212,11 +212,6 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False, job_type=None):
                 logging.info("%s already registered, skipping checks." % dataset_id)
                 continue
 
-
-
-
-
-
     # print results per bucket
     for bucket in sorted(results_to_clean):
         logging.info("Found %d osaka no-clobber errors for bucket %s" % (len(results_to_clean[bucket]), bucket))
