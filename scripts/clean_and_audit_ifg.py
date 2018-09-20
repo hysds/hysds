@@ -208,7 +208,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
             match_date = dtreg.search(id)
             if match_date:
-                yr, mon, day = (match_date.group(4), match_date.group(5), match_date.group(6))
+                yr, mon, day = (match_date.group(1), match_date.group(2), match_date.group(3))
 
             dataset_id = id + ".zip"
             s3_prefix = S3_URL % (yr, mon, day, dataset_id)
