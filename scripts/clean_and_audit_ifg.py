@@ -137,7 +137,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
                     # },
                     {
                         "term": {
-                            "type": "job-sling:release-20180129"
+                            "type": "sentinel_ifg-singlescene"
                         }
                     },
                     {
