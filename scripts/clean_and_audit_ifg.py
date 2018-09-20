@@ -210,7 +210,7 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
             if match_date:
                 yr, mon, day = (match_date.group(1), match_date.group(2), match_date.group(3))
 
-            dataset_id = id
+            dataset_id = id + "-v1.2.1-standard"
             s3_prefix = S3_URL % (yr, mon, day, id)
 
             if dataset_id not in dataset_name_list:
