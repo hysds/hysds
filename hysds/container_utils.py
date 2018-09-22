@@ -131,7 +131,7 @@ def get_base_docker_cmd(params):
     """Parse docker params and build base docker command line list."""
 
     # build command
-    docker_cmd_base = [ "docker", "run", "--rm", "-u", 
+    docker_cmd_base = [ "docker", "run", "--init", "--rm", "-u", 
                         "%s:%s" % (params['uid'], params['gid']) ]
 
     # add volumes
