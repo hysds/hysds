@@ -17,7 +17,7 @@ from tempfile import mkdtemp
 import hysds, osaka
 from hysds.utils import get_disk_usage, makedirs, get_job_status
 from hysds.log_utils import (logger, log_publish_prov_es, backoff_max_value,
-backoff_max_tries)
+backoff_max_tries, log_custom_event)
 from hysds.recognize import Recognizer
 
 
@@ -362,8 +362,18 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
                     # overwrite if this job is a retry of the previous job
                     if payload_id is not None and payload_id == orig_payload_id:
-                        logger.warn("This job is a retry of a previous job that resulted " +
-                                    "in an orphaned dataset. Forcing publish.")
+                        msg = "This job is a retry of a previous job that resulted " +
+                              "in an orphaned dataset. Forcing publish."
+                        logger.warn(msg)
+                        log_custom_event('retry_found_orphaned_dataset', 'clobber',
+                                         { 'orphan_info': {
+                                               'payload_id': payload_id,
+                                               'task_id': task_id,
+                                               'orig_payload_id': orig_payload_id,
+                                               'orig_task_id': orig_task_id,
+                                               'dataset_id': objectid,
+                                               'msg': msg }})
+                                           
                         sub_force = True
                     else:
                         job_status = get_job_status(orig_payload_id)
@@ -371,8 +381,18 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
                         # overwrite if previous job failed
                         if job_status == "job-failed":
-                            logger.warn("Detected previous job failure that resulted in an " +
-                                        "orphaned dataset. Forcing publish.")
+                            msg = "Detected previous job failure that resulted in an " +
+                                  "orphaned dataset. Forcing publish."
+                            logger.warn(msg)
+                            log_custom_event('found_orphaned_dataset', 'clobber',
+                                             { 'orphan_info': {
+                                                   'payload_id': payload_id,
+                                                   'task_id': task_id,
+                                                   'orig_payload_id': orig_payload_id,
+                                                   'orig_task_id': orig_task_id,
+                                                   'orig_status': job_status,
+                                                   'dataset_id': objectid,
+                                                   'msg': msg }})
                             sub_force = True
                         else: raise
 
