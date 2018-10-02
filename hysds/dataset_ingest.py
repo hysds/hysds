@@ -362,6 +362,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
                     # overwrite if this job is a retry of the previous job
                     if payload_id is not None and payload_id == orig_payload_id:
+                        sub_force = True
                         msg = "This job is a retry of a previous job that resulted " + \
                               "in an orphaned dataset. Forcing publish."
                         logger.warn(msg)
@@ -373,14 +374,13 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                                                'orig_task_id': orig_task_id,
                                                'dataset_id': objectid,
                                                'msg': msg }})
-                                           
-                        sub_force = True
                     else:
                         job_status = get_job_status(orig_payload_id)
                         logger.warn("orig job status: {}".format(job_status))
 
                         # overwrite if previous job failed
                         if job_status == "job-failed":
+                            sub_force = True
                             msg = "Detected previous job failure that resulted in an " + \
                                   "orphaned dataset. Forcing publish."
                             logger.warn(msg)
@@ -393,14 +393,17 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                                                    'orig_status': job_status,
                                                    'dataset_id': objectid,
                                                    'msg': msg }})
-                            sub_force = True
                         else: raise
 
                     # clobber old publish context
                     osaka.main.put(publ_ctx_file, publ_ctx_url, params=osaka_params, noclobber=False)
 
                 # publish dataset
-                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
+                try:
+                    publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
+                except osaka.utils.NoClobberException, e:
+                    if not sub_force: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+                    raise
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
