@@ -309,6 +309,19 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
                  'query_timestamp': datetime.utcnow().isoformat() }
 
 
+@backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
+                      max_tries=8, max_value=32)
+def get_job_status(id):
+    """Get job status."""
+
+    es_url = "%s/job_status-current/job/%s" % (app.conf['JOBS_ES_URL'], id)
+    r = requests.get(es_url, params={ 'fields': 'status' })
+    logger.info("get_job_status status: %s" % r.status_code)
+    result = r.json()
+    logger.info("get_job_status result: %s" % json.dumps(result, indent=2))
+    return result['fields']['status'][0] if result['found'] else None
+
+
 def localize_urls(job, ctx):
     """Localize urls for job inputs. Track metrics."""
 
@@ -406,7 +419,9 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
                                (prod_id, datasets_cfg_file,
                                 app.conf.GRQ_UPDATE_URL,
                                 app.conf.DATASET_PROCESSED_QUEUE,
-                                prod_dir, job_dir))
+                                prod_dir, job_dir),
+                               {'task_id': job['task_id'],
+                                'payload_id': job['job_info']['job_payload']['payload_task_id']})
     tx_t2 = datetime.utcnow()
     tx_dur = (tx_t2 - tx_t1).total_seconds()
     prod_dir_usage = get_disk_usage(prod_dir)

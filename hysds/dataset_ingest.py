@@ -12,8 +12,10 @@ from StringIO import StringIO
 from glob import glob
 from datetime import datetime
 from filechunkio import FileChunkIO
-import hysds, osaka.main
-from hysds.utils import get_disk_usage, makedirs
+from tempfile import mkdtemp
+
+import hysds, osaka
+from hysds.utils import get_disk_usage, makedirs, get_job_status
 from hysds.log_utils import (logger, log_publish_prov_es, backoff_max_value,
 backoff_max_tries)
 from hysds.recognize import Recognizer
@@ -166,7 +168,8 @@ def unpublish_dataset(url, params=None):
 
 
 def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
-           prod_path, job_path, dry_run=False, force=False):
+           prod_path, job_path, dry_run=False, force=False, payload_id=None,
+           task_id=None):
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
@@ -176,6 +179,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     logger.info("job_path: %s" % job_path)
     logger.info("dry_run: %s" % dry_run)
     logger.info("force: %s" % force)
+    logger.info("payload_id: %s" % payload_id)
+    logger.info("task_id: %s" % task_id)
 
     # get dataset
     if os.path.isdir(prod_path):
@@ -184,6 +189,16 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         local_prod_path = get_remote_dav(prod_path)
     if not os.path.isdir(local_prod_path):
         raise RuntimeError("Failed to find local dataset directory: %s" % local_prod_path)
+
+    # write publish context
+    publ_ctx_name = "_publish.context.json"
+    if job_path is None: job_path = os.getcwd()
+    publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
+    publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
+    with open(publ_ctx_file, 'w') as f:
+        json.dump({ 'payload_id': payload_id, 'task_id': task_id }, 
+                  f, indent=2, sort_keys=True)
+    publ_ctx_url = None
 
     # dataset name
     pname = os.path.basename(local_prod_path)
@@ -323,7 +338,47 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         if dry_run:
             logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
         else:
-            publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
+            if force:
+                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
+            else:
+                sub_force = force
+                publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
+                orig_publ_ctx_file = publ_ctx_file + '.orig'
+                try:
+                    osaka.main.put(publ_ctx_file, publ_ctx_url, params=osaka_params, noclobber=True)
+                except osaka.utils.NoClobberException, e:
+                    logger.warn("A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
+                    osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
+                    with open(orig_publ_ctx_file) as f:
+                        orig_publ_ctx = json.load(f)
+                    logger.warn("original publish context: {}".format(json.dumps(orig_publ_ctx, 
+                        indent=2, sort_keys=True)))
+                    orig_payload_id = orig_publ_ctx.get('payload_id', None)
+                    orig_task_id = orig_publ_ctx.get('task_id', None)
+                    logger.warn("orig payload_id: {}".format(orig_payload_id))
+                    logger.warn("orig task_id: {}".format(orig_payload_id))
+
+                    if orig_payload_id is None: raise
+
+                    # overwrite if this job is a retry of the previous job
+                    if payload_id is not None and payload_id == orig_payload_id:
+                        logger.warn("This job is a retry of a previous job that resulted " +
+                                    "in an orphaned dataset. Forcing publish.")
+                        sub_force = True
+                    else:
+                        job_status = get_job_status(orig_payload_id)
+                        logger.warn("orig job status: {}".format(job_status))
+
+                        # overwrite if previous job failed
+                        if job_status == "job-failed":
+                            logger.warn("Detected previous job failure that resulted in an " +
+                                        "orphaned dataset. Forcing publish.")
+                            sub_force = True
+                try:
+                    publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
+                except osaka.utils.NoClobberException, e:
+                    osaka.main.rmall(publ_ctx_url, params=osaka_params)
+                    raise
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
@@ -441,7 +496,10 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
             update_json['grq_index_result'] = res
 
     # finish if dry run
-    if dry_run: return (prod_metrics, update_json)
+    if dry_run:
+        try: shutil.rmtree(publ_ctx_dir)
+        except: pass
+        return (prod_metrics, update_json)
 
     # create PROV-ES JSON file for publish processStep
     prod_prov_es_file = os.path.join(local_prod_path, '%s.prov_es.json' % os.path.basename(local_prod_path))
@@ -460,6 +518,12 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         osaka.main.put(pub_prov_es_file, os.path.join(pub_path_url, pub_prov_es_bn),
                        params=osaka_params, noclobber=False)
     
+    # cleanup publish context
+    if publ_ctx_url is not None:
+        osaka.main.rmall(publ_ctx_url, params=osaka_params)
+    try: shutil.rmtree(publ_ctx_dir)
+    except: pass
+
     # queue data dataset
     queue_dataset(ipath, update_json, dataset_processed_queue)
 
