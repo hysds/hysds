@@ -374,11 +374,13 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                             logger.warn("Detected previous job failure that resulted in an " +
                                         "orphaned dataset. Forcing publish.")
                             sub_force = True
-                try:
-                    publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
-                except osaka.utils.NoClobberException, e:
-                    osaka.main.rmall(publ_ctx_url, params=osaka_params)
-                    raise
+                        else: raise
+
+                    # clobber old publish context
+                    osaka.main.put(publ_ctx_file, publ_ctx_url, params=osaka_params, noclobber=False)
+
+                # publish dataset
+                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
