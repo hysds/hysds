@@ -362,7 +362,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
                     # overwrite if this job is a retry of the previous job
                     if payload_id is not None and payload_id == orig_payload_id:
-                        msg = "This job is a retry of a previous job that resulted " +
+                        msg = "This job is a retry of a previous job that resulted " + \
                               "in an orphaned dataset. Forcing publish."
                         logger.warn(msg)
                         log_custom_event('retry_found_orphaned_dataset', 'clobber',
@@ -381,7 +381,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
                         # overwrite if previous job failed
                         if job_status == "job-failed":
-                            msg = "Detected previous job failure that resulted in an " +
+                            msg = "Detected previous job failure that resulted in an " + \
                                   "orphaned dataset. Forcing publish."
                             logger.warn(msg)
                             log_custom_event('found_orphaned_dataset', 'clobber',
