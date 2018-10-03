@@ -130,11 +130,18 @@ def restage(host, src, dest, signal_file):
     return ret 
 
 
-def publish_dataset(path, url, params=None, force=False):
+class NoClobberPublishContextException(Exception): pass
+
+
+def publish_dataset(path, url, params=None, force=False, publ_ctx_file=None,
+                    publ_ctx_url=None):
     '''
     Publish a dataset to the given url
     @param path - path of dataset to publish
     @param url - url to publish to
+    @param force - unpublish dataset first if exists
+    @param publ_ctx_file - publish context file
+    @param publ_ctx_url - url to publish context file to
     '''
 
     # set osaka params
@@ -144,6 +151,12 @@ def publish_dataset(path, url, params=None, force=False):
     if force:
         try: unpublish_dataset(url, params=params)
         except: pass
+
+    # write publish context file
+    if publ_ctx_file is not None and publ_ctx_url is not None:
+        try: osaka.main.put(publ_ctx_file, publ_ctx_url, params=params, noclobber=True)
+        except osaka.utils.NoClobberException, e:
+            raise NoClobberPublishContextException("Failed to clobber {} when noclobber is True.".format(publ_ctx_url))
 
     # upload datasets 
     for root, dirs, files in os.walk(path):
@@ -168,8 +181,8 @@ def unpublish_dataset(url, params=None):
 
 
 def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
-           prod_path, job_path, dry_run=False, force=False, payload_id=None,
-           task_id=None):
+           prod_path, job_path, dry_run=False, force=False, task_id=None,
+           payload_id=None, payload_hash=None):
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
@@ -179,8 +192,9 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     logger.info("job_path: %s" % job_path)
     logger.info("dry_run: %s" % dry_run)
     logger.info("force: %s" % force)
-    logger.info("payload_id: %s" % payload_id)
     logger.info("task_id: %s" % task_id)
+    logger.info("payload_id: %s" % payload_id)
+    logger.info("payload_hash: %s" % payload_hash)
 
     # get dataset
     if os.path.isdir(prod_path):
@@ -196,7 +210,9 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
     with open(publ_ctx_file, 'w') as f:
-        json.dump({ 'payload_id': payload_id, 'task_id': task_id }, 
+        json.dump({ 'payload_id': payload_id,
+                    'payload_hash': payload_hash,
+                    'task_id': task_id }, 
                   f, indent=2, sort_keys=True)
     publ_ctx_url = None
 
@@ -338,72 +354,70 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         if dry_run:
             logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
         else:
-            if force:
-                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force)
-            else:
-                sub_force = force
-                publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
-                orig_publ_ctx_file = publ_ctx_file + '.orig'
-                try:
-                    osaka.main.put(publ_ctx_file, publ_ctx_url, params=osaka_params, noclobber=True)
-                except osaka.utils.NoClobberException, e:
-                    logger.warn("A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
-                    osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
-                    with open(orig_publ_ctx_file) as f:
-                        orig_publ_ctx = json.load(f)
-                    logger.warn("original publish context: {}".format(json.dumps(orig_publ_ctx, 
-                        indent=2, sort_keys=True)))
-                    orig_payload_id = orig_publ_ctx.get('payload_id', None)
-                    orig_task_id = orig_publ_ctx.get('task_id', None)
-                    logger.warn("orig payload_id: {}".format(orig_payload_id))
-                    logger.warn("orig task_id: {}".format(orig_payload_id))
+            publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
+            orig_publ_ctx_file = publ_ctx_file + '.orig'
+            try:
+                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force,
+                                publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
+            except NoClobberPublishContextException, e:
+                logger.warn("A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
+                osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
+                with open(orig_publ_ctx_file) as f:
+                    orig_publ_ctx = json.load(f)
+                logger.warn("original publish context: {}".format(json.dumps(orig_publ_ctx, 
+                    indent=2, sort_keys=True)))
+                orig_payload_id = orig_publ_ctx.get('payload_id', None)
+                orig_payload_hash = orig_publ_ctx.get('payload_hash', None)
+                orig_task_id = orig_publ_ctx.get('task_id', None)
+                logger.warn("orig payload_id: {}".format(orig_payload_id))
+                logger.warn("orig payload_hash: {}".format(orig_payload_hash))
+                logger.warn("orig task_id: {}".format(orig_payload_id))
 
-                    if orig_payload_id is None: raise
+                if orig_payload_id is None: raise
 
-                    # overwrite if this job is a retry of the previous job
-                    if payload_id is not None and payload_id == orig_payload_id:
-                        sub_force = True
-                        msg = "This job is a retry of a previous job that resulted " + \
-                              "in an orphaned dataset. Forcing publish."
+                # overwrite if this job is a retry of the previous job
+                if payload_id is not None and payload_id == orig_payload_id:
+                    msg = "This job is a retry of a previous job that resulted " + \
+                          "in an orphaned dataset. Forcing publish."
+                    logger.warn(msg)
+                    log_custom_event('retry_found_orphaned_dataset', 'clobber',
+                                     { 'orphan_info': {
+                                           'payload_id': payload_id,
+                                           'payload_hash': payload_hash,
+                                           'task_id': task_id,
+                                           'orig_payload_id': orig_payload_id,
+                                           'orig_payload_hash': orig_payload_hash,
+                                           'orig_task_id': orig_task_id,
+                                           'dataset_id': objectid,
+                                           'msg': msg }})
+                else:
+                    job_status = get_job_status(orig_payload_id)
+                    logger.warn("orig job status: {}".format(job_status))
+
+                    # overwrite if previous job failed
+                    if job_status == "job-failed":
+                        msg = "Detected previous job failure that resulted in an " + \
+                              "orphaned dataset. Forcing publish."
                         logger.warn(msg)
-                        log_custom_event('retry_found_orphaned_dataset', 'clobber',
+                        log_custom_event('found_orphaned_dataset', 'clobber',
                                          { 'orphan_info': {
                                                'payload_id': payload_id,
+                                               'payload_hash': payload_hash,
                                                'task_id': task_id,
                                                'orig_payload_id': orig_payload_id,
+                                               'orig_payload_hash': orig_payload_hash,
                                                'orig_task_id': orig_task_id,
+                                               'orig_status': job_status,
                                                'dataset_id': objectid,
                                                'msg': msg }})
-                    else:
-                        job_status = get_job_status(orig_payload_id)
-                        logger.warn("orig job status: {}".format(job_status))
-
-                        # overwrite if previous job failed
-                        if job_status == "job-failed":
-                            sub_force = True
-                            msg = "Detected previous job failure that resulted in an " + \
-                                  "orphaned dataset. Forcing publish."
-                            logger.warn(msg)
-                            log_custom_event('found_orphaned_dataset', 'clobber',
-                                             { 'orphan_info': {
-                                                   'payload_id': payload_id,
-                                                   'task_id': task_id,
-                                                   'orig_payload_id': orig_payload_id,
-                                                   'orig_task_id': orig_task_id,
-                                                   'orig_status': job_status,
-                                                   'dataset_id': objectid,
-                                                   'msg': msg }})
-                        else: raise
-
-                    # clobber old publish context
-                    osaka.main.put(publ_ctx_file, publ_ctx_url, params=osaka_params, noclobber=False)
-
-                # publish dataset
-                try:
-                    publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=sub_force)
-                except osaka.utils.NoClobberException, e:
-                    if not sub_force: osaka.main.rmall(publ_ctx_url, params=osaka_params)
-                    raise
+                    else: raise
+                publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
+                                publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
+            except osaka.utils.NoClobberException, e:
+                try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+                except:
+                    logger.warn("Failed to clean up publish context {} after attempting to clobber valid dataset.".format(publ_ctx_url))
+                raise
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
@@ -545,6 +559,9 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     
     # cleanup publish context
     if publ_ctx_url is not None:
+        try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+        except:
+            logger.warn("Failed to clean up publish context at {} on successful publish.".format(publ_ctx_url))
         osaka.main.rmall(publ_ctx_url, params=osaka_params)
     try: shutil.rmtree(publ_ctx_dir)
     except: pass
