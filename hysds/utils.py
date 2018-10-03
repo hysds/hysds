@@ -419,10 +419,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
                                (prod_id, datasets_cfg_file,
                                 app.conf.GRQ_UPDATE_URL,
                                 app.conf.DATASET_PROCESSED_QUEUE,
-                                prod_dir, job_dir),
-                               {'task_id': job['task_id'],
-                                'payload_id': job['job_info']['job_payload']['payload_task_id'],
-                                'payload_hash': job['job_info']['payload_hash']})
+                                prod_dir, job_dir))
     tx_t2 = datetime.utcnow()
     tx_dur = (tx_t2 - tx_t1).total_seconds()
     prod_dir_usage = get_disk_usage(prod_dir)

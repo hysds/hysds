@@ -181,8 +181,7 @@ def unpublish_dataset(url, params=None):
 
 
 def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
-           prod_path, job_path, dry_run=False, force=False, task_id=None,
-           payload_id=None, payload_hash=None):
+           prod_path, job_path, dry_run=False, force=False):
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
@@ -192,6 +191,21 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     logger.info("job_path: %s" % job_path)
     logger.info("dry_run: %s" % dry_run)
     logger.info("force: %s" % force)
+
+    # get default job path
+    if job_path is None: job_path = os.getcwd()
+
+    # detect job info
+    job = {}
+    job_json = os.path.join(job_path, '_job.json')
+    if os.path.exists(job_json):
+        with open(job_json) as f:
+            try: job = json.load(f)
+            except Exception, e:
+                logger.warn("Failed to read job json:\n{}".format(str(e)))
+    task_id = job.get('task_id', None)
+    payload_id = job.get('job_info', {}).get('job_payload', {}).get('payload_task_id', None)
+    payload_hash = job.get('job_info', {}).get('payload_hash', None)
     logger.info("task_id: %s" % task_id)
     logger.info("payload_id: %s" % payload_id)
     logger.info("payload_hash: %s" % payload_hash)
@@ -206,7 +220,6 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
     # write publish context
     publ_ctx_name = "_publish.context.json"
-    if job_path is None: job_path = os.getcwd()
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
     with open(publ_ctx_file, 'w') as f:
