@@ -389,6 +389,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                                            'orig_payload_hash': orig_payload_hash,
                                            'orig_task_id': orig_task_id,
                                            'dataset_id': objectid,
+                                           'dataset_url': pub_path_url,
                                            'msg': msg }})
                 else:
                     job_status = get_job_status(orig_payload_id)
@@ -409,6 +410,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                                                'orig_task_id': orig_task_id,
                                                'orig_status': job_status,
                                                'dataset_id': objectid,
+                                               'dataset_url': pub_path_url,
                                                'msg': msg }})
                     else: raise
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
