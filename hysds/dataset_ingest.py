@@ -15,7 +15,7 @@ from filechunkio import FileChunkIO
 from tempfile import mkdtemp
 
 import hysds, osaka
-from hysds.utils import get_disk_usage, makedirs, get_job_status
+from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists
 from hysds.log_utils import (logger, log_publish_prov_es, backoff_max_value,
 backoff_max_tries, log_custom_event)
 from hysds.recognize import Recognizer
@@ -393,7 +393,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                     msg = "This job is a retry of a previous job that resulted " + \
                           "in an orphaned dataset. Forcing publish."
                     logger.warn(msg)
-                    log_custom_event('retry_found_orphaned_dataset', 'clobber',
+                    log_custom_event('orphaned_dataset-retry_previous_failed', 'clobber',
                                      { 'orphan_info': {
                                            'payload_id': payload_id,
                                            'payload_hash': payload_hash,
@@ -413,7 +413,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                         msg = "Detected previous job failure that resulted in an " + \
                               "orphaned dataset. Forcing publish."
                         logger.warn(msg)
-                        log_custom_event('found_orphaned_dataset', 'clobber',
+                        log_custom_event('orphaned_dataset-job_failed', 'clobber',
                                          { 'orphan_info': {
                                                'payload_id': payload_id,
                                                'payload_hash': payload_hash,
@@ -429,10 +429,24 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
             except osaka.utils.NoClobberException, e:
-                try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
-                except:
-                    logger.warn("Failed to clean up publish context {} after attempting to clobber valid dataset.".format(publ_ctx_url))
-                raise
+                if dataset_exists(objectid):
+                    try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+                    except:
+                        logger.warn("Failed to clean up publish context {} after attempting to clobber valid dataset.".format(publ_ctx_url))
+                    raise
+                else:
+                    msg = "Detected orphaned dataset without ES doc. Forcing publish."
+                    logger.warn(msg)
+                    log_custom_event('orphaned_dataset-no_es_doc', 'clobber',
+                                     { 'orphan_info': {
+                                           'payload_id': payload_id,
+                                           'payload_hash': payload_hash,
+                                           'task_id': task_id,
+                                           'dataset_id': objectid,
+                                           'dataset_url': pub_path_url,
+                                           'msg': msg }})
+                    publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
+                                    publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
