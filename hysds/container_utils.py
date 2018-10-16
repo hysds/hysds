@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import os, sys, json, backoff
+import os, sys, json, backoff, shutil
 from datetime import datetime
 from subprocess import check_output, Popen, PIPE
 from atomicwrites import atomic_write
@@ -16,14 +16,26 @@ import osaka.main
 IMAGE_LOAD_TIME_MAX = 600
 
 
-def verify_docker_mount(m):
+def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 
     if m == "/": raise(RuntimeError("Cannot mount host root directory"))
-    for k in app.conf.WORKER_MOUNT_BLACKLIST:
+    for k in blacklist:
         if m.startswith(k):
             raise(RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k)))
     return True
+
+
+def copy_mount(path, job_dir):
+    """Copy path to .container_mounts directory under the job dir to
+       be used for mounting into container. Return this path."""
+
+    mnt_dir = os.path.join(job_dir, ".container_mounts")
+    if not os.path.exists(mnt_dir): os.makedirs(mnt_dir, 0777)
+    mnt_path = os.path.join(mnt_dir, os.path.basename(path))
+    if os.path.isdir(path): shutil.copytree(path, mnt_path)
+    else: shutil.copy(path, mnt_path)
+    return os.path.join(mnt_dir, os.path.basename(path))
 
 
 def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir):
@@ -55,10 +67,19 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
         image_mappings[dsets_cfg_file] = "datasets.json"
 
+    # if running on k8s add hosts and resolv.conf
+    blacklist = app.conf.WORKER_MOUNT_BLACKLIST
+    on_k8s = int(os.environ.get('HYSDS_ON_K8S', 0))
+    if on_k8s:
+        for f in ("/etc/hosts", "/etc/resolv.conf"):
+            if f not in image_mappings and f not in image_mappings.values():
+                image_mappings[f] = f
+        blacklist = [i for i in blacklist if i != "/etc"]
+
     # add user-defined image mappings
     for k, v in image_mappings.iteritems():
         k = os.path.expandvars(k)
-        verify_docker_mount(k)
+        verify_docker_mount(k, blacklist)
         mode = "ro"
         if isinstance(v, list):
             if len(v) > 1: v, mode = v[0:2]
@@ -66,6 +87,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
         if v.startswith('/'): mnt = v
         else: mnt = os.path.join(job_dir, v)
+        k = copy_mount(k, job_dir)
         params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
 
     return params
