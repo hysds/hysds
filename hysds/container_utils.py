@@ -5,6 +5,7 @@ import os, sys, json, backoff, shutil
 from datetime import datetime
 from subprocess import check_output, Popen, PIPE
 from atomicwrites import atomic_write
+from tempfile import mkdtemp
 
 from hysds.log_utils import logger
 from hysds.celery import app
@@ -26,15 +27,14 @@ def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     return True
 
 
-def copy_mount(path, job_dir):
-    """Copy path to .container_mounts directory under the job dir to
-       be used for mounting into container. Return this path."""
+def copy_mount(path, mnt_dir):
+    """Copy path to a directory to be used for mounting into container. Return this path."""
 
-    mnt_dir = os.path.join(job_dir, ".container_mounts")
     if not os.path.exists(mnt_dir): os.makedirs(mnt_dir, 0777)
     mnt_path = os.path.join(mnt_dir, os.path.basename(path))
     if os.path.isdir(path): shutil.copytree(path, mnt_path)
     else: shutil.copy(path, mnt_path)
+    logger.info("Copied container mount {} to {}.".format(path, mnt_path))
     return os.path.join(mnt_dir, os.path.basename(path))
 
 
@@ -77,6 +77,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         blacklist = [i for i in blacklist if i != "/etc"]
 
     # add user-defined image mappings
+    mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
     for k, v in image_mappings.iteritems():
         k = os.path.expandvars(k)
         verify_docker_mount(k, blacklist)
@@ -87,7 +88,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
         if v.startswith('/'): mnt = v
         else: mnt = os.path.join(job_dir, v)
-        k = copy_mount(k, job_dir)
+        k = copy_mount(k, mnt_dir)
         params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
 
     return params
