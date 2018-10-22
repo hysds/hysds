@@ -11,7 +11,7 @@ babel==2.4.0              # via flower
 backoff==1.4.3
 backports-abc==0.5        # via tornado
 backports.ssl-match-hostname==3.5.0.1  # via tornado
-bcrypt==3.1.3             # via paramiko
+bcrypt>=3.1.3             # via paramiko
 billiard==3.3.0.23        # via celery
 boto3==1.4.4
 boto==2.48.0
@@ -21,7 +21,7 @@ celery==3.1.25.pqueue     # via third_party dir
 certifi==2017.4.17        # via requests, tornado
 cffi==1.10.0              # via bcrypt, cryptography, pynacl
 chardet==3.0.4            # via requests
-cryptography==1.9         # via paramiko
+cryptography>=2.2.3       # via paramiko
 decorator==4.0.11         # via networkx
 dill==0.2.7               # via google-gax
 docutils==0.13.1          # via botocore
@@ -80,7 +80,7 @@ meld3==1.0.2              # via supervisor
 msgpack-python==0.4.8
 networkx==1.11            # via prov
 oauth2client==3.0.0       # via gapic-google-cloud-datastore-v1, gapic-google-cloud-error-reporting-v1beta1, gapic-google-cloud-logging-v2, gapic-google-cloud-pubsub-v1, gapic-google-cloud-spanner-admin-database-v1, gapic-google-cloud-spanner-admin-instance-v1, gapic-google-cloud-spanner-v1, gapic-google-cloud-speech-v1, grpc-google-iam-v1, proto-google-cloud-datastore-v1, proto-google-cloud-error-reporting-v1beta1, proto-google-cloud-logging-v2, proto-google-cloud-pubsub-v1, proto-google-cloud-spanner-admin-database-v1, proto-google-cloud-spanner-admin-instance-v1, proto-google-cloud-spanner-v1, proto-google-cloud-speech-v1
-paramiko==2.2.1           # via fabric
+paramiko>=2.2.3           # via fabric
 ply==3.8                  # via google-gax
 proto-google-cloud-datastore-v1[grpc]==0.90.4  # via gapic-google-cloud-datastore-v1
 proto-google-cloud-error-reporting-v1beta1[grpc]==0.15.3  # via gapic-google-cloud-error-reporting-v1beta1
@@ -94,10 +94,10 @@ protobuf==3.3.0
 prov==1.3.1               # via prov-es
 prov_es==0.1.1
 psutil==5.2.2
-pyasn1-modules==0.0.9     # via google-auth, google-auth-httplib2, oauth2client
-pyasn1==0.2.3             # via google-auth, google-auth-httplib2, oauth2client, paramiko, pyasn1-modules, rsa
+pyasn1-modules>=0.0.9     # via google-auth, google-auth-httplib2, oauth2client
+pyasn1>=0.2.3             # via google-auth, google-auth-httplib2, oauth2client, paramiko, pyasn1-modules, rsa
 pycparser==2.18           # via cffi
-pynacl==1.1.2             # via paramiko
+pynacl>=1.1.2             # via paramiko
 python-dateutil==2.6.1    # via botocore, prov
 pytz==2017.2              # via babel, celery, flower
 redis==2.10.5
