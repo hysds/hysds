@@ -69,7 +69,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
 
     # if running on k8s add hosts and resolv.conf
     blacklist = app.conf.WORKER_MOUNT_BLACKLIST
-    on_k8s = int(app.conf.get('K8S', None))
+    on_k8s = int(app.conf.get('K8S', 0))
     if on_k8s:
         for f in ("/etc/hosts", "/etc/resolv.conf"):
             if f not in image_mappings and f not in image_mappings.values():
