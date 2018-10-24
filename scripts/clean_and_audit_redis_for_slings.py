@@ -99,7 +99,7 @@ def get_matching_s3_keys(client, bucket, prefix='', suffix=''):
         yield obj['Key']
 
 
-def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
+def clean(grq_es_url, force=False):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing
        and clean them out if dataset was not indexed."""
 
@@ -131,11 +131,10 @@ def clean(jobs_es_url, grq_es_url, force=False, add_tag=False):
 
 
 if __name__ == "__main__":
-    jobs_es_url = app.conf['JOBS_ES_URL']
     grq_es_url = app.conf['GRQ_ES_URL']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
 
     args = parser.parse_args()
 
-    clean(jobs_es_url, grq_es_url, args.force, args.add_tag)
+    clean(grq_es_url, args.force)
