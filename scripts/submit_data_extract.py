@@ -5,8 +5,9 @@ and:
  1. submit data-extract jobs if SLC not found in GRQ
 """
 
-import os, sys, re, requests, json, logging, argparse, boto3, types
+import os, re, requests, json, logging, argparse, boto3
 
+import celeryconfig
 from hysds.celery import app
 
 log_format = "[%(asctime)s: %(levelname)s/clean_failed_s3_no_clobber_datasets] %(message)s"
@@ -92,9 +93,10 @@ def dataset_exists(es_url, id, es_index="grq"):
     return False
 
 
-def clean(job_submit_url, grq_es_url, force=False):
+def clean( grq_es_url, force=False):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing
        and clean them out if dataset was not indexed."""
+
 
     # incoming grq query
     incoming_query = \
@@ -130,6 +132,7 @@ def clean(job_submit_url, grq_es_url, force=False):
 
     # get list of results and sort by bucket
     results_to_extract = {}
+    job_submit_url = os.path.join(celeryconfig.MOZART_URL, 'api/v0.1/job/submit')
     while True:
         r = requests.post('%s/_search/scroll?scroll=10m' % grq_es_url, data=scroll_id)
         res = r.json()
@@ -196,12 +199,10 @@ def clean(job_submit_url, grq_es_url, force=False):
 
 
 if __name__ == "__main__":
-    jobs_es_url = app.conf['JOBS_ES_URL']
     grq_es_url = app.conf['GRQ_ES_URL']
-    job_submit_url = '%s/mozart/api/v0.1/job/submit' % jobs_es_url
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
 
     args = parser.parse_args()
 
-    clean(job_submit_url, grq_es_url, args.force)
+    clean(grq_es_url, args.force)
