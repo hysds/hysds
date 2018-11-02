@@ -192,8 +192,8 @@ def clean(job_submit_url, grq_es_url, force=False):
             logging.info('submitting jobs with params:')
             logging.info(json.dumps(params, sort_keys=True, indent=4, separators=(',', ': ')))
             r = requests.post(job_submit_url, params=params, verify=False)
-
             if r.status_code != 200:
+                logging.info(r.json())
                 r.raise_for_status()
             result = r.json()
             if 'result' in result.keys() and 'success' in result.keys():
