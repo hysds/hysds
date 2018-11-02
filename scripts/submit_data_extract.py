@@ -157,7 +157,7 @@ def clean(job_submit_url, grq_es_url, force=False):
     # tag jobs for requeue
     logging.info("Found %d incoming datasets which can be extracted:" % len(results_to_extract))
 
-    for id, metadata_src in results_to_extract:
+    for id, metadata_src in results_to_extract.iteritems():
         logging.info(id)
 
         if force:
