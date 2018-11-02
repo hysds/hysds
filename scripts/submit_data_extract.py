@@ -129,7 +129,7 @@ def clean(job_submit_url, grq_es_url, force=False):
     # client = boto3.client('s3')
 
     # get list of results and sort by bucket
-    results_to_extract = []
+    results_to_extract = {}
     while True:
         r = requests.post('%s/_search/scroll?scroll=10m' % grq_es_url, data=scroll_id)
         res = r.json()
@@ -137,6 +137,7 @@ def clean(job_submit_url, grq_es_url, force=False):
         if len(res['hits']['hits']) == 0: break
         for hit in res['hits']['hits']:
             incoming_id = hit['_id']
+            incoming_metadata = res['hits']['hits'][0]['_source']
 
             # extract s3 url bucket and dataset id
             match = INCOMING_RE.search(incoming_id)
@@ -151,42 +152,27 @@ def clean(job_submit_url, grq_es_url, force=False):
                 logging.warning("Found %s in %s. Not appending to submit extract job." % (slc_dataset_id, grq_es_url))
             else:
                 logging.warning("%s not extracted!" % (slc_dataset_id))
-                results_to_extract.append(incoming_id)
+                results_to_extract.update({incoming_id:incoming_metadata})
 
     # tag jobs for requeue
     logging.info("Found %d incoming datasets which can be extracted:" % len(results_to_extract))
 
-    for id in sorted(results_to_extract):
+    for id, metadata_src in sorted(results_to_extract):
         logging.info(id)
-        if force:
 
-            job_params_query = {
-                "query": {
-                    "query": {
-                        "bool": {
-                            "must": [
-                                {
-                                    "term": {
-                                        "dataset.raw": "S1-IW_SLC"
-                                    }
-                                },
-                                {"query_string": {
-                                    "query": "_id:\"%s\"" % id,
-                                    "default_operator": "OR"}
-                                }
-                            ]
-                        }
-                    },
-                    "fields": [],
-                }
-            }
+        if force:
+            job_params = '{"localize_url": "%s", "file": "%s", "prod_name": "%s", "prod_date": "%s"}' \
+                         % (metadata_src['urls'][1],
+                            metadata_src['metadata']['data_product_name'],
+                            metadata_src['metadata']['prod_name'],
+                            metadata_src['metadata']['prod_date'])
 
             params = {}
             params["queue"] = "aria-job_worker-small"
             params["priority"] = "5"
             params["tags"] = '["%s"]' % "data-extract"
             params["type"] = 'job-%s:%s' % ("spyddder-extract", "release-20180823")
-            params["params"] = json.dumps(job_params_query)
+            params["params"] = json.dumps(job_params)
             params["enable_dedup"] = False
 
             logging.info('submitting jobs with params:')
