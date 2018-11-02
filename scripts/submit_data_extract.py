@@ -12,7 +12,7 @@ from hysds.celery import app
 log_format = "[%(asctime)s: %(levelname)s/clean_failed_s3_no_clobber_datasets] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
-INCOMING_RE = re.compile('incoming-.{4}-.{2}-.{2}-(.*).zip')
+INCOMING_RE = re.compile('incoming-.{4}-.{2}-.{2}-(.*IW_SLC.*).zip')
 
 S3_MAX_DELETE_CHUNK = 1000
 
@@ -140,7 +140,11 @@ def clean(job_submit_url, grq_es_url, force=False):
 
             # extract s3 url bucket and dataset id
             match = INCOMING_RE.search(incoming_id)
-            if not match: raise RuntimeError("Failed to find SLC in %s" % incoming_id)
+
+            if not match:
+                logging.warn("Failed to find SLC in %s, not an SLC we want. Skipping!" % incoming_id)
+                continue
+
             slc_dataset_id = match.groups()
 
             if dataset_exists(grq_es_url, slc_dataset_id):
