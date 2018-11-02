@@ -144,15 +144,18 @@ def clean(job_submit_url, grq_es_url, force=False):
             slc_dataset_id = match.groups()
 
             if dataset_exists(grq_es_url, slc_dataset_id):
-                logging.warning("Found %s in %s. Not adding tag for data-extraction." % (slc_dataset_id, grq_es_url))
+                logging.warning("Found %s in %s. Not appending to submit extract job." % (slc_dataset_id, grq_es_url))
             else:
+                logging.warning("%s not extracted!" % (slc_dataset_id))
                 results_to_extract.append(incoming_id)
 
     # tag jobs for requeue
-    logging.info("Found %d incoming datasets which can be extracted :" % len(results_to_extract))
+    logging.info("Found %d incoming datasets which can be extracted:" % len(results_to_extract))
 
-    if force:
-        for id in sorted(results_to_extract):
+    for id in sorted(results_to_extract):
+        logging.info(id)
+        if force:
+
             job_params_query = {
                 "query": {
                     "query": {
