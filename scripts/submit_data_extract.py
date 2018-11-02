@@ -92,7 +92,7 @@ def dataset_exists(es_url, id, es_index="grq"):
     return False
 
 
-def clean(job_submit_url, grq_es_url, force=False, add_tag=False):
+def clean(job_submit_url, grq_es_url, force=False):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing
        and clean them out if dataset was not indexed."""
 
@@ -209,9 +209,7 @@ if __name__ == "__main__":
     job_submit_url = '%s/mozart/api/v0.1/job/submit' % jobs_es_url
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
-    parser.add_argument('-t', '--add-tag', help="add 'to-requeue-no-clobber' tag for associated jobs to be cleared in s3", action='store_true')
-    parser.add_argument('-jt', '--jobtype', help="which job type to filter in, empty to disable job-type filter")
 
     args = parser.parse_args()
 
-    clean(job_submit_url, grq_es_url, args.force, args.add_tag, args.jobtype)
+    clean(job_submit_url, grq_es_url, args.force)
