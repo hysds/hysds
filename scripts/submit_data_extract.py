@@ -155,7 +155,7 @@ def clean( grq_es_url, force=False):
                 logging.warning("Found %s in %s. Not appending to submit extract job." % (slc_dataset_id, grq_es_url))
             else:
                 logging.warning("%s (SLC) not extracted!" % (slc_dataset_id))
-                logging.warning("%s (incoming) not extracted!" % (incoming_id))
+                logging.warning("%s (incoming) not extracted!" % (incoming_metadata))
                 results_to_extract.update({slc_dataset_id:incoming_metadata})
 
     # tag jobs for requeue
