@@ -101,7 +101,7 @@ pynacl>=1.1.2             # via paramiko
 python-dateutil==2.6.1    # via botocore, prov
 pytz==2017.2              # via babel, celery, flower
 redis==2.10.5
-requests==2.18.1
+requests>=2.20.0
 rsa==3.4.2                # via google-auth, google-auth-httplib2, oauth2client
 s3transfer==0.1.10        # via boto3
 singledispatch==3.4.0.3   # via tornado

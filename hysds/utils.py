@@ -67,9 +67,36 @@ def error_handler(uuid):
                 (uuid, exc, result.traceback))
 
 
+def get_download_params(url):
+    """Set osaka download params."""
+
+    params = {}
+
+    # set profile
+    for prof in app.conf.get('BUCKET_PROFILES', []):
+        if 'profile_name' in params: break
+        if prof.get('bucket_patterns', None) is None:
+            params['profile_name'] = prof['profile']
+            break
+        else:
+            if isinstance(prof['bucket_patterns'], list):
+                bucket_patterns = prof['bucket_patterns']
+            else: bucket_patterns = [ prof['bucket_patterns'] ]
+            for bucket_pattern in prof['bucket_patterns']:
+                regex = re.compile(bucket_pattern)
+                match = regex.search(url)
+                if match:
+                    logger.info("{} matched '{}' for profile {}.".format(url, bucket_pattern, prof['profile']))
+                    params['profile_name'] = prof['profile']
+                    break
+                
+    return params
+
+ 
 def download_file(url, path, cache=False):
     """Download file/dir for input."""
 
+    params = get_download_params(url)
     if cache:
         url_hash = hashlib.md5(url).hexdigest()
         hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, 'cache', *url_hash[0:4])
@@ -80,7 +107,7 @@ def download_file(url, path, cache=False):
             logger.info("cache hit for {} at {}".format(url, cache_dir))
         else:
             logger.info("cache miss for {}".format(url))
-            try: osaka.main.get(url, cache_dir)
+            try: osaka.main.get(url, cache_dir, params=params)
             except Exception, e:
                 shutil.rmtree(cache_dir)
                 tb = traceback.format_exc()
@@ -96,7 +123,7 @@ def download_file(url, path, cache=False):
                     shutil.copytree(cached_obj, os.path.join(path, i))
                 else: shutil.copytree(cached_obj, path)
             else: shutil.copy2(cached_obj, path)
-    else: return osaka.main.get(url, path)
+    else: return osaka.main.get(url, path, params=params)
 
 
 def find_cache_dir(cache_dir):
