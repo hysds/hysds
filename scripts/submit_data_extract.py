@@ -140,7 +140,7 @@ def clean( grq_es_url, force=False):
         if len(res['hits']['hits']) == 0: break
         for hit in res['hits']['hits']:
             incoming_id = hit['_id']
-            incoming_metadata = res['hits']['hits'][0]['_source']
+            incoming_metadata = hit['_source']
 
             # extract s3 url bucket and dataset id
             match = INCOMING_RE.search(incoming_id)
