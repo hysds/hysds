@@ -591,7 +591,6 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
         except:
             logger.warn("Failed to clean up publish context at {} on successful publish.".format(publ_ctx_url))
-        osaka.main.rmall(publ_ctx_url, params=osaka_params)
     try: shutil.rmtree(publ_ctx_dir)
     except: pass
 
