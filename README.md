@@ -8,6 +8,8 @@ Core component for the Hybrid Science Data System
 - setuptools 36.0.1+
 - virtualenv 1.10.1+
 - prov-es 0.1.1+
+- osaka 0.0.1+
+- hysds-commons 0.1+
 
 
 ## Installation
@@ -34,7 +36,9 @@ Core component for the Hybrid Science Data System
 
 4. Install hysds:
   ```
-  git clone https://github.jpl.nasa.gov/hysds-org/hysds.git
+  pip install third_party/celery-v3.1.25.pqueue/
+  pip install -r requirements.txt
+  git clone https://github.com/hysds/hysds.git
   cd hysds
   pip install .
   ```
