@@ -49,6 +49,7 @@ INS_ID_INFO = "http://169.254.169.254/latest/meta-data/instance-id"
 FACTS = None
 
 # facts to store
+# need to add Azure metadata here
 FACTS_TO_TRACK = (
     'architecture',
     'domain',
