@@ -67,17 +67,18 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
         image_mappings[dsets_cfg_file] = "datasets.json"
 
-    # if running on k8s add hosts and resolv.conf
+    # if running on k8s add hosts and resolv.conf; create mount directory
     blacklist = app.conf.WORKER_MOUNT_BLACKLIST
+    mnt_dir = None
     on_k8s = int(app.conf.get('K8S', 0))
     if on_k8s:
         for f in ("/etc/hosts", "/etc/resolv.conf"):
             if f not in image_mappings and f not in image_mappings.values():
                 image_mappings[f] = f
         blacklist = [i for i in blacklist if i != "/etc"]
+        mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
 
     # add user-defined image mappings
-    mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
     for k, v in image_mappings.iteritems():
         k = os.path.expandvars(k)
         verify_docker_mount(k, blacklist)
@@ -88,7 +89,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
         if v.startswith('/'): mnt = v
         else: mnt = os.path.join(job_dir, v)
-        k = copy_mount(k, mnt_dir)
+        if mnt_dir is not None: k = copy_mount(k, mnt_dir)
         params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
 
     return params
