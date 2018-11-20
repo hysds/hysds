@@ -10,7 +10,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'redis>=2.10.3', 'celery==3.1.25.pqueue', 'requests>=2.20.0',
+        'redis>=3.0.1', 'celery==3.1.25.pqueue', 'requests>=2.20.0',
         'supervisor>=3.1.3', 'flower>=0.8.2', 'eventlet>=0.17.2',
         'easywebdav>=1.2.0', 'fabric>=1.10.1', 'lxml>=3.4.0',
         'httplib2>=0.9', 'gevent>=1.0.1', 'psutil>=2.1.3',

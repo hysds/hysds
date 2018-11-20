@@ -63,7 +63,7 @@ class Redis(MockCallbacks):
     def get(self, key):
         return self.keyspace.get(key)
 
-    def setex(self, key, value, expires):
+    def setex(self, key, expires, value):
         self.set(key, value)
         self.expire(key, expires)
 
