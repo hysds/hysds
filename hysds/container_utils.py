@@ -41,6 +41,12 @@ def copy_mount(path, mnt_dir):
 def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir):
     """Build docker params."""
 
+    # get dirs to mount
+    root_jobs_dir = os.path.join(root_work_dir, 'jobs')
+    root_tasks_dir = os.path.join(root_work_dir, 'tasks')
+    root_workers_dir = os.path.join(root_work_dir, 'workers')
+    root_cache_dir = os.path.join(root_work_dir, 'cache')
+
     # docker params dict
     params = {
         "image_name": image_name,
@@ -51,7 +57,10 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         "volumes": [
             ( "/sys/fs/cgroup", "/sys/fs/cgroup:ro" ),
             ( "/var/run/docker.sock", "/var/run/docker.sock" ),
-            ( root_work_dir, root_work_dir ),
+            ( root_jobs_dir, root_jobs_dir ),
+            ( root_tasks_dir, root_tasks_dir ),
+            ( root_workers_dir, root_workers_dir ),
+            ( root_cache_dir, "{}:ro".format(root_cache_dir) ),
         ]
     }
 

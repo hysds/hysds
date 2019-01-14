@@ -119,10 +119,16 @@ def download_file(url, path, cache=False):
             if i == '.localized': continue
             cached_obj = os.path.join(cache_dir, i)
             if os.path.isdir(cached_obj):
-                if os.path.isdir(path):
-                    shutil.copytree(cached_obj, os.path.join(path, i))
-                else: shutil.copytree(cached_obj, path)
-            else: shutil.copy2(cached_obj, path)
+                dst = os.path.join(path, i) if os.path.isdir(path) else path
+                try: os.symlink(cached_obj, dst)
+                except:
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, dst))
+                    raise
+            else:
+                try: os.symlink(cached_obj, path)
+                except:
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
+                    raise
     else: return osaka.main.get(url, path, params=params)
 
 
