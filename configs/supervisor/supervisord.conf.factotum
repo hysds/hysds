@@ -35,6 +35,32 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
+[program:on_demand_job]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=32
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
+[program:on_demand_dataset]
+directory={{ OPS_HOME }}/verdi/ops/hysds
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=32
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
 [program:user_rules_job]
 directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
