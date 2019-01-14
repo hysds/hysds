@@ -108,4 +108,4 @@ singledispatch==3.4.0.3   # via tornado
 six==1.10.0               # via bcrypt, cryptography, google-auth, google-auth-httplib2, google-cloud-core, google-cloud-videointelligence, google-resumable-media, grpcio, oauth2client, protobuf, prov, pynacl, python-dateutil, singledispatch
 supervisor==3.3.2
 tornado==4.5.1            # via flower
-urllib3==1.21.1           # via requests
+urllib3>=1.23             # via requests
