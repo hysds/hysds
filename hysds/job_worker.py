@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import os, sys, time, socket, json, traceback, types, requests, shutil, re, shlex
 import signal
@@ -213,7 +213,7 @@ def cleanup_old_jobs(work_path, jobs_path, percent_free, threshold=10., zero_sta
                     with open(exit_code_file) as f:
                         exit_code = f.read()
                     try: exit_code = int(exit_code)
-                    except Exception, e:
+                    except Exception as e:
                         logger.info("Failed to read exit code: %s" % exit_code)
                         exit_code = 1
                     if exit_code != 0: continue
@@ -353,8 +353,7 @@ def fail_job(job_status_json, jd_file):
         except: pass
         shutdown_worker(job_status_json['celery_hostname'])
         time.sleep(30) # give ample time for shutdown to come back
-    raise(WorkerExecutionError(job_status_json.get('error', def_err),
-                               job_status_json))
+    raise WorkerExecutionError
 
 
 @app.task
@@ -398,7 +397,7 @@ def run_job(job, queue_when_finished=True):
                             'traceback': error,
                             'celery_hostname': run_job.request.hostname }
         log_job_status(job_status_json)
-        raise(WorkerExecutionError(error, job_status_json))
+        raise WorkerExecutionError
 
     # install hysds signal handler?
     if app.conf.HYSDS_HANDLE_SIGNALS:
@@ -438,7 +437,7 @@ def run_job(job, queue_when_finished=True):
     workers_dir = "workers"
     workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
     try: makedirs(workers_dir_abs)
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -453,7 +452,7 @@ def run_job(job, queue_when_finished=True):
                             'traceback': traceback.format_exc(),
                             'celery_hostname': run_job.request.hostname }
         log_job_status(job_status_json)
-        raise(WorkerExecutionError(error, job_status_json))
+        raise WorkerExecutionError
 
     # set job drain detector file
     jd_file = os.path.join(workers_dir_abs, '%s.failures.json' % run_job.request.hostname)
@@ -499,7 +498,7 @@ def run_job(job, queue_when_finished=True):
             try:
                 with open(worker_cfg_file) as f:
                     worker_cfg = json.load(f)
-            except Exception, e:
+            except Exception as e:
                 error = str(e)
                 job_status_json = { 'uuid': job['task_id'],
                                     'job_id': job['job_id'],
@@ -623,7 +622,7 @@ def run_job(job, queue_when_finished=True):
     cache_dir = "cache"
     cache_dir_abs = os.path.join(root_work_dir, cache_dir)
     try: makedirs(cache_dir_abs)
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -662,7 +661,7 @@ def run_job(job, queue_when_finished=True):
                            "%04d" % yr, "%02d" % mo, "%02d" % dy,
                            "%02d" % hr, "%02d" % mi, job_id)
     try: makedirs(job_dir)
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -683,7 +682,7 @@ def run_job(job, queue_when_finished=True):
     try:
         with open(job_running_file, 'w') as f:
             f.write("%sZ\n" % datetime.utcnow().isoformat())
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -714,7 +713,7 @@ def run_job(job, queue_when_finished=True):
 
     # get worker instance facts
     try: facts = get_facts()
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -786,7 +785,7 @@ def run_job(job, queue_when_finished=True):
             json.dump(context, f, indent=2, sort_keys=True)
         job['job_info']['context_file'] = context_file
         job['job_info']['datasets_cfg_file'] = datasets_cfg_file
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -808,7 +807,7 @@ def run_job(job, queue_when_finished=True):
         job_file = os.path.join(job_dir, '_job.json')
         with open(job_file, 'w') as f:
             json.dump(job, f, indent=2, sort_keys=True)
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -836,7 +835,7 @@ def run_job(job, queue_when_finished=True):
             if isinstance(dj, dict):
                 error = "verdi worker found duplicate job %s with status %s" % (dj['_id'], dj['status'])
                 dedupJob = dj['_id']
-                raise(JobDedupedError(error))
+                raise JobDedupedError
 
         # set status to job-started
         job['job_info']['time_start'] = time_start_iso
@@ -888,7 +887,7 @@ def run_job(job, queue_when_finished=True):
         for arg in job['command']['arguments']:
             matchArg = re.search(r'^\$(\w+)$', arg)
             if matchArg: arg = job['params'][matchArg.group(1)]
-            if isinstance(arg, (types.ListType, types.TupleType)):
+            if isinstance(arg, (list, tuple)):
                 cmdLineList.extend(arg)
             else: cmdLineList.append(arg)
         execEnv = dict(os.environ)
@@ -921,10 +920,10 @@ def run_job(job, queue_when_finished=True):
             docker_params_file = os.path.join(job_dir, '_docker_params.json')
             with open(docker_params_file, 'w') as f:
                 json.dump(docker_params, f, indent=2, sort_keys=True)
-        except Exception, e:
+        except Exception as e:
             tb = traceback.format_exc()
             err = "Failed to dump docker params to file %s: %s\n%s" % (docker_params_file, str(e), tb)
-            raise(RuntimeError(err))
+            raise RuntimeError
 
         # make sure command-line list items are string
         cmdLineList = [str(i) for i in cmdLineList]
@@ -936,14 +935,14 @@ def run_job(job, queue_when_finished=True):
         with open(run_script, 'w') as f:
             f.write("#!/bin/bash\n\n")
             # dump entire env for info
-            for env_var, env_val in execEnv.iteritems():
+            for env_var, env_val in execEnv.items():
                 f.write("#%s=%s\n" % (env_var, env_val))
             f.write("\n")
             # dump job env for execution
             for env in job['command']['env']:
                 f.write("export %s=%s\n" % (env['key'], env['value']))
             f.write("\n%s\n" % cmdLine)
-        try: os.chmod(run_script, 0755)
+        try: os.chmod(run_script, 0o755)
         except: pass
 
         # command execution start time
@@ -998,18 +997,18 @@ def run_job(job, queue_when_finished=True):
         # handle non-zero exit status
         if status != 0:
             if status is None:
-                raise(RuntimeError("Failed to get exit status."))
-            else: raise(RuntimeError("Got non-zero exit code: %d" % status))
+                raise RuntimeError
+            else: raise RuntimeError
 
         # check for metrics from PGE
         for pge_metrics_file in find_pge_metrics(job_dir):
             pge_metrics = {}
             with open(pge_metrics_file) as f:
                 try: pge_metrics = json.load(f)
-                except Exception, e:
+                except Exception as e:
                     tb = traceback.format_exc()
                     err = "Failed to load PGE-generated metrics from %s: %s\n%s" % (pge_metrics_file, str(e), tb)
-                    raise(RuntimeError(err))
+                    raise RuntimeError
 
             # append input localization metrics
             job['job_info']['metrics']['inputs_localized'].extend(pge_metrics.get('download', []))
@@ -1039,7 +1038,7 @@ def run_job(job, queue_when_finished=True):
                             'context': context,
                             'celery_hostname': run_job.request.hostname }
 
-    except Exception, e:
+    except Exception as e:
         # log error
         error = str(e)
         tb = traceback.format_exc()
@@ -1054,7 +1053,7 @@ def run_job(job, queue_when_finished=True):
         if isinstance(e, SoftTimeLimitExceeded):
             if pid is not None:
                 try: os.killpg(pid, signal.SIGTERM)
-                except Exception, e2:
+                except Exception as e2:
                     logger.info(" Got error trying to send " +
                                 "SIGTERM to %d: %s\n%s" % 
                                 (pid, str(e2), traceback.format_exc()))
@@ -1149,7 +1148,7 @@ def run_job(job, queue_when_finished=True):
         if not all(post_processor_sigs):
             no_cont = list(compress(post_processors, [not i for i in post_processor_sigs]))
             logger.info("Post-processing steps that didn't signal continuation: %s" % ", ".join(no_cont))
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],
@@ -1179,7 +1178,7 @@ def run_job(job, queue_when_finished=True):
 
         # queue job finished for user rules processing
         if queue_when_finished == True: queue_finished_job(payload_id)
-    except Exception, e:
+    except Exception as e:
         error = str(e)
         job_status_json = { 'uuid': job['task_id'],
                             'job_id': job['job_id'],

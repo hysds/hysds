@@ -104,16 +104,16 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
 
     # We must always pass Unicode strings to Header, otherwise it will
     # use RFC 2047 encoding even on plain ASCII strings.
-    sender_name = str(Header(unicode(sender_name), header_charset))
+    sender_name = str(Header(str(sender_name), header_charset))
     unicode_parsed_cc_recipients = []
     for recipient_name, recipient_addr in parsed_cc_recipients:
-        recipient_name = str(Header(unicode(recipient_name), header_charset))
+        recipient_name = str(Header(str(recipient_name), header_charset))
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_cc_recipients.append((recipient_name, recipient_addr))
     unicode_parsed_bcc_recipients = []
     for recipient_name, recipient_addr in parsed_bcc_recipients:
-        recipient_name = str(Header(unicode(recipient_name), header_charset))
+        recipient_name = str(Header(str(recipient_name), header_charset))
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_bcc_recipients.append((recipient_name, recipient_addr))
@@ -127,12 +127,12 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
                                  for recipient_name, recipient_addr in unicode_parsed_cc_recipients])
     msg['BCC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
                                   for recipient_name, recipient_addr in unicode_parsed_bcc_recipients])
-    msg['Subject'] = Header(unicode(subject), header_charset)
+    msg['Subject'] = Header(str(subject), header_charset)
     msg['FROM'] = "no-reply@jpl.nasa.gov"
     msg.attach(MIMEText(body.encode(body_charset), 'plain', body_charset))
     
     # Add attachments
-    if isinstance(attachments, types.DictType):
+    if isinstance(attachments, dict):
         for fname in attachments:
             part = MIMEBase('application', "octet-stream")
             part.set_payload(attachments[fname])
@@ -208,7 +208,7 @@ def get_all_queues(rabbitmq_admin_url):
     try:
         data = get_requests_json_response(os.path.join(rabbitmq_admin_url, "api/queues"))
         #print(data)
-    except HTTPError, e:
+    except HTTPError as e:
         if e.response.status_code == 401:
             logger.error("Failed to authenticate to {}. Ensure credentials are set in .netrc.".format(rabbitmq_admin_url))
         raise
@@ -219,9 +219,9 @@ def get_all_queues(rabbitmq_admin_url):
             	continue
 	    
 	    if obj["name"]=="factotum-job_worker-scihub_throttled":
-	        print(obj["name"])
+	        print((obj["name"]))
 	        print(obj)
-                print(json.dumps(obj, indent=2, sort_keys=True))
+                print((json.dumps(obj, indent=2, sort_keys=True)))
 	        break
     #'''	    
     return [ obj for obj in data if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES and obj["name"] !='Recommended Queues' and obj["messages_ready"]>0]
@@ -260,7 +260,7 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
             error += '\nJobs WAITING in the queue : %s' %messages_ready
             error +='\nJobs running : %s' %messages_unacked
         else:
-	    print("processing job status for queue : %s" %queue_name)
+	    print(("processing job status for queue : %s" %queue_name))
     	    result = do_queue_query(url, queue_name)
     	    count = result['hits']['total']
     	    if count == 0: 
@@ -270,7 +270,7 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
     	    else:
             	latest_job = result['hits']['hits'][0]['_source']
             	logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-            	print("job status : %s" %latest_job['status'])
+            	print(("job status : %s" %latest_job['status']))
             	start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
             	now = datetime.utcnow()
             	delta = (now-start_dt).total_seconds()
@@ -278,7 +278,7 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
             	if delta > periodicity:
 		    is_alert=True
    		    error +='\nQueue Name : %s' %queue_name
-		    error += '\nError: Possible Job hanging in the queue
+		    error += '\nError: Possible Job hanging in the queue'
 		    error +='\nTotal jobs : %s' %total_messages
 		    error += '\nJobs WAITING in the queue : %s' %messages_ready
 		    error +='\nJobs running : %s' %messages_unacked

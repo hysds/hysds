@@ -1,5 +1,5 @@
-from __future__ import absolute_import
-from __future__ import print_function
+
+
 
 import os, sys, json, backoff, shutil
 from datetime import datetime
@@ -20,17 +20,17 @@ IMAGE_LOAD_TIME_MAX = 600
 def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 
-    if m == "/": raise(RuntimeError("Cannot mount host root directory"))
+    if m == "/": raise RuntimeError
     for k in blacklist:
         if m.startswith(k):
-            raise(RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k)))
+            raise RuntimeError
     return True
 
 
 def copy_mount(path, mnt_dir):
     """Copy path to a directory to be used for mounting into container. Return this path."""
 
-    if not os.path.exists(mnt_dir): os.makedirs(mnt_dir, 0777)
+    if not os.path.exists(mnt_dir): os.makedirs(mnt_dir, 0o777)
     mnt_path = os.path.join(mnt_dir, os.path.basename(path))
     if os.path.isdir(path): shutil.copytree(path, mnt_path)
     else: shutil.copy(path, mnt_path)
@@ -68,12 +68,12 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
                                      os.path.join(os.path.dirname(app.conf.__file__),
                                                   "celeryconfig.py"))
-    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in image_mappings.values():
+    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(image_mappings.values()):
         image_mappings[celery_cfg_file] = "celeryconfig.py"
     dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
                                     os.path.normpath(os.path.join(os.path.dirname(sys.executable),
                                                                   '..', 'etc', 'datasets.json')))
-    if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
+    if dsets_cfg_file not in image_mappings and "datasets.json" not in list(image_mappings.values()):
         image_mappings[dsets_cfg_file] = "datasets.json"
 
     # if running on k8s add hosts and resolv.conf; create mount directory
@@ -82,20 +82,20 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     on_k8s = int(app.conf.get('K8S', 0))
     if on_k8s:
         for f in ("/etc/hosts", "/etc/resolv.conf"):
-            if f not in image_mappings and f not in image_mappings.values():
+            if f not in image_mappings and f not in list(image_mappings.values()):
                 image_mappings[f] = f
         blacklist = [i for i in blacklist if i != "/etc"]
         mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
 
     # add user-defined image mappings
-    for k, v in image_mappings.iteritems():
+    for k, v in image_mappings.items():
         k = os.path.expandvars(k)
         verify_docker_mount(k, blacklist)
         mode = "ro"
         if isinstance(v, list):
             if len(v) > 1: v, mode = v[0:2]
             elif len(v) == 1: v = v[0]
-            else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
+            else: raise RuntimeError
         if v.startswith('/'): mnt = v
         else: mnt = os.path.join(job_dir, v)
         if mnt_dir is not None: k = copy_mount(k, mnt_dir)
@@ -126,9 +126,8 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                 logger.info("Downloading image %s (%s) from %s" % 
                             (image_file, image_name, image_url))
                 try: osaka.main.get(image_url, image_file)
-                except Exception, e:
-                    raise(RuntimeError("Failed to download image %s:\n%s" % 
-                                       (image_url, str(e))))
+                except Exception as e:
+                    raise RuntimeError
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
             load_lock = "{}.load.lock".format(image_file)
@@ -139,13 +138,13 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                 p = Popen(['docker', 'load', '-i', image_file], stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
                 if p.returncode != 0:
-                    raise(RuntimeError("Failed to load image %s (%s): %s" % (image_file, image_name, stderr)))
+                    raise RuntimeError
                 logger.info("Loaded image %s (%s)" % (image_file, image_name))
                 try: os.unlink(image_file)
                 except: pass
                 try: os.unlink(load_lock)
                 except: pass
-            except OSError, e:
+            except OSError as e:
                 if e.errno == 17:
                     logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
                     inspect_image(image_name)

@@ -47,7 +47,7 @@ def clean(es_url):
             r = requests.delete("%s/%s/%s/_query?q=_id:%s" % (es_url, idx, doctype, job['id']))
             r.raise_for_status()
             res = r.json()
-            print "Cleaned out job %s for host %s." % (job['id'], job['execute_node'])
+            print("Cleaned out job %s for host %s." % (job['id'], job['execute_node']))
 
 
 if __name__ == "__main__":

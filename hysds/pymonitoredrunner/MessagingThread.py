@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger()
 
 #import threading
-import Queue
+import queue
 
 import billiard
 from billiard import JoinableQueue
@@ -70,7 +70,7 @@ class MessagingThread(AbstractInterruptableProcess):
                     # end if
 
                     self._queue.task_done()
-                except Queue.Empty, e:
+                except queue.Empty as e:
                     break # done getting all items from queue
                 # end try-catch
             # end while

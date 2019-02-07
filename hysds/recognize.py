@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import sys, os, re, socket, types, pwd, json
 from pprint import pprint
@@ -166,7 +166,7 @@ class Recognizer:
         else:
             if 'extractor' not in self.recognized: return None
             extractor = self.recognized['extractor']
-            if isinstance(extractor, types.StringTypes):
+            if isinstance(extractor, (str,)):
                 return os.path.expandvars(extractor)
             else: return extractor
 

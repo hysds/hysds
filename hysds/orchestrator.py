@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import os, sys, re, json, time, socket, uuid, pprint, copy, traceback, backoff
 from datetime import datetime
@@ -50,18 +50,18 @@ def get_function(func_str, add_to_sys_path=None):
     if libmatch:
         import_lib = libmatch.group(1)
         if add_to_sys_path:
-            exec "import sys; sys.path.insert(1,'%s')" % add_to_sys_path
-        exec "import %s" % import_lib
-        exec "reload(%s)" % import_lib
+            exec("import sys; sys.path.insert(1,'%s')" % add_to_sys_path)
+        exec("import %s" % import_lib)
+        exec("reload(%s)" % import_lib)
 
     #check there are args
     args_match = re.search(r'\((\w+)\..+\)$', func_str)
     if args_match:
         import_lib2 = args_match.group(1)
         if add_to_sys_path:
-            exec "import sys; sys.path.insert(1,'%s')" % add_to_sys_path
-        exec "import %s" % import_lib2
-        exec "reload(%s)" % import_lib2
+            exec("import sys; sys.path.insert(1,'%s')" % add_to_sys_path)
+        exec("import %s" % import_lib2)
+        exec("reload(%s)" % import_lib2)
 
     #return function
     return eval(func_str)
@@ -142,7 +142,7 @@ def submit_job(j):
                             'short_error': get_short_error(error_info),
                             'traceback': error_info }
         log_job_status(job_status_json)
-        raise(OrchestratorExecutionError(error, job_status_json))
+        raise OrchestratorExecutionError
 
     #logger.info("HYSDS_ORCHESTRATOR_CFG:%s" % orch_cfg_file)
     if not os.path.exists(orch_cfg_file):
@@ -158,7 +158,7 @@ def submit_job(j):
                             'short_error': get_short_error(error_info),
                             'traceback': error_info }
         log_job_status(job_status_json)
-        raise(OrchestratorExecutionError(error, job_status_json))
+        raise OrchestratorExecutionError
 
     with open(orch_cfg_file) as f:
         orch_cfg = json.load(f)
@@ -178,7 +178,7 @@ def submit_job(j):
                             'short_error': get_short_error(error_info),
                             'traceback': error_info }
         log_job_status(job_status_json)
-        raise(OrchestratorExecutionError(error, job_status_json))
+        raise OrchestratorExecutionError
     #logger.info("HYSDS_JOB_CREATORS_DIR:%s" % job_creators_dir)
 
     # parse job configurations
@@ -200,7 +200,7 @@ def submit_job(j):
                             'short_error': get_short_error(error_info),
                             'traceback': error_info }
         log_job_status(job_status_json)
-        raise(OrchestratorExecutionError(error, job_status_json))
+        raise OrchestratorExecutionError
     job_type = j['job_type']
     job_queue = j.get('job_queue', None)
 
@@ -217,7 +217,7 @@ def submit_job(j):
                             'short_error': get_short_error(error_info),
                             'traceback': error_info }
         log_job_status(job_status_json)
-        raise(OrchestratorExecutionError(error, job_status_json))
+        raise OrchestratorExecutionError
     payload = j['payload']
     #logger.info("got job_type: %s" % job_type)
     #logger.info("payload: %s" % payload)
@@ -291,7 +291,7 @@ def submit_job(j):
                                 'short_error': get_short_error(error_info),
                                 'traceback': traceback.format_exc() }
             log_job_status(job_status_json)
-            raise(OrchestratorExecutionError(error, job_status_json))
+            raise OrchestratorExecutionError
         #logger.info("job: %s" % job)
 
         # set context

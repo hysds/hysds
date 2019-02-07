@@ -1,18 +1,18 @@
-from __future__ import absolute_import
-from __future__ import print_function
 
-import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno
+
+
+import os, sys, re, urllib.request, urllib.parse, urllib.error, json, requests, math, backoff, hashlib, copy, errno
 import shutil, traceback
 from glob import glob
 from datetime import datetime
 from subprocess import check_output
-from urllib2 import urlopen
-from urlparse import urlparse,ParseResult
-from StringIO import StringIO
+from urllib.request import urlopen
+from urllib.parse import urlparse,ParseResult
+from io import StringIO
 from lxml.etree import XMLParser, parse, tostring
 from importlib import import_module
 from celery.result import AsyncResult
-from urlparse import urlparse
+from urllib.parse import urlparse
 from atomicwrites import atomic_write
 from bisect import insort
 
@@ -108,11 +108,10 @@ def download_file(url, path, cache=False):
         else:
             logger.info("cache miss for {}".format(url))
             try: osaka.main.get(url, cache_dir, params=params)
-            except Exception, e:
+            except Exception as e:
                 shutil.rmtree(cache_dir)
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to download %s to cache %s: %s\n%s" % \
-                    (url, cache_dir, str(e), tb)))
+                raise RuntimeError
             with atomic_write(signal_file, overwrite=True) as f:
                 f.write("%sZ\n" % datetime.utcnow().isoformat())
         for i in os.listdir(cache_dir):
@@ -183,16 +182,16 @@ def get_disk_usage(path):
     return size
 
 
-def makedirs(dir, mode=0777):
+def makedirs(dir, mode=0o777):
     """Make directory along with any parent directory that may be needed."""
 
     try: os.makedirs(dir, mode)
-    except OSError, e:
+    except OSError as e:
         if e.errno == errno.EEXIST and os.path.isdir(dir): pass
         else: raise
 
     
-def validateDirectory(dir, mode=0755, noExceptionRaise=False):
+def validateDirectory(dir, mode=0o755, noExceptionRaise=False):
     """Validate that a directory can be written to by the current process and return 1.
     Otherwise, try to create it.  If successful, return 1.  Otherwise return None.
     """
@@ -415,9 +414,9 @@ def localize_urls(job, ctx):
         makedirs(dir_path)
         loc_t1 = datetime.utcnow()
         try: download_file(url, path, cache=cache)
-        except Exception, e:
+        except Exception as e:
             tb = traceback.format_exc()
-            raise(RuntimeError("Failed to download %s: %s\n%s" % (url, str(e), tb)))
+            raise RuntimeError
         loc_t2 = datetime.utcnow()
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
@@ -476,9 +475,9 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     if os.path.exists(prov_es_file):
         with open(prov_es_file) as f:
             try: prov_es_info = json.load(f)
-            except Exception, e:
+            except Exception as e:
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
+                raise RuntimeError
         log_prov_es(job, prov_es_info, prov_es_file)
 
     # copy _context.json
@@ -487,8 +486,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
 
     # upload
     tx_t1 = datetime.utcnow()
-    metrics, prod_json = apply(get_func("hysds.dataset_ingest.ingest"),
-                               (prod_id, datasets_cfg_file,
+    metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(*(prod_id, datasets_cfg_file,
                                 app.conf.GRQ_UPDATE_URL,
                                 app.conf.DATASET_PROCESSED_QUEUE,
                                 prod_dir, job_dir))

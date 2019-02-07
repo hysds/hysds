@@ -191,7 +191,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
 
 
             logger.debug("After calling wait() on process, got status: %s" % self._exitCode)
-        except Exception, e:
+        except Exception as e:
             logger.warn("Got %s exception waiting for process: %s\n%s" % 
                         (type(e), str(e), traceback.format_exc()))
         # end try-except

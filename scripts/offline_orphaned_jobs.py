@@ -164,7 +164,7 @@ if __name__ == "__main__":
     # prompt user system is quiet
     print("\033[1;31;40mThis script should run when no workers are consuming jobs from any queues.")
     print("(i.e. RabbitMQ admin shows all 0's in the unacked column).\033[0m")
-    try: input_str = raw_input("Type YES to continue: ").strip()
+    try: input_str = input("Type YES to continue: ").strip()
     except: sys.exit(1)
     if input_str != "YES": sys.exit(0)
 

@@ -131,7 +131,7 @@ def daemon(interval, url, timeout):
     while True:
         try:
             tag_timedout_jobs(url, timeout)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(random.randint(interval_min, interval_max))

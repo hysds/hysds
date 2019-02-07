@@ -67,7 +67,7 @@ def clean(es_url, time_queued):
         r = requests.delete("%s/%s/%s/_query?q=_id:%s" % (es_url, idx, doctype, job_id))
         r.raise_for_status()
         res = r.json()
-        print "Cleaned out queued job %s." % job_id
+        print("Cleaned out queued job %s." % job_id)
 
 
 if __name__ == "__main__":

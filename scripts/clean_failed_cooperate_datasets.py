@@ -65,7 +65,7 @@ def get_matching_s3_objects(client, bucket, prefix='', suffix=''):
        https://alexwlchan.net/2018/01/listing-s3-keys-redux/."""
 
     kwargs = {'Bucket': bucket}
-    if isinstance(prefix, types.StringTypes):
+    if isinstance(prefix, (str,)):
         kwargs['Prefix'] = prefix
     #logging.info("kwargs: %s" % kwargs)
     while True:
@@ -159,7 +159,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
     # perform cleanup
     for bucket in sorted(results):
         # chunk
-        chunks = [results[bucket][x:x+S3_MAX_DELETE_CHUNK] for x in xrange(0, len(results[bucket]), S3_MAX_DELETE_CHUNK)]
+        chunks = [results[bucket][x:x+S3_MAX_DELETE_CHUNK] for x in range(0, len(results[bucket]), S3_MAX_DELETE_CHUNK)]
         
         for chunk in chunks:
             if force:

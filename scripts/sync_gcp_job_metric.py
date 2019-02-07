@@ -56,7 +56,7 @@ def daemon(project, job, interval):
             job_count = get_waiting_job_count(job)
             logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
             submit_metric(resource_id, project, job, job_count)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(interval)    

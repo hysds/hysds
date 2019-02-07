@@ -50,7 +50,7 @@ def daemon(job, interval, namespace, user="guest", password="guest"):
             job_count = get_waiting_job_count(job, user, password)
             logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
             submit_metric(job, job_count, namespace)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(interval)    

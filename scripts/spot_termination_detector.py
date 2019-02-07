@@ -56,8 +56,8 @@ def graceful_shutdown(url, term_time):
 
     # log marked_for_termination
     try:
-        print(log_event(url, 'aws_spot', 'marked_for_termination',
-                        { 'terminate_time': term_time }, []))
+        print((log_event(url, 'aws_spot', 'marked_for_termination',
+                        { 'terminate_time': term_time }, [])))
     except: pass
 
     # die

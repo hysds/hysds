@@ -129,7 +129,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
             try:
                 r = requests.delete(ds_url, verify=False)
                 r.raise_for_status()
-            except Exception, e:
+            except Exception as e:
                 logging.warning("Failed to delete %s: %s" % (ds_url, traceback.format_exc()))
                 pass
 

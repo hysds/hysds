@@ -86,7 +86,7 @@ class AbstractInterruptableProcess(Process):
                 self.join(timeout) # seconds
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
+        except KeyboardInterrupt as e:
             logger.debug('=> Process interrupted. %s' % (str(e)) )
 
             # raised when user presses CTRL-C
@@ -115,7 +115,7 @@ class AbstractInterruptableProcess(Process):
                 remainingSeconds -= 1
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
+        except KeyboardInterrupt as e:
             logger.debug('=> Sleep interrupted. %s' % (str(e)) )
 
             # raised when user presses CTRL-C

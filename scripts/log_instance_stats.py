@@ -38,7 +38,7 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
 
     # print log
     try: logging.info("instance_stats:%s" % json.dumps(instance_stats))
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception trying to log instance stats: %s" % str(e))
 
 
@@ -65,7 +65,7 @@ def daemon(redis_url, redis_key, interval):
                           'fs_type': fs_type,
                           'fs_opts': fs_opts }
             try: disk_info.update(psutil.disk_usage(mnt_point)._asdict())
-            except Exception, e:
+            except Exception as e:
                 logging.error("Got exception trying to get disk usage for %s: %s\nSkipping." % (mnt_point, str(e)))
                 continue
             stats['disk']['all'].append(disk_info)

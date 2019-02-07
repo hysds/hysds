@@ -55,7 +55,7 @@ class StreamObserverFileWriter:
         try:
             self._file.write(line)
             self._file.flush() # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
-        except IOError, e:
+        except IOError as e:
             logger.warning('Unable to write output to "%s": %s' % (self._filepath, str(e)))
     # end def
 

@@ -63,7 +63,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
         if KEEP_ALIVE != True:
             KEEP_ALIVE = True
             if logger is not None:
-                try: print(log_event(logger, 'harikiri', 'keep_alive_set', {}, []))
+                try: print((log_event(logger, 'harikiri', 'keep_alive_set', {}, [])))
                 except: pass
         logging.info("Keep-alive exists.")
         return
@@ -71,7 +71,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
         if KEEP_ALIVE != False:
             KEEP_ALIVE = False
             if logger is not None:
-                try: print(log_event(logger, 'harikiri', 'keep_alive_unset', {}, []))
+                try: print((log_event(logger, 'harikiri', 'keep_alive_unset', {}, [])))
                 except: pass
             logging.info("Keep-alive removed.")
 
@@ -226,7 +226,7 @@ def seppuku(logger=None):
     # gracefully shutdown
     while True:
         try: graceful_shutdown(as_group, spot_fleet, id, logger)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got exception in graceful_shutdown(): %s\n%s" %
                           (str(e), traceback.format_exc()))
         time.sleep(randint(0, 600))
@@ -262,7 +262,7 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
         if spot_fleet is not None:
             c = boto3.client('ec2')
             decrement_fleet(c, spot_fleet)
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception in graceful_shutdown(): %s\n%s" %
                       (str(e), traceback.format_exc()))
 
@@ -270,7 +270,7 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
 
     # log seppuku
     if logger is not None:
-        try: print(log_event(logger, 'harikiri', 'shutdown', {}, []))
+        try: print((log_event(logger, 'harikiri', 'shutdown', {}, [])))
         except: pass
 
     call(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"])
@@ -291,7 +291,7 @@ def harikiri(root_work, inactivity_secs, check_interval, logger=None):
     while True:
         if is_jobless(root_work, inactivity_secs, logger):
             try: seppuku(logger)
-            except Exception, e:
+            except Exception as e:
                 logging.error("Got exception in seppuku(): %s\n%s" %
                               (str(e), traceback.format_exc()))
         time.sleep(check_interval)

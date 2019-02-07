@@ -96,7 +96,7 @@ class AbstractInterruptableThread(Thread):
                 self.join(timeout) # seconds
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
+        except KeyboardInterrupt as e:
             logger.debug('=> Thread interrupted. %s' % (str(e)) )
 
             # raised when user presses CTRL-C
@@ -125,7 +125,7 @@ class AbstractInterruptableThread(Thread):
                 remainingSeconds -= 1
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
+        except KeyboardInterrupt as e:
             logger.debug('=> Sleep interrupted. %s' % (str(e)) )
 
             # raised when user presses CTRL-C

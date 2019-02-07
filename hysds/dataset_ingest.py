@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import os, sys, re, traceback, json, requests, shutil, types, socket, backoff
 import math
@@ -6,9 +6,9 @@ from subprocess import check_output, check_call
 from fabric.api import env, get, run, put
 from fabric.contrib.files import exists
 from pprint import pprint, pformat
-from urlparse import urlparse
+from urllib.parse import urlparse
 from lxml.etree import parse
-from StringIO import StringIO
+from io import StringIO
 from glob import glob
 from datetime import datetime
 from filechunkio import FileChunkIO
@@ -155,7 +155,7 @@ def publish_dataset(path, url, params=None, force=False, publ_ctx_file=None,
     # write publish context file
     if publ_ctx_file is not None and publ_ctx_url is not None:
         try: osaka.main.put(publ_ctx_file, publ_ctx_url, params=params, noclobber=True)
-        except osaka.utils.NoClobberException, e:
+        except osaka.utils.NoClobberException as e:
             raise NoClobberPublishContextException("Failed to clobber {} when noclobber is True.".format(publ_ctx_url))
 
     # upload datasets 
@@ -201,7 +201,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     if os.path.exists(job_json):
         with open(job_json) as f:
             try: job = json.load(f)
-            except Exception, e:
+            except Exception as e:
                 logger.warn("Failed to read job json:\n{}".format(str(e)))
     task_id = job.get('task_id', None)
     payload_id = job.get('job_info', {}).get('job_payload', {}).get('payload_task_id', None)
@@ -372,7 +372,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
             try:
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
-            except NoClobberPublishContextException, e:
+            except NoClobberPublishContextException as e:
                 logger.warn("A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
                 osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
                 with open(orig_publ_ctx_file) as f:
@@ -428,7 +428,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                     else: raise
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
-            except osaka.utils.NoClobberException, e:
+            except osaka.utils.NoClobberException as e:
                 if dataset_exists(objectid):
                     try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
                     except:
@@ -511,7 +511,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
         # sort browse images
         browse_sort_order = r.getBrowseSortOrder()
-        if isinstance(browse_sort_order, types.ListType) and len(browse_sort_order) > 0:
+        if isinstance(browse_sort_order, list) and len(browse_sort_order) > 0:
             bso_regexes = [re.compile(i) for i in browse_sort_order]
             sorter =  {}
             unrecognized = []
@@ -553,7 +553,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     if index is not None: update_json['index'] = index
 
     # update GRQ
-    if isinstance(update_json['metadata'], types.DictType) and len(update_json['metadata']) > 0:
+    if isinstance(update_json['metadata'], dict) and len(update_json['metadata']) > 0:
         #logger.info("update_json: %s" % pformat(update_json))
         if dry_run:
             logger.info("Would've indexed doc at %s: %s" % (grq_update_url, 
@@ -577,9 +577,9 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         prov_es_info = {}
         with open(prod_prov_es_file) as f:
             try: prov_es_info = json.load(f)
-            except Exception, e:
+            except Exception as e:
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to load PROV-ES from %s: %s\n%s" % (prod_prov_es_file, str(e), tb)))
+                raise RuntimeError
         log_publish_prov_es(prov_es_info, pub_prov_es_file, local_prod_path,
                             pub_urls, prod_metrics, objectid)
         # upload publish PROV-ES file

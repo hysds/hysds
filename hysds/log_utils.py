@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import os, re, json, copy, socket, msgpack, traceback, types, backoff
 from datetime import datetime
@@ -166,7 +166,7 @@ def log_job_status(job):
     job['@timestamp'] = "%sZ" % datetime.utcnow().isoformat()
     if 'tag' in job.get('job', {}):
         tags = job.setdefault('tags', [])
-        if isinstance(tags, types.StringTypes): tags = [ tags ]
+        if isinstance(tags, (str,)): tags = [ tags ]
         tags.append(job['job']['tag'])
         job['tags'] = tags
 
@@ -273,7 +273,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
     # update software agent and process step
     if 'bundle' in prov_es_info:
         if len(prov_es_info['bundle']) == 1:
-            bundle_id_orig = prov_es_info['bundle'].keys()[0]
+            bundle_id_orig = list(prov_es_info['bundle'].keys())[0]
 
             # update software agent
             prov_es_info['bundle'][bundle_id_orig].setdefault('agent', {}).update(pd['bundle'][bundle_id]['agent'])
@@ -284,7 +284,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
             # update activity
             if 'activity' in prov_es_info['bundle'][bundle_id_orig]:
                 if len(prov_es_info['bundle'][bundle_id_orig]['activity']) == 1:
-                    ps_id_orig = prov_es_info['bundle'][bundle_id_orig]['activity'].keys()[0]
+                    ps_id_orig = list(prov_es_info['bundle'][bundle_id_orig]['activity'].keys())[0]
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['prov:startTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:startTime']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['prov:endTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:endTime']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['hysds:job_id'] = job['job_id']
@@ -310,7 +310,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
         # update process step
         if 'activity' in prov_es_info:
             if len(prov_es_info['activity']) == 1:
-                ps_id_orig = prov_es_info['activity'].keys()[0]
+                ps_id_orig = list(prov_es_info['activity'].keys())[0]
                 prov_es_info['activity'][ps_id_orig]['prov:startTime'] = pd['activity'][ps_id]['prov:startTime']
                 prov_es_info['activity'][ps_id_orig]['prov:endTime'] = pd['activity'][ps_id]['prov:endTime']
                 prov_es_info['activity'][ps_id_orig]['hysds:job_id'] = job['job_id']

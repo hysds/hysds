@@ -50,7 +50,7 @@ def parse_job_type(event):
     try:
         payload = eval(event['args'])[0]
         job_type = payload['type']
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception trying to parse job type for %s: %s\n%s\n%s"
                       % (hostname, str(e), json.dumps(event, indent=2),
                          traceback.format_exc()))
@@ -77,7 +77,7 @@ def log_task_event(event_type, event, uuid=[]):
 
     # print log
     try: logging.info("hysds.task_event:%s" % json.dumps(info))
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception trying to log task event: %s" % str(e))
 
 
@@ -101,7 +101,7 @@ def log_worker_event(event_type, event, uuid=[]):
 
     # print log
     try: logging.info("hysds.worker_event:%s" % json.dumps(info))
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception trying to log worker event: %s" % str(e))
 
 
@@ -117,7 +117,7 @@ def log_worker_status(worker, status):
 
     # print log
     try: logging.info("hysds.worker_status:%s:%s" % (worker, status))
-    except Exception, e:
+    except Exception as e:
         logging.error("Got exception trying to log worker status: %s" % str(e))
 
 
@@ -151,7 +151,7 @@ def event_monitor(app):
         state.event(event)
         uuid = event['uuid']
         exc = event.get('exception', "")
-        if isinstance(exc, types.StringTypes):
+        if isinstance(exc, (str,)):
             match = TASK_FAILED_RE.search(exc)
             if match:
                 short_error = match.group(1)
@@ -237,7 +237,7 @@ def event_monitor(app):
                 log_job_status(job_status_json)
                 uuids.append(job_status_json['uuid'])
             log_worker_event('worker-offline', event, uuid=uuids)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got exception trying to update task events for " + \
                           "offline worker %s: %s\n%s" % (event['hostname'], str(e), 
                                                          traceback.format_exc()))

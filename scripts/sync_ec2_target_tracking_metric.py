@@ -85,7 +85,7 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
                 else: desired_capacity = 1.0
             metric = job_count/desired_capacity
             submit_metric(queue, asg, metric, namespace)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(interval)    
