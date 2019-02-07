@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-import os, sys, json, time, traceback, logging, argparse, requests
+import os
+import sys
+import json
+import time
+import traceback
+import logging
+import argparse
+import requests
 from google.cloud import monitoring
 from datetime import datetime
 
@@ -14,7 +21,8 @@ def get_waiting_job_count(job, user='guest', password='guest'):
     """Return number of jobs waiting."""
 
     # get rabbitmq admin api host
-    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get('rabbitmq', {}).get('hostname', 'localhost')
+    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get(
+        'rabbitmq', {}).get('hostname', 'localhost')
 
     # get number of jobs waiting (ready)
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, job)
@@ -31,8 +39,8 @@ def submit_metric(resource_id, project, job, job_count):
     metric_name = 'JobsWaiting-%s' % job
     client = monitoring.Client()
     metric = client.metric('custom.googleapis.com/%s/%s' % (metric_ns, metric_name),
-                            labels={ 'resource_id': resource_id })
-    resource = client.resource('global', { })
+                           labels={'resource_id': resource_id})
+    resource = client.resource('global', {})
     client.write_point(metric, resource, job_count, end_time=datetime.utcnow())
     logging.info("updated job count for %s queue as metric %s:%s: %s" %
                  (job, metric_ns, metric_name, job_count))
@@ -59,7 +67,7 @@ def daemon(project, job, interval):
         except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
-        time.sleep(interval)    
+        time.sleep(interval)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-import json, requests, logging, traceback, types, msgpack, re
+import json
+import requests
+import logging
+import traceback
+import types
+import msgpack
+import re
 from pprint import pformat
 from datetime import datetime
 from celery.result import AsyncResult
@@ -43,7 +49,8 @@ def parse_job_type(event):
     # parse job type from worker task events
     hostname = event.get('hostname', "")
     match = HOSTNAME_RE.search(hostname)
-    if match: return match.group(1)
+    if match:
+        return match.group(1)
 
     # parse job type from orchestrator task events
     job_type = "unknown"
@@ -62,21 +69,22 @@ def log_task_event(event_type, event, uuid=[]):
 
     set_redis_pool()
     global POOL
-    info = { 'resource': 'task',
-             'type': parse_job_type(event),
-             'status': event_type,
-             'celery_hostname': event.get('hostname', None),
-             'uuid': uuid,
-             '@version': '1',
-             '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
-             'event': event }
+    info = {'resource': 'task',
+            'type': parse_job_type(event),
+            'status': event_type,
+            'celery_hostname': event.get('hostname', None),
+            'uuid': uuid,
+            '@version': '1',
+            '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
+            'event': event}
 
     # send update to redis
     r = StrictRedis(connection_pool=POOL)
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
 
     # print log
-    try: logging.info("hysds.task_event:%s" % json.dumps(info))
+    try:
+        logging.info("hysds.task_event:%s" % json.dumps(info))
     except Exception as e:
         logging.error("Got exception trying to log task event: %s" % str(e))
 
@@ -86,21 +94,22 @@ def log_worker_event(event_type, event, uuid=[]):
 
     set_redis_pool()
     global POOL
-    info = { 'resource': 'worker',
-             'type': parse_job_type(event),
-             'status': event_type,
-             'celery_hostname': event['hostname'],
-             'uuid': uuid,
-             '@version': '1',
-             '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
-             'event': event }
+    info = {'resource': 'worker',
+            'type': parse_job_type(event),
+            'status': event_type,
+            'celery_hostname': event['hostname'],
+            'uuid': uuid,
+            '@version': '1',
+            '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
+            'event': event}
 
     # send update to redis
     r = StrictRedis(connection_pool=POOL)
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
 
     # print log
-    try: logging.info("hysds.worker_event:%s" % json.dumps(info))
+    try:
+        logging.info("hysds.worker_event:%s" % json.dumps(info))
     except Exception as e:
         logging.error("Got exception trying to log worker event: %s" % str(e))
 
@@ -113,10 +122,11 @@ def log_worker_status(worker, status):
 
     # send update to redis; set at the heartbeat-interval of celery workers
     r = StrictRedis(connection_pool=POOL)
-    r.setex(WORKER_STATUS_KEY_TMPL % worker, 60, status) 
+    r.setex(WORKER_STATUS_KEY_TMPL % worker, 60, status)
 
     # print log
-    try: logging.info("hysds.worker_status:%s:%s" % (worker, status))
+    try:
+        logging.info("hysds.worker_status:%s:%s" % (worker, status))
     except Exception as e:
         logging.error("Got exception trying to log worker status: %s" % str(e))
 
@@ -127,24 +137,28 @@ def event_monitor(app):
     def task_sent(event):
         state.event(event)
         if ORCH_HOST_RE.search(event['hostname']) or \
-           ORCH_NAME_RE.search(event['name']): return
+           ORCH_NAME_RE.search(event['name']):
+               return
         log_task_event('task-sent', event, uuid=event['uuid'])
 
     def task_received(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_task_event('task-received', event, uuid=event['uuid'])
 
     def task_started(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_task_event('task-started', event, uuid=event['uuid'])
 
     def task_succeeded(event):
         set_redis_pool()
         global POOL
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_task_event('task-succeeded', event, uuid=event['uuid'])
 
     def task_failed(event):
@@ -155,10 +169,12 @@ def event_monitor(app):
             match = TASK_FAILED_RE.search(exc)
             if match:
                 short_error = match.group(1)
-                es_url = "%s/job_status-current/job/%s" % (app.conf['JOBS_ES_URL'], uuid)
+                es_url = "%s/job_status-current/job/%s" % (
+                    app.conf['JOBS_ES_URL'], uuid)
                 r = requests.get(es_url)
                 if r.status_code != 200:
-                    logging.error("Failed to query for task UUID %s: %s" % (uuid, r.content))
+                    logging.error(
+                        "Failed to query for task UUID %s: %s" % (uuid, r.content))
                     return
                 res = r.json()
                 job_status = res['_source']
@@ -167,41 +183,47 @@ def event_monitor(app):
                 job_status['short_error'] = short_error
                 job_status['traceback'] = event.get('traceback', "")
                 time_end = datetime.utcnow().isoformat() + 'Z'
-                job_status.setdefault('job', {}).setdefault('job_info', {})['time_end'] = time_end
+                job_status.setdefault('job', {}).setdefault(
+                    'job_info', {})['time_end'] = time_end
                 log_job_status(job_status)
         log_task_event('task-failed', event, uuid=event['uuid'])
 
     def task_retried(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_task_event('task-retried', event, uuid=event['uuid'])
 
     def task_revoked(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_task_event('task-revoked', event, uuid=event['uuid'])
 
     def worker_online(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_worker_status(event['hostname'], event['type'])
-        log_worker_event('worker-online', event) 
+        log_worker_event('worker-online', event)
 
     def worker_offline(event):
         set_redis_pool()
         global POOL
         rd = StrictRedis(connection_pool=POOL)
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         rd.delete([WORKER_STATUS_KEY_TMPL % event['hostname']])
         time_end = datetime.utcnow().isoformat() + 'Z'
         query = {
-            "query" : {
-                "filtered" : {
-                    "query" : {
+            "query": {
+                "filtered": {
+                    "query": {
                         "bool": {
                             "must": [
-                                { "term": { "celery_hostname": event['hostname'] } },
+                                {"term": {
+                                    "celery_hostname": event['hostname']}},
                                 #{ "term": { "status": 'job-started' } }
                             ]
                         }
@@ -218,10 +240,12 @@ def event_monitor(app):
             scan_result = r.json()
             scroll_id = scan_result['_scroll_id']
             while True:
-                r = requests.post('%s/_search/scroll?scroll=60m' % app.conf['JOBS_ES_URL'], data=scroll_id)
+                r = requests.post('%s/_search/scroll?scroll=60m' %
+                                  app.conf['JOBS_ES_URL'], data=scroll_id)
                 res = r.json()
                 scroll_id = res['_scroll_id']
-                if len(res['hits']['hits']) == 0: break
+                if len(res['hits']['hits']) == 0:
+                    break
                 for hit in res['hits']['hits']:
                     job_status_jsons.append(hit['_source'])
             #logging.error("job_status_jsons:\n%s" % job_status_jsons)
@@ -233,20 +257,22 @@ def event_monitor(app):
                 job_status_json['status'] = 'job-offline'
                 job_status_json['error'] = 'Received worker-offline event during job execution.'
                 job_status_json['short_error'] = 'worker-offline'
-                job_status_json.setdefault('job', {}).setdefault('job_info', {})['time_end'] = time_end
+                job_status_json.setdefault('job', {}).setdefault(
+                    'job_info', {})['time_end'] = time_end
                 log_job_status(job_status_json)
                 uuids.append(job_status_json['uuid'])
             log_worker_event('worker-offline', event, uuid=uuids)
         except Exception as e:
-            logging.error("Got exception trying to update task events for " + \
-                          "offline worker %s: %s\n%s" % (event['hostname'], str(e), 
+            logging.error("Got exception trying to update task events for " +
+                          "offline worker %s: %s\n%s" % (event['hostname'], str(e),
                                                          traceback.format_exc()))
 
     def worker_heartbeat(event):
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
         log_worker_status(event['hostname'], event['type'])
-        log_worker_event('worker-heartbeat', event) 
+        log_worker_event('worker-heartbeat', event)
 
     def any_event(event):
         state.event(event)
@@ -264,9 +290,10 @@ def event_monitor(app):
             'worker-online': worker_online,
             'worker-offline': worker_offline,
             'worker-heartbeat': worker_heartbeat,
-            #'*': any_event,
+            # '*': any_event,
         })
         recv.capture(limit=None, timeout=None, wakeup=True)
+
 
 if __name__ == '__main__':
     event_monitor(app)

@@ -1,6 +1,16 @@
 
 
-import os, sys, re, json, time, socket, uuid, pprint, copy, traceback, backoff
+import os
+import sys
+import re
+import json
+import time
+import socket
+import uuid
+import pprint
+import copy
+import traceback
+import backoff
 from datetime import datetime
 from string import Template
 from inspect import getargspec
@@ -8,10 +18,10 @@ from celery import uuid
 
 from hysds.celery import app
 from hysds.log_utils import (logger, log_job_status, backoff_max_tries,
-backoff_max_value, ensure_hard_time_limit_gap)
+                             backoff_max_value, ensure_hard_time_limit_gap)
 from hysds.job_worker import run_job
 from hysds.utils import (error_handler, get_short_error, get_payload_hash,
-query_dedup_job)
+                         query_dedup_job)
 from hysds.user_rules_dataset import queue_dataset_evaluation
 
 
@@ -45,8 +55,8 @@ def get_function(func_str, add_to_sys_path=None):
     and return a pointer to the function.  Define add_to_sys_path to prepend a
     path to the modules path."""
 
-    #check if we have to import a module
-    libmatch = re.match(r'^((?:\w|\.)+)\.\w+\(?.*$',func_str)
+    # check if we have to import a module
+    libmatch = re.match(r'^((?:\w|\.)+)\.\w+\(?.*$', func_str)
     if libmatch:
         import_lib = libmatch.group(1)
         if add_to_sys_path:
@@ -54,7 +64,7 @@ def get_function(func_str, add_to_sys_path=None):
         exec("import %s" % import_lib)
         exec("reload(%s)" % import_lib)
 
-    #check there are args
+    # check there are args
     args_match = re.search(r'\((\w+)\..+\)$', func_str)
     if args_match:
         import_lib2 = args_match.group(1)
@@ -63,7 +73,7 @@ def get_function(func_str, add_to_sys_path=None):
         exec("import %s" % import_lib2)
         exec("reload(%s)" % import_lib2)
 
-    #return function
+    # return function
     return eval(func_str)
 
 
@@ -104,7 +114,8 @@ def submit_job(j):
     priority = j.get('priority', None)
     if priority is None:
         priority = submit_job.request.delivery_info.get('priority')
-        if priority is None: priority = 0
+        if priority is None:
+            priority = 0
 
     # get tag
     tag = j.get('tag', None)
@@ -132,15 +143,15 @@ def submit_job(j):
     if orch_cfg_file is None:
         error = "Environment variable HYSDS_ORCHESTRATOR_CFG is not set."
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-        job_status_json = { 'uuid': job['job_id'],
-                            'job_id': job['job_id'],
-                            'payload_id': task_id,
-                            'status': 'job-failed',
-                            'job': job,
-                            'context': context,
-                            'error': error_info,
-                            'short_error': get_short_error(error_info),
-                            'traceback': error_info }
+        job_status_json = {'uuid': job['job_id'],
+                           'job_id': job['job_id'],
+                           'payload_id': task_id,
+                           'status': 'job-failed',
+                           'job': job,
+                           'context': context,
+                           'error': error_info,
+                           'short_error': get_short_error(error_info),
+                           'traceback': error_info}
         log_job_status(job_status_json)
         raise OrchestratorExecutionError
 
@@ -148,15 +159,15 @@ def submit_job(j):
     if not os.path.exists(orch_cfg_file):
         error = "Orchestrator configuration %s doesn't exist." % orch_cfg_file
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-        job_status_json = { 'uuid': job['job_id'],
-                            'job_id': job['job_id'],
-                            'payload_id': task_id,
-                            'status': 'job-failed',
-                            'job': job,
-                            'context': context,
-                            'error': error_info,
-                            'short_error': get_short_error(error_info),
-                            'traceback': error_info }
+        job_status_json = {'uuid': job['job_id'],
+                           'job_id': job['job_id'],
+                           'payload_id': task_id,
+                           'status': 'job-failed',
+                           'job': job,
+                           'context': context,
+                           'error': error_info,
+                           'short_error': get_short_error(error_info),
+                           'traceback': error_info}
         log_job_status(job_status_json)
         raise OrchestratorExecutionError
 
@@ -168,15 +179,15 @@ def submit_job(j):
     if job_creators_dir is None:
         error = "Environment variable HYSDS_JOB_CREATORS_DIR is not set."
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-        job_status_json = { 'uuid': job['job_id'],
-                            'job_id': job['job_id'],
-                            'payload_id': task_id,
-                            'status': 'job-failed',
-                            'job': job,
-                            'context': context,
-                            'error': error_info,
-                            'short_error': get_short_error(error_info),
-                            'traceback': error_info }
+        job_status_json = {'uuid': job['job_id'],
+                           'job_id': job['job_id'],
+                           'payload_id': task_id,
+                           'status': 'job-failed',
+                           'job': job,
+                           'context': context,
+                           'error': error_info,
+                           'short_error': get_short_error(error_info),
+                           'traceback': error_info}
         log_job_status(job_status_json)
         raise OrchestratorExecutionError
     #logger.info("HYSDS_JOB_CREATORS_DIR:%s" % job_creators_dir)
@@ -190,15 +201,15 @@ def submit_job(j):
     if 'job_type' not in j:
         error = "Invalid job spec. No 'job_type' specified."
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-        job_status_json = { 'uuid': job['job_id'],
-                            'job_id': job['job_id'],
-                            'payload_id': task_id,
-                            'status': 'job-failed',
-                            'job': job,
-                            'context': context,
-                            'error': error_info,
-                            'short_error': get_short_error(error_info),
-                            'traceback': error_info }
+        job_status_json = {'uuid': job['job_id'],
+                           'job_id': job['job_id'],
+                           'payload_id': task_id,
+                           'status': 'job-failed',
+                           'job': job,
+                           'context': context,
+                           'error': error_info,
+                           'short_error': get_short_error(error_info),
+                           'traceback': error_info}
         log_job_status(job_status_json)
         raise OrchestratorExecutionError
     job_type = j['job_type']
@@ -207,15 +218,15 @@ def submit_job(j):
     if 'payload' not in j:
         error = "Invalid job spec. No 'payload' specified."
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-        job_status_json = { 'uuid': job['job_id'],
-                            'job_id': job['job_id'],
-                            'payload_id': task_id,
-                            'status': 'job-failed',
-                            'job': job,
-                            'context': context,
-                            'error': error_info,
-                            'short_error': get_short_error(error_info),
-                            'traceback': error_info }
+        job_status_json = {'uuid': job['job_id'],
+                           'job_id': job['job_id'],
+                           'payload_id': task_id,
+                           'status': 'job-failed',
+                           'job': job,
+                           'context': context,
+                           'error': error_info,
+                           'short_error': get_short_error(error_info),
+                           'traceback': error_info}
         log_job_status(job_status_json)
         raise OrchestratorExecutionError
     payload = j['payload']
@@ -231,19 +242,20 @@ def submit_job(j):
     if dedup is True:
         dj = query_dedup_job(payload_hash)
         if isinstance(dj, dict):
-            dedup_msg = "orchestrator found duplicate job %s with status %s" % (dj['_id'], dj['status'])
-            job_status_json = { 'uuid': job['job_id'],
-                                'job_id': job['job_id'],
-                                'payload_id': task_id,
-                                'payload_hash': payload_hash,
-                                'dedup': dedup,
-                                'dedup_job': dj['_id'],
-                                'status': 'job-deduped',
-                                'job': job,
-                                'context': context,
-                                'dedup_msg': dedup_msg }
+            dedup_msg = "orchestrator found duplicate job %s with status %s" % (
+                dj['_id'], dj['status'])
+            job_status_json = {'uuid': job['job_id'],
+                               'job_id': job['job_id'],
+                               'payload_id': task_id,
+                               'payload_hash': payload_hash,
+                               'dedup': dedup,
+                               'dedup_job': dj['_id'],
+                               'status': 'job-deduped',
+                               'job': job,
+                               'context': context,
+                               'dedup_msg': dedup_msg}
             log_job_status(job_status_json)
-            return [ task_id ]
+            return [task_id]
 
     # if no explicit job or data type defined in orchestrator, add catch-all
     if job_type not in job_cfgs:
@@ -255,9 +267,9 @@ def submit_job(j):
             match = JOB_TYPE_RE.search(job_type)
             jt = match.group(1) if match else job_type
             job_cfgs[job_type] = [{
-                "job_name": j.get('job_name', jt).replace(":","__"),
+                "job_name": j.get('job_name', jt).replace(":", "__"),
                 "function": "utils.get_job_json",
-                "job_queues": [ jt if job_queue is None else job_queue ]
+                "job_queues": [jt if job_queue is None else job_queue]
             }]
 
     # get job json and queue jobs
@@ -272,24 +284,25 @@ def submit_job(j):
                 job = func(payload, jt)
             else:
                 job = func(payload)
-        except Exception as e: 
+        except Exception as e:
             error = "Job creator function %s failed to generate job JSON." % jc['function']
-            error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
-            job_status_json = { 'uuid': job['job_id'],
-                                'job_id': job['job_id'],
-                                'payload_id': task_id,
-                                'payload_hash': payload_hash,
-                                'dedup': dedup,
-                                'status': 'job-failed',
-                                'job': {
-                                    'job_id': task_id,
-                                    'name': task_id,
-                                    'job_info': j
-                                },
-                                'context': context,
-                                'error': error_info,
-                                'short_error': get_short_error(error_info),
-                                'traceback': traceback.format_exc() }
+            error_info = ERROR_TMPL.substitute(
+                orch_queue=orch_queue, error=error)
+            job_status_json = {'uuid': job['job_id'],
+                               'job_id': job['job_id'],
+                               'payload_id': task_id,
+                               'payload_hash': payload_hash,
+                               'dedup': dedup,
+                               'status': 'job-failed',
+                               'job': {
+                'job_id': task_id,
+                'name': task_id,
+                'job_info': j
+            },
+                'context': context,
+                'error': error_info,
+                'short_error': get_short_error(error_info),
+                'traceback': traceback.format_exc()}
             log_job_status(job_status_json)
             raise OrchestratorExecutionError
         #logger.info("job: %s" % job)
@@ -351,15 +364,15 @@ def submit_job(j):
 
             # generate celery task id
             job_json['task_id'] = uuid()
-            
+
             # log queued status
-            job_status_json = { 'uuid': job_json['task_id'],
-                                'job_id': job_json['job_id'],
-                                'payload_id': task_id,
-                                'payload_hash': payload_hash,
-                                'dedup': dedup,
-                                'status': 'job-queued',
-                                'job': job_json }
+            job_status_json = {'uuid': job_json['task_id'],
+                               'job_id': job_json['job_id'],
+                               'payload_id': task_id,
+                               'payload_hash': payload_hash,
+                               'dedup': dedup,
+                               'status': 'job-queued',
+                               'job': job_json}
             log_job_status(job_status_json)
 
             # submit job
@@ -384,12 +397,12 @@ def do_submit_job(job_json, job_queue):
 
     # list of allowed extensions
     extensions = [
-        "priority", # job priority
-        #"expires",  # queue expiration; available in celery v4
+        "priority",  # job priority
+        # "expires",  # queue expiration; available in celery v4
     ]
 
     # set filtered extensions
-    kwargs = { k: job_json[k] for k in job_json if k in extensions }
+    kwargs = {k: job_json[k] for k in job_json if k in extensions}
 
     # submit job
     return submit_job.apply_async((job_json,), queue=job_queue, **kwargs)

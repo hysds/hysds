@@ -10,10 +10,10 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+import os
 import logging
 logger = logging.getLogger()
 
-import os
 
 class StreamObserverFileWriter:
     """
@@ -28,14 +28,12 @@ class StreamObserverFileWriter:
         self._file = open(filepath, 'w')
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         self._file.close()
     # end def
-
 
     def __str__(self):
         """
@@ -46,7 +44,6 @@ class StreamObserverFileWriter:
         return 'filepath: "%s"' % (self._filepath)
     # end def
 
-
     def notifyLine(self, line):
         """
         Invoked after a new line of data is read from the stream.
@@ -54,11 +51,12 @@ class StreamObserverFileWriter:
         """
         try:
             self._file.write(line)
-            self._file.flush() # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
+            # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
+            self._file.flush()
         except IOError as e:
-            logger.warning('Unable to write output to "%s": %s' % (self._filepath, str(e)))
+            logger.warning('Unable to write output to "%s": %s' %
+                           (self._filepath, str(e)))
     # end def
-
 
     def notifyEOF(self):
         """
@@ -68,4 +66,3 @@ class StreamObserverFileWriter:
     # end def
 
 # end class
-

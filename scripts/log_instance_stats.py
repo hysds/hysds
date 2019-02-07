@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-import os, sys, argparse, json, time, socket, logging, psutil, msgpack
+import os
+import sys
+import argparse
+import json
+import time
+import socket
+import logging
+import psutil
+import msgpack
 from redis import BlockingConnectionPool, StrictRedis
 from datetime import datetime
 
@@ -27,19 +35,21 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
 
     set_redis_pool(redis_url)
     global POOL
-    instance_stats = { 'type': 'instance_stats',
-                       '@version': '1',
-                       '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
-                       'stats': instance_stats }
+    instance_stats = {'type': 'instance_stats',
+                      '@version': '1',
+                      '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
+                      'stats': instance_stats}
 
     # send update to redis
     r = StrictRedis(connection_pool=POOL)
     r.rpush(redis_key, msgpack.dumps(instance_stats))
 
     # print log
-    try: logging.info("instance_stats:%s" % json.dumps(instance_stats))
+    try:
+        logging.info("instance_stats:%s" % json.dumps(instance_stats))
     except Exception as e:
-        logging.error("Got exception trying to log instance stats: %s" % str(e))
+        logging.error(
+            "Got exception trying to log instance stats: %s" % str(e))
 
 
 def daemon(redis_url, redis_key, interval):
@@ -60,13 +70,15 @@ def daemon(redis_url, redis_key, interval):
             'net_io': psutil.net_io_counters()._asdict(),
         }
         for device, mnt_point, fs_type, fs_opts in psutil.disk_partitions():
-            disk_info = { 'device': device,
-                          'mount_point': mnt_point,
-                          'fs_type': fs_type,
-                          'fs_opts': fs_opts }
-            try: disk_info.update(psutil.disk_usage(mnt_point)._asdict())
+            disk_info = {'device': device,
+                         'mount_point': mnt_point,
+                         'fs_type': fs_type,
+                         'fs_opts': fs_opts}
+            try:
+                disk_info.update(psutil.disk_usage(mnt_point)._asdict())
             except Exception as e:
-                logging.error("Got exception trying to get disk usage for %s: %s\nSkipping." % (mnt_point, str(e)))
+                logging.error("Got exception trying to get disk usage for %s: %s\nSkipping." % (
+                    mnt_point, str(e)))
                 continue
             stats['disk']['all'].append(disk_info)
             if mnt_point == '/':
@@ -78,9 +90,13 @@ def daemon(redis_url, redis_key, interval):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Dump instance statistics as JSON log lines.")
-    parser.add_argument('--redis_url', default=app.conf.REDIS_INSTANCE_METRICS_URL, help="redis URL")
-    parser.add_argument('--redis_key', default=app.conf.REDIS_INSTANCE_METRICS_KEY, help="redis key")
-    parser.add_argument('--interval', type=int, default=600, help="dump interval in seconds")
+    parser = argparse.ArgumentParser(
+        description="Dump instance statistics as JSON log lines.")
+    parser.add_argument(
+        '--redis_url', default=app.conf.REDIS_INSTANCE_METRICS_URL, help="redis URL")
+    parser.add_argument(
+        '--redis_key', default=app.conf.REDIS_INSTANCE_METRICS_KEY, help="redis key")
+    parser.add_argument('--interval', type=int, default=600,
+                        help="dump interval in seconds")
     args = parser.parse_args()
     daemon(args.redis_url, args.redis_key, args.interval)

@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 
 # logger singleton configured in driver
-import os, logging, traceback
+from billiard import JoinableQueue
+import billiard
+from hysds.pymonitoredrunner.StreamSubject import StreamSubject
+from hysds.pymonitoredrunner.StreamReaderProcess import StreamReaderProcess
+from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
+import socket
+import subprocess
+import os
+import logging
+import traceback
 logger = logging.getLogger()
 
-import subprocess
-import socket
 
-
-from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
 #from hysds.pymonitoredrunner.commons.thread.AbstractInterruptableThread import AbstractInterruptableThread
-from hysds.pymonitoredrunner.StreamReaderProcess import StreamReaderProcess
-from hysds.pymonitoredrunner.StreamSubject import StreamSubject
 
-import billiard
-from billiard import JoinableQueue
 
 class MonitoredRunner(AbstractInterruptableProcess):
     '''
@@ -22,7 +23,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
     Observers can be registered that handle the output stream:
     1. saves stdout/stderr to local file.
     2. sends stdout/stderr chunks to remote rabbitmq queue.
-    ''' 
+    '''
 
     def __init__(self, command, cwd, env, settings, id=None):
         """
@@ -42,7 +43,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
         self._id = id
 
         self._process = None
-        self._exitCode = 1 # default to error
+        self._exitCode = 1  # default to error
 
         # needed to store to file as work-around for billiard not correctly storing exit code into variable.
         self._exitCodeFile = os.path.join(self._cwd, "_exit_code")
@@ -50,10 +51,10 @@ class MonitoredRunner(AbstractInterruptableProcess):
         self._pidFile = os.path.join(self._cwd, "_pid")
 
         # create cwd if not exists
-        if not os.path.isdir(self._cwd): os.makedirs(self._cwd)
+        if not os.path.isdir(self._cwd):
+            os.makedirs(self._cwd)
 
     # end def
-
 
     def __del__(self):
         """
@@ -61,7 +62,6 @@ class MonitoredRunner(AbstractInterruptableProcess):
         """
         AbstractInterruptableProcess.__del__(self)
     # end def
-
 
     def run(self):
         """
@@ -75,7 +75,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
 
         try:
             self._process = subprocess.Popen(self._command,
-                                             stdin=subprocess.PIPE, 
+                                             stdin=subprocess.PIPE,
                                              stdout=subprocess.PIPE,
                                              stderr=subprocess.PIPE,
                                              cwd=self._cwd,
@@ -92,16 +92,19 @@ class MonitoredRunner(AbstractInterruptableProcess):
 
             # dump out empty stdout; dump error to stderr
             settingsStreamObserverFileWriter = self._settings['StreamObserverFileWriter']
-            stdoutFilepath = os.path.join(self._cwd, settingsStreamObserverFileWriter['stdout_filepath'])
+            stdoutFilepath = os.path.join(
+                self._cwd, settingsStreamObserverFileWriter['stdout_filepath'])
             with open(stdoutFilepath, 'w') as f:
                 f.write("")
-            stderrFilepath = os.path.join(self._cwd, settingsStreamObserverFileWriter['stderr_filepath'])
+            stderrFilepath = os.path.join(
+                self._cwd, settingsStreamObserverFileWriter['stderr_filepath'])
             with open(stderrFilepath, 'w') as f:
                 f.write('Unable to exec "%s": %s' % (self._command, str(e)))
 
             # if invalid command or if Popen is called with invalid arguments.
             logger.error('Unable to exec "%s": %s' % (self._command, str(e)))
-            raise RuntimeError('Unable to exec "%s": %s' % (self._command, str(e)))
+            raise RuntimeError('Unable to exec "%s": %s' %
+                               (self._command, str(e)))
 
         # end try-except
 
@@ -113,8 +116,10 @@ class MonitoredRunner(AbstractInterruptableProcess):
         queueHost = rabbitmq['hostname']
 
         settingsStreamObserverFileWriter = self._settings['StreamObserverFileWriter']
-        stdoutFilepath = os.path.join(self._cwd, settingsStreamObserverFileWriter['stdout_filepath'])
-        stderrFilepath = os.path.join(self._cwd, settingsStreamObserverFileWriter['stderr_filepath'])
+        stdoutFilepath = os.path.join(
+            self._cwd, settingsStreamObserverFileWriter['stdout_filepath'])
+        stderrFilepath = os.path.join(
+            self._cwd, settingsStreamObserverFileWriter['stderr_filepath'])
 
         settingsStreamObserverMessenger = self._settings['StreamObserverMessenger']
         sendInterval = settingsStreamObserverMessenger['send_interval']
@@ -137,9 +142,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
         # ----------------
         # observer to write stdout/stderr to local files
         from hysds.pymonitoredrunner.StreamObserverFileWriter import StreamObserverFileWriter
-        stdoutStreamObserverFileWriter = StreamObserverFileWriter(stdoutFilepath)
+        stdoutStreamObserverFileWriter = StreamObserverFileWriter(
+            stdoutFilepath)
         stdoutStreamSubject.addObserver(stdoutStreamObserverFileWriter)
-        stderrStreamObserverFileWriter = StreamObserverFileWriter(stderrFilepath)
+        stderrStreamObserverFileWriter = StreamObserverFileWriter(
+            stderrFilepath)
         stderrStreamSubject.addObserver(stderrStreamObserverFileWriter)
 
         # ----------------
@@ -156,9 +163,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
         stderrQueue = JoinableQueue()
 
         from hysds.pymonitoredrunner.MessagingThread import MessagingThread
-        stdoutMessagingThread = MessagingThread(stdoutQueue, sendInterval, stdoutMessenger)
+        stdoutMessagingThread = MessagingThread(
+            stdoutQueue, sendInterval, stdoutMessenger)
         stdoutMessagingThread.start()
-        stderrMessagingThread = MessagingThread(stderrQueue, sendInterval, stderrMessenger)
+        stderrMessagingThread = MessagingThread(
+            stderrQueue, sendInterval, stderrMessenger)
         stderrMessagingThread.start()
 
         from hysds.pymonitoredrunner.StreamObserverQueue import StreamObserverQueue
@@ -170,9 +179,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
         # ---------------------------------------------------------------------
         # start STDOUT/STDERR streams monitoring processes
 
-        stdoutReaderProcess = StreamReaderProcess(self._process.stdout, stdoutStreamSubject)
+        stdoutReaderProcess = StreamReaderProcess(
+            self._process.stdout, stdoutStreamSubject)
         stdoutReaderProcess.start()
-        stderrReaderProcess = StreamReaderProcess(self._process.stderr, stderrStreamSubject)
+        stderrReaderProcess = StreamReaderProcess(
+            self._process.stderr, stderrStreamSubject)
         stderrReaderProcess.start()
 
         # ---------------------------------------------------------------------
@@ -189,10 +200,10 @@ class MonitoredRunner(AbstractInterruptableProcess):
             # rename exit code hold file
             os.rename(self._exitCodeHold, self._exitCodeFile)
 
-
-            logger.debug("After calling wait() on process, got status: %s" % self._exitCode)
+            logger.debug(
+                "After calling wait() on process, got status: %s" % self._exitCode)
         except Exception as e:
-            logger.warn("Got %s exception waiting for process: %s\n%s" % 
+            logger.warn("Got %s exception waiting for process: %s\n%s" %
                         (type(e), str(e), traceback.format_exc()))
         # end try-except
 
@@ -211,7 +222,6 @@ class MonitoredRunner(AbstractInterruptableProcess):
 
     # end def
 
-
     def stop(self):
         """
         Stops the subprocess.
@@ -219,13 +229,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
         self._process.terminate()
     # end def
 
-
     def getExitCodeFile(self):
         """
         Returns the path to the subprocess' exit code file.
         """
         return self._exitCodeFile
-
 
     def getExitCode(self):
         """
@@ -233,9 +241,8 @@ class MonitoredRunner(AbstractInterruptableProcess):
         @see: U{http://docs.python.org/2/library/subprocess.html}
         """
         # TODO: when using billiard, exit code is None for some reason
-        #return self._exitCode # set by subprocess.wait()
+        # return self._exitCode # set by subprocess.wait()
         return int(open(self._exitCodeFile).read())
-
 
     def getPid(self):
         """
@@ -243,11 +250,12 @@ class MonitoredRunner(AbstractInterruptableProcess):
         @see: U{http://docs.python.org/2/library/subprocess.html}
         """
         # TODO: when using billiard, exit code is None for some reason
-        #return self._exitCode # set by subprocess.wait()
+        # return self._exitCode # set by subprocess.wait()
         if os.path.exists(self._pidFile):
             return int(open(self._pidFile).read())
-        else: return None
+        else:
+            return None
     # end def
-    
+
 
 # end class

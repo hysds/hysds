@@ -1,11 +1,12 @@
-import json, types
+import json
+import types
 from pprint import pprint, pformat
 
 
 def notify_job_by_email(info):
     """
     Create job json for email notification.
-    
+
     Example:
 
     job = {
@@ -33,13 +34,13 @@ def notify_job_by_email(info):
     rule_hit = info['rule_hit']
     params['url'] = rule_hit['_source']['job']['job_info']['job_url']
     job = {
-            'type': 'notify_job_by_email',
-            'name': 'action-notify_job_by_email-%s' % info['job_id'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'notify_job_by_email',
+        'name': 'action-notify_job_by_email-%s' % info['job_id'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     return job
 
@@ -47,7 +48,7 @@ def notify_job_by_email(info):
 def notify_job_by_tweet(info):
     """
     Create job json for tweet notification.
-    
+
     Example:
 
     job = {
@@ -75,13 +76,13 @@ def notify_job_by_tweet(info):
     rule_hit = info['rule_hit']
     params['url'] = rule_hit['_source']['job']['job_info']['job_url']
     job = {
-            'type': 'notify_job_by_tweet',
-            'name': 'action-notify_job_by_tweet-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'notify_job_by_tweet',
+        'name': 'action-notify_job_by_tweet-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     return job
 
@@ -105,12 +106,12 @@ def retry_job(info):
     else:
         name = 'action-retry_job-%s' % job_id
     job = {
-            'type': 'retry_job',
-            'name': name,
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'retry_job',
+        'name': name,
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     return job

@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 
 # logger singleton configured in driver
+from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
+from multiprocessing import Event
+from billiard import JoinableQueue
+import billiard
+import queue
 import logging
 logger = logging.getLogger()
 
 #import threading
-import queue
 
-import billiard
-from billiard import JoinableQueue
-from multiprocessing import Event
 
 #from hysds.pymonitoredrunner.commons.thread.AbstractInterruptableThread import AbstractInterruptableThread
-from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
+
 
 class MessagingThread(AbstractInterruptableProcess):
     '''
@@ -30,14 +31,12 @@ class MessagingThread(AbstractInterruptableProcess):
         self._messenger = messenger
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         AbstractInterruptableProcess.__del__(self)
     # end def
-
 
     def run(self):
         """
@@ -61,7 +60,7 @@ class MessagingThread(AbstractInterruptableProcess):
             while True:
                 try:
                     item = self._queue.get_nowait()
-                    
+
                     # stop thread when done with queue
                     if item == None:
                         self._isRunnable = False
@@ -71,7 +70,7 @@ class MessagingThread(AbstractInterruptableProcess):
 
                     self._queue.task_done()
                 except queue.Empty as e:
-                    break # done getting all items from queue
+                    break  # done getting all items from queue
                 # end try-catch
             # end while
 

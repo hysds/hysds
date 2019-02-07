@@ -1,7 +1,17 @@
 
 
-import os, sys, re, json, time, shlex, tempfile
-import requests, shutil, socket, backoff, logging
+import os
+import sys
+import re
+import json
+import time
+import shlex
+import tempfile
+import requests
+import shutil
+import socket
+import backoff
+import logging
 from datetime import datetime
 
 from hysds.celery import app
@@ -43,12 +53,14 @@ def run_task(self, payload):
         r = requests.get(AZ_INFO, timeout=1)
         if r.status_code == 200:
             facts['ec2_placement_availability_zone'] = r.content
-    except: pass
+    except:
+        pass
     try:
         r = requests.get(INS_TYPE_INFO, timeout=1)
         if r.status_code == 200:
             facts['ec2_instance_type'] = r.content
-    except: pass
+    except:
+        pass
 
     # get task id and delivery info
     task_id = self.request.id
@@ -57,12 +69,13 @@ def run_task(self, payload):
     # create task work directory and enter it
     task_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, 'tasks')
     #yr, mo, dy, hr, mi, se, wd, y, z = time.gmtime()
-    #task_dir = os.path.join(task_dir_abs, "%04d" % yr, "%02d" % mo, "%02d" % dy,
+    # task_dir = os.path.join(task_dir_abs, "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                       "%02d" % hr, "%02d" % mi, task_id)
     task_dir = task_dir_abs
     makedirs(task_dir)
-    webdav_url = "http://%s:%s" % (facts['hysds_public_ip'], app.conf.WEBDAV_PORT)
-    #task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
+    webdav_url = "http://%s:%s" % (facts['hysds_public_ip'],
+                                   app.conf.WEBDAV_PORT)
+    # task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                        "%02d" % hr, "%02d" % mi, task_id)
     task_url = os.path.join(webdav_url, 'tasks')
     os.chdir(task_dir)
@@ -72,7 +85,7 @@ def run_task(self, payload):
     #task_logger = self.app.log.setup_task_loggers(loglevel=logging.DEBUG, logfile=log_file)
     task_logger = self.app.log.setup_task_loggers(loglevel=logging.DEBUG)
     #hdlr = logging.FileHandler(log_file)
-    #task_logger.addHandler(hdlr)
+    # task_logger.addHandler(hdlr)
     #old_outs = sys.stdout, sys.stderr
 
     # run task
@@ -82,14 +95,14 @@ def run_task(self, payload):
 
         # write task's running file to reserve space for task's done file later
         #task_running_file = os.path.join(task_dir, '.running')
-        #with open(task_running_file, 'w') as f:
+        # with open(task_running_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
 
         # get task's .done file
         #task_done_file = os.path.join(task_dir, '.done')
 
         # parse payload
-        sys_path = payload.get('sys_path', None) 
+        sys_path = payload.get('sys_path', None)
         func = get_function(payload['function'], sys_path)
         args = payload.get('args', [])
         kwargs = payload.get('kwargs', {})
@@ -100,28 +113,30 @@ def run_task(self, payload):
         task_logger.info("sys_path: %s" % str(sys_path))
         task_logger.info("args: %s" % str(args))
         task_logger.info("kwargs: %s" % json.dumps(kwargs, indent=2))
-        task_logger.info("task started: {}".format(datetime.utcnow().isoformat()))
- 
+        task_logger.info("task started: {}".format(
+            datetime.utcnow().isoformat()))
+
         # get task result
         result = func(*args, **kwargs)
         task_logger.info("result: {}".format(result))
     finally:
         # restore stdout/stderr
         #sys.stdout, sys.stderr = old_outs
-        #task_logger.removeHandler(hdlr)
+        # task_logger.removeHandler(hdlr)
 
         # transition running file to done file
         #os.rename(task_running_file, task_done_file)
-        #with open(task_done_file, 'w') as f:
+        # with open(task_done_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
-        task_logger.info("task finished: {}".format(datetime.utcnow().isoformat()))
+        task_logger.info("task finished: {}".format(
+            datetime.utcnow().isoformat()))
 
     # return task url
     return task_url
-    
 
-#@app.task
-#def run_task(payload):
+
+# @app.task
+# def run_task(payload):
 #    """Run task on a task worker. Payload is a JSON file describing the task.
 #       Currently supports 2 types of tasks, python function and command line.
 #
@@ -150,7 +165,7 @@ def run_task(self, payload):
 #    """
 #
 #    if payload['type'] == 'function':
-#        sys_path = payload.get('sys_path', None) 
+#        sys_path = payload.get('sys_path', None)
 #        func = get_function(payload['function'], sys_path)
 #        args = payload.get('args', [])
 #        kwargs = payload.get('kwargs', {})
@@ -159,7 +174,7 @@ def run_task(self, payload):
 #        logger.info("sys_path: %s" % str(sys_path))
 #        logger.info("args: %s" % str(args))
 #        logger.info("kwargs: %s" % json.dumps(kwargs, indent=2))
-# 
+#
 #        return func(*args, **kwargs)
 #
 #    elif payload['type'] == 'command':

@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-import os, sys, argparse, logging
+import os
+import sys
+import argparse
+import logging
 
 import hysds.orchestrator
 from hysds.celery import app
