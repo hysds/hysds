@@ -1016,7 +1016,7 @@ def run_job(job, queue_when_finished=True):
         with open(run_script, 'w') as f:
             f.write("#!/bin/bash\n\n")
             # dump entire env for info
-            for env_var, env_val in execEnv.items():
+            for env_var, env_val in list(execEnv.items()):
                 f.write("#%s=%s\n" % (env_var, env_val))
             f.write("\n")
             # dump job env for execution

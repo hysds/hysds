@@ -95,7 +95,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
 
     # add user-defined image mappings
-    for k, v in image_mappings.items():
+    for k, v in list(image_mappings.items()):
         k = os.path.expandvars(k)
         verify_docker_mount(k, blacklist)
         mode = "ro"

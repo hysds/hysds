@@ -76,7 +76,7 @@ def get_matching_s3_objects(client, bucket, prefix='', suffix=''):
        https://alexwlchan.net/2018/01/listing-s3-keys-redux/."""
 
     kwargs = {'Bucket': bucket}
-    if isinstance(prefix, (str,)):
+    if isinstance(prefix, str):
         kwargs['Prefix'] = prefix
     #logging.info("kwargs: %s" % kwargs)
     while True:

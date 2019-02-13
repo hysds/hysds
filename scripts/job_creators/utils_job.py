@@ -101,7 +101,7 @@ def retry_job(info):
     rule_hit = info['rule_hit']
     params['job'] = rule_hit['_source']['job']
     job_id = params['job'].get('job_id', None)
-    if isinstance(job_id, (str,)) and job_id.startswith('action-retry_job'):
+    if isinstance(job_id, str) and job_id.startswith('action-retry_job'):
         name = job_id
     else:
         name = 'action-retry_job-%s' % job_id

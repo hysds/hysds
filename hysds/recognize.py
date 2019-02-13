@@ -189,7 +189,7 @@ class Recognizer:
             if 'extractor' not in self.recognized:
                 return None
             extractor = self.recognized['extractor']
-            if isinstance(extractor, (str,)):
+            if isinstance(extractor, str):
                 return os.path.expandvars(extractor)
             else:
                 return extractor

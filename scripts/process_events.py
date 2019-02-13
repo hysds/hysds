@@ -138,7 +138,7 @@ def event_monitor(app):
         state.event(event)
         if ORCH_HOST_RE.search(event['hostname']) or \
            ORCH_NAME_RE.search(event['name']):
-               return
+            return
         log_task_event('task-sent', event, uuid=event['uuid'])
 
     def task_received(event):
@@ -165,7 +165,7 @@ def event_monitor(app):
         state.event(event)
         uuid = event['uuid']
         exc = event.get('exception', "")
-        if isinstance(exc, (str,)):
+        if isinstance(exc, str):
             match = TASK_FAILED_RE.search(exc)
             if match:
                 short_error = match.group(1)

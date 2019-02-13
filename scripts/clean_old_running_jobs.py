@@ -74,8 +74,8 @@ def clean(es_url, start_time):
                             (es_url, idx, doctype, job['task_id']))
         r.raise_for_status()
         res = r.json()
-        print("Cleaned out job %s for host %s." %
-              (job['id'], job['execute_node']))
+        print(("Cleaned out job %s for host %s." %
+               (job['id'], job['execute_node'])))
 
 
 if __name__ == "__main__":

@@ -178,7 +178,7 @@ def log_job_status(job):
     job['@timestamp'] = "%sZ" % datetime.utcnow().isoformat()
     if 'tag' in job.get('job', {}):
         tags = job.setdefault('tags', [])
-        if isinstance(tags, (str,)):
+        if isinstance(tags, str):
             tags = [tags]
         tags.append(job['job']['tag'])
         job['tags'] = tags
