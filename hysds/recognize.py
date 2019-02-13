@@ -1,5 +1,13 @@
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
 
 
+from builtins import open
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
 import sys
 import os
 import re
@@ -29,7 +37,7 @@ class RecognizerError(Exception):
     pass
 
 
-class Recognizer:
+class Recognizer(object):
     def __init__(self, dataset_file, path, id, version):
         self.dataset_file = dataset_file
         self.id = id

@@ -1,5 +1,13 @@
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import absolute_import
 
 
+from builtins import open
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
 import os
 import sys
 import re
@@ -216,7 +224,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
     # get default job path
     if job_path is None:
-        job_path = os.getcwd()
+        job_path = os.getcwdu()
 
     # detect job info
     job = {}

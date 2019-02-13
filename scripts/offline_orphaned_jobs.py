@@ -6,7 +6,14 @@ final celery task status and resynchronizes job status. If no task
 status exists in ES, it queries the celery task metadata store in redis
 for task status. If none exists, the job is offlined.
 """
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+from __future__ import absolute_import
 
+from builtins import input
+from future import standard_library
+standard_library.install_aliases()
 import os
 import sys
 import requests

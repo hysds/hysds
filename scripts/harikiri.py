@@ -5,6 +5,13 @@ request and perform self-termination (harikiri) of the instance. If a keep-alive
 signal file exists at <root_work_dir>/.harikiri, then self-termination is bypassed
 until it is removed.
 """
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+from __future__ import absolute_import
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
 import os
 import sys
 import time

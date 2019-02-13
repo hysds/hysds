@@ -3,6 +3,13 @@
 Spot termination detector daemon that checks if the instance it's running on is
 marked for termination. If so, it sends a custom HySDS event log.
 """
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+from __future__ import absolute_import
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
 import os
 import sys
 import time
