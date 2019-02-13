@@ -10,11 +10,11 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+import time
+from threading import Thread
 import logging
 logger = logging.getLogger()
 
-from threading import Thread
-import time
 
 class AbstractInterruptableThread(Thread):
     """
@@ -29,15 +29,13 @@ class AbstractInterruptableThread(Thread):
         self._isRunnable = True
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         pass
-        #Thread.__del__(self) does not exists
+        # Thread.__del__(self) does not exists
     # end def
-
 
     def stop(self):
         """
@@ -47,12 +45,12 @@ class AbstractInterruptableThread(Thread):
         self._isRunnable = False
     # end def
 
-
     def run(self):
         """
         Thread loop.
         """
-        raise NotImplementedError('Subclasses should provide a concrete implementation.')
+        raise NotImplementedError(
+            'Subclasses should provide a concrete implementation.')
 
 #        # recommended essentials for implementation:
 #
@@ -71,7 +69,6 @@ class AbstractInterruptableThread(Thread):
 #        # end while
 
     # end def
-
 
     def interruptableJoin(self, timeout=3):
         """
@@ -93,18 +90,18 @@ class AbstractInterruptableThread(Thread):
         """
         try:
             while self.isAlive():
-                self.join(timeout) # seconds
+                self.join(timeout)  # seconds
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
-            logger.debug('=> Thread interrupted. %s' % (str(e)) )
+        except KeyboardInterrupt as e:
+            logger.debug('=> Thread interrupted. %s' % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
 
             # wait a little more for the thread to fully stop
             while self.isAlive():
-                self.join(timeout) # seconds
+                self.join(timeout)  # seconds
                 # this area and the while check is interruptable.
             # end while
 
@@ -112,7 +109,6 @@ class AbstractInterruptableThread(Thread):
             raise e
         # end try-except
     # end def
-
 
     def interruptableSleep(self, seconds):
         """
@@ -125,15 +121,15 @@ class AbstractInterruptableThread(Thread):
                 remainingSeconds -= 1
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
-            logger.debug('=> Sleep interrupted. %s' % (str(e)) )
+        except KeyboardInterrupt as e:
+            logger.debug('=> Sleep interrupted. %s' % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
 
             # wait a little more for the thread to fully stop
             while self.isAlive():
-                self.join(1) # seconds
+                self.join(1)  # seconds
                 # this area and the while check is interruptable.
             # end while
 
@@ -141,7 +137,6 @@ class AbstractInterruptableThread(Thread):
             raise e
         # end try-except
     # end def
-
 
     def sleep(self, seconds):
         """

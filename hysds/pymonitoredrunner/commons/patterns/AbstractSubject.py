@@ -10,8 +10,9 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import with_statement
+
 import threading
+
 
 class AbstractSubject:
     """
@@ -30,14 +31,12 @@ class AbstractSubject:
         self._lock = threading.RLock()
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         pass
     # end def
-
 
     def __str__(self):
         """
@@ -48,11 +47,9 @@ class AbstractSubject:
         return 'observers: %s' % (self._observers)
     # end def
 
-
     # -------------------------------------------------------------------------
     # Observer design pattern registration methods
     # -------------------------------------------------------------------------
-
 
     def getObservers(self):
         """
@@ -60,7 +57,6 @@ class AbstractSubject:
         """
         return self._observers
     # end def
-
 
     def addObserver(self, observer):
         """
@@ -70,7 +66,6 @@ class AbstractSubject:
             self._observers.append(observer)
         # end with
     # end def
-
 
     def removeObserver(self, observer):
         """
@@ -83,4 +78,3 @@ class AbstractSubject:
 
 
 # end class
-

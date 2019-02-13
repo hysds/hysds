@@ -10,10 +10,10 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+import threading
 import logging
 logger = logging.getLogger()
 
-import threading
 
 class StreamObserverQueue:
     """
@@ -44,7 +44,6 @@ class StreamObserverQueue:
         return 'queue: "%s"' % (self._queue)
     # end def
 
-
     def notifyLine(self, line):
         """
         Invoked after a new line of data is read from the stream.
@@ -52,7 +51,6 @@ class StreamObserverQueue:
         """
         self._queue.put(line)
     # end def
-
 
     def notifyEOF(self):
         """
@@ -63,4 +61,3 @@ class StreamObserverQueue:
 
 
 # end class
-

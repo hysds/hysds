@@ -1,6 +1,14 @@
 #!/usr/bin/env python
-import os, sys, json, time, traceback, logging, argparse, random
-import boto3, requests
+import os
+import sys
+import json
+import time
+import traceback
+import logging
+import argparse
+import random
+import boto3
+import requests
 
 from hysds.celery import app
 
@@ -18,7 +26,7 @@ def tag_timedout_jobs(url, timeout):
                 "must": [
                     {
                         "terms": {
-                            "status": [ "job-started", "job-offline" ]
+                            "status": ["job-started", "job-offline"]
                         }
                     },
                     {
@@ -31,9 +39,8 @@ def tag_timedout_jobs(url, timeout):
                 ]
             }
         },
-        "_source": [ "status", "tags", "uuid" ]
+        "_source": ["status", "tags", "uuid"]
     }
-
 
     # query
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
@@ -52,8 +59,10 @@ def tag_timedout_jobs(url, timeout):
         r = requests.post('%s/_search/scroll?scroll=10m' % url, data=scroll_id)
         res = r.json()
         scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0: break
-        for hit in res['hits']['hits']: results.append(hit)
+        if len(res['hits']['hits']) == 0:
+            break
+        for hit in res['hits']['hits']:
+            results.append(hit)
 
     logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
                  " older than %d seconds." % timeout)
@@ -73,7 +82,7 @@ def tag_timedout_jobs(url, timeout):
                         "_id": task_id
                     }
                 },
-                "_source": [ "status" ]
+                "_source": ["status"]
             }
             r = requests.post('%s/task_status-current/task/_search' % url,
                               data=json.dumps(task_query))
@@ -86,7 +95,7 @@ def tag_timedout_jobs(url, timeout):
                 task_info = task_res['hits']['hits'][0]
                 if task_info['_source']['status'] == 'task-failed':
                     new_doc = {
-                        "doc": { "status": 'job-failed' },
+                        "doc": {"status": 'job-failed'},
                         "doc_as_upsert": True
                     }
                     r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
@@ -98,11 +107,11 @@ def tag_timedout_jobs(url, timeout):
                     r.raise_for_status()
                     logging.info("Set job %s to job-failed." % id)
             continue
-            
+
         if 'timedout' not in tags:
             tags.append('timedout')
             new_doc = {
-                "doc": { "tags": tags },
+                "doc": {"tags": tags},
                 "doc_as_upsert": True
             }
             r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
@@ -131,7 +140,7 @@ def daemon(interval, url, timeout):
     while True:
         try:
             tag_timedout_jobs(url, timeout)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(random.randint(interval_min, interval_max))

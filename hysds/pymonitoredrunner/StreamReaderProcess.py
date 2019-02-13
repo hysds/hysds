@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 # logger singleton configured in driver
+from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
 import logging
 logger = logging.getLogger()
 
-from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
 
 class StreamReaderProcess(AbstractInterruptableProcess):
 
@@ -17,14 +17,12 @@ class StreamReaderProcess(AbstractInterruptableProcess):
         self._streamSubject = streamSubject
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         AbstractInterruptableProcess.__del__(self)
     # end def
-
 
     def run(self):
         """
@@ -42,7 +40,7 @@ class StreamReaderProcess(AbstractInterruptableProcess):
 
             if line:
                 self._streamSubject.notifyLine(line)
-            else: # stop process if read EOF
+            else:  # stop process if read EOF
                 self._streamSubject.notifyEOF()
                 self._isRunnable = False
             # end if

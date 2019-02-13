@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-import sys, argparse, json
+import sys
+import argparse
+import json
 
 from hysds.job_worker import run_job
 from hysds.celery import app

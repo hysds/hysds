@@ -1,12 +1,19 @@
-from __future__ import absolute_import
 
-import os, sys, json, requests, time, backoff, socket, traceback
+
+import os
+import sys
+import json
+import requests
+import time
+import backoff
+import socket
+import traceback
 
 import hysds
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 
- 
+
 @backoff.on_exception(backoff.expo,
                       Exception,
                       max_tries=backoff_max_tries,
@@ -15,10 +22,10 @@ def ensure_job_indexed(job_id, es_url, alias):
     """Ensure job is indexed."""
 
     query = {
-        "query":{
-            "bool":{
-                "must":[
-                    { 'term': { '_id': job_id }}
+        "query": {
+            "bool": {
+                "must": [
+                    {'term': {'_id': job_id}}
                 ]
             }
         },
@@ -66,7 +73,7 @@ def update_query(job_id, rule):
 
     # query all?
     if rule.get('query_all', False) is False:
-        filts.append({ 'ids':  { 'values': [job_id] }})
+        filts.append({'ids':  {'values': [job_id]}})
 
     # build final query
     if 'filtered' in query:
@@ -87,7 +94,7 @@ def update_query(job_id, rule):
                 }
             }
         }
-    final_query = { "query": final_query }
+    final_query = {"query": final_query}
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
     rule['query'] = final_query
     rule['query_string'] = json.dumps(final_query)
@@ -107,7 +114,7 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
     ensure_job_indexed(job_id, es_url, alias)
 
     # get all enabled user rules
-    query = { "query": { "term": { "enabled": True } } }
+    query = {"query": {"term": {"enabled": True}}}
     r = requests.post('%s/%s/.percolator/_search?search_type=scan&scroll=10m&size=100' %
                       (es_url, user_rules_idx), data=json.dumps(query))
     r.raise_for_status()
@@ -116,10 +123,12 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
     scroll_id = scan_result['_scroll_id']
     rules = []
     while True:
-        r = requests.post('%s/_search/scroll?scroll=10m' % es_url, data=scroll_id)
+        r = requests.post('%s/_search/scroll?scroll=10m' %
+                          es_url, data=scroll_id)
         res = r.json()
         scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0: break
+        if len(res['hits']['hits']) == 0:
+            break
         for hit in res['hits']['hits']:
             rules.append(hit['_source'])
     logger.info("Got %d enabled rules to check." % len(rules))
@@ -133,7 +142,8 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
         update_query(job_id, rule)
         final_qs = rule['query_string']
         try:
-            r = requests.post('%s/job_status-current/job/_search' % es_url, data=final_qs)
+            r = requests.post('%s/job_status-current/job/_search' %
+                              es_url, data=final_qs)
             r.raise_for_status()
         except:
             logger.error("Failed to query ES. Got status code %d:\n%s" %
@@ -141,15 +151,19 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
             continue
         result = r.json()
         if result['hits']['total'] == 0:
-            logger.info("Rule '%s' didn't match for %s" % (rule['rule_name'], job_id))
+            logger.info("Rule '%s' didn't match for %s" %
+                        (rule['rule_name'], job_id))
             continue
-        else: doc_res = result['hits']['hits'][0]
-        logger.info("Rule '%s' successfully matched for %s" % (rule['rule_name'], job_id))
+        else:
+            doc_res = result['hits']['hits'][0]
+        logger.info("Rule '%s' successfully matched for %s" %
+                    (rule['rule_name'], job_id))
         #logger.info("doc_res: %s" % json.dumps(doc_res, indent=2))
 
         # submit trigger task
         queue_job_trigger(doc_res, rule, es_url)
-        logger.info("Trigger task submitted for %s: %s" % (job_id, rule['job_type']))
+        logger.info("Trigger task submitted for %s: %s" %
+                    (job_id, rule['job_type']))
 
     return True
 
@@ -164,7 +178,7 @@ def queue_finished_job(id):
     payload = {
         'type': 'user_rules_job',
         'function': 'hysds.user_rules_job.evaluate_user_rules_job',
-        'args': [ id ],
+        'args': [id],
     }
     hysds.task_worker.run_task.apply_async((payload,),
                                            queue=app.conf.USER_RULES_JOB_QUEUE)
@@ -180,8 +194,8 @@ def queue_job_trigger(doc_res, rule, es_url):
     payload = {
         'type': 'user_rules_trigger',
         'function': 'hysds_commons.job_utils.submit_mozart_job',
-        'args': [ doc_res, rule ],
-        'kwargs': { 'es_hysdsio_url': es_url },
+        'args': [doc_res, rule],
+        'kwargs': {'es_hysdsio_url': es_url},
     }
     hysds.task_worker.run_task.apply_async((payload,),
                                            queue=app.conf.USER_RULES_TRIGGER_QUEUE)

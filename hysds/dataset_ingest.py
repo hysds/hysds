@@ -1,23 +1,33 @@
-from __future__ import absolute_import
 
-import os, sys, re, traceback, json, requests, shutil, types, socket, backoff
+
+import os
+import sys
+import re
+import traceback
+import json
+import requests
+import shutil
+import types
+import socket
+import backoff
 import math
 from subprocess import check_output, check_call
 from fabric.api import env, get, run, put
 from fabric.contrib.files import exists
 from pprint import pprint, pformat
-from urlparse import urlparse
+from urllib.parse import urlparse
 from lxml.etree import parse
-from StringIO import StringIO
+from io import StringIO
 from glob import glob
 from datetime import datetime
 from filechunkio import FileChunkIO
 from tempfile import mkdtemp
 
-import hysds, osaka
+import hysds
+import osaka
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists
 from hysds.log_utils import (logger, log_publish_prov_es, backoff_max_value,
-backoff_max_tries, log_custom_event)
+                             backoff_max_tries, log_custom_event)
 from hysds.recognize import Recognizer
 
 
@@ -44,7 +54,7 @@ def index_dataset(grq_update_url, update_json):
     """Index dataset into GRQ ES."""
 
     r = requests.post(grq_update_url, verify=False,
-                      data={ 'dataset_info': json.dumps(update_json)})
+                      data={'dataset_info': json.dumps(update_json)})
     r.raise_for_status()
     return r.json()
 
@@ -63,19 +73,23 @@ def get_remote_dav(url):
     """Get remote dir/file."""
 
     lpath = './%s' % os.path.basename(url)
-    if not url.endswith('/'): url += '/'
+    if not url.endswith('/'):
+        url += '/'
     parsed_url = urlparse(url)
     rpath = parsed_url.path
     r = requests.request('PROPFIND', url, verify=False)
-    if r.status_code not in (200, 207): # handle multistatus (207) as well
-        logger.info("Got status code %d trying to read %s" % (r.status_code, url))
+    if r.status_code not in (200, 207):  # handle multistatus (207) as well
+        logger.info("Got status code %d trying to read %s" %
+                    (r.status_code, url))
         logger.info("Content:\n%s" % r.text)
         r.raise_for_status()
     tree = parse(StringIO(r.content))
     makedirs(lpath)
     for elem in tree.findall('{DAV:}response'):
-        collection = elem.find('{DAV:}propstat/{DAV:}prop/{DAV:}resourcetype/{DAV:}collection')
-        if collection is not None: continue
+        collection = elem.find(
+            '{DAV:}propstat/{DAV:}prop/{DAV:}resourcetype/{DAV:}collection')
+        if collection is not None:
+            continue
         href = elem.find('{DAV:}href').text
         rel_path = os.path.relpath(href, rpath)
         file_url = os.path.join(url, rel_path)
@@ -84,12 +98,13 @@ def get_remote_dav(url):
         makedirs(local_dir)
         resp = requests.request('GET', file_url, verify=False, stream=True)
         if resp.status_code != 200:
-            logger.info("Got status code %d trying to read %s" % (resp.status_code, file_url))
+            logger.info("Got status code %d trying to read %s" %
+                        (resp.status_code, file_url))
             logger.info("Content:\n%s" % resp.text)
         resp.raise_for_status()
         with open(local_path, 'wb') as f:
             for chunk in resp.iter_content(chunk_size=1024):
-                if chunk: # filter out keep-alive new chunks
+                if chunk:  # filter out keep-alive new chunks
                     f.write(chunk)
                     f.flush()
     return os.path.abspath(lpath)
@@ -112,9 +127,8 @@ def move_remote_path(host, src, dest):
     dest_dir = os.path.dirname(dest)
     if not exists(dest_dir):
         run("mkdir -p %s" % dest_dir)
-    ret = run("mv -f %s %s" % (src, dest)) 
-    return ret 
-
+    ret = run("mv -f %s %s" % (src, dest))
+    return ret
 
 
 def restage(host, src, dest, signal_file):
@@ -125,12 +139,13 @@ def restage(host, src, dest, signal_file):
     dest_dir = os.path.dirname(dest)
     if not exists(dest_dir):
         run("mkdir -p %s" % dest_dir)
-    run("mv -f %s %s" % (src, dest)) 
+    run("mv -f %s %s" % (src, dest))
     ret = run("touch %s" % signal_file)
-    return ret 
+    return ret
 
 
-class NoClobberPublishContextException(Exception): pass
+class NoClobberPublishContextException(Exception):
+    pass
 
 
 def publish_dataset(path, url, params=None, force=False, publ_ctx_file=None,
@@ -145,20 +160,26 @@ def publish_dataset(path, url, params=None, force=False, publ_ctx_file=None,
     '''
 
     # set osaka params
-    if params is None: params = {}
+    if params is None:
+        params = {}
 
     # force remove previous dataset if it exists?
     if force:
-        try: unpublish_dataset(url, params=params)
-        except: pass
+        try:
+            unpublish_dataset(url, params=params)
+        except:
+            pass
 
     # write publish context file
     if publ_ctx_file is not None and publ_ctx_url is not None:
-        try: osaka.main.put(publ_ctx_file, publ_ctx_url, params=params, noclobber=True)
-        except osaka.utils.NoClobberException, e:
-            raise NoClobberPublishContextException("Failed to clobber {} when noclobber is True.".format(publ_ctx_url))
+        try:
+            osaka.main.put(publ_ctx_file, publ_ctx_url,
+                           params=params, noclobber=True)
+        except osaka.utils.NoClobberException as e:
+            raise NoClobberPublishContextException(
+                "Failed to clobber {} when noclobber is True.".format(publ_ctx_url))
 
-    # upload datasets 
+    # upload datasets
     for root, dirs, files in os.walk(path):
         for file in files:
             abs_path = os.path.join(root, file)
@@ -175,7 +196,8 @@ def unpublish_dataset(url, params=None):
     '''
 
     # set osaka params
-    if params is None: params = {}
+    if params is None:
+        params = {}
 
     osaka.main.rmall(url, params=params)
 
@@ -193,18 +215,21 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     logger.info("force: %s" % force)
 
     # get default job path
-    if job_path is None: job_path = os.getcwd()
+    if job_path is None:
+        job_path = os.getcwd()
 
     # detect job info
     job = {}
     job_json = os.path.join(job_path, '_job.json')
     if os.path.exists(job_json):
         with open(job_json) as f:
-            try: job = json.load(f)
-            except Exception, e:
+            try:
+                job = json.load(f)
+            except Exception as e:
                 logger.warn("Failed to read job json:\n{}".format(str(e)))
     task_id = job.get('task_id', None)
-    payload_id = job.get('job_info', {}).get('job_payload', {}).get('payload_task_id', None)
+    payload_id = job.get('job_info', {}).get(
+        'job_payload', {}).get('payload_task_id', None)
     payload_hash = job.get('job_info', {}).get('payload_hash', None)
     logger.info("task_id: %s" % task_id)
     logger.info("payload_id: %s" % payload_id)
@@ -216,16 +241,17 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     else:
         local_prod_path = get_remote_dav(prod_path)
     if not os.path.isdir(local_prod_path):
-        raise RuntimeError("Failed to find local dataset directory: %s" % local_prod_path)
+        raise RuntimeError(
+            "Failed to find local dataset directory: %s" % local_prod_path)
 
     # write publish context
     publ_ctx_name = "_publish.context.json"
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
     with open(publ_ctx_file, 'w') as f:
-        json.dump({ 'payload_id': payload_id,
-                    'payload_hash': payload_hash,
-                    'task_id': task_id }, 
+        json.dump({'payload_id': payload_id,
+                   'payload_hash': payload_hash,
+                   'task_id': task_id},
                   f, indent=2, sort_keys=True)
     publ_ctx_url = None
 
@@ -258,7 +284,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     extractor = r.getMetadataExtractor()
     if extractor is not None:
         match = SCRIPT_RE.search(extractor)
-        if match: extractor = match.group(1)
+        if match:
+            extractor = match.group(1)
     logger.info("Configured metadata extractor: %s" % extractor)
 
     # metadata file
@@ -274,10 +301,12 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         logger.info("Loaded metadata from existing file: %s" % metadata_file)
     else:
         if extractor is None:
-            logger.info("No metadata extraction configured. Setting empty metadata.")
+            logger.info(
+                "No metadata extraction configured. Setting empty metadata.")
             metadata = {}
         else:
-            logger.info("Running metadata extractor %s on %s" % (extractor, local_prod_path))
+            logger.info("Running metadata extractor %s on %s" %
+                        (extractor, local_prod_path))
             m = check_output([extractor, local_prod_path])
             logger.info("Output: %s" % m)
 
@@ -310,7 +339,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         with open(context_file) as f:
             context = json.load(f)
         logger.info("Loaded context from existing file: %s" % context_file)
-    else: context = {}
+    else:
+        context = {}
     metadata['context'] = context
 
     # set metadata and dataset groups in recognizer
@@ -359,26 +389,30 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
         # check scheme
         if not osaka.main.supported(pub_path_url):
-            raise RuntimeError("Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
+            raise RuntimeError(
+                "Scheme %s is currently not supported." % urlparse(pub_path_url).scheme)
 
         # upload dataset to repo; track disk usage and start/end times of transfer
         prod_dir_usage = get_disk_usage(local_prod_path)
         tx_t1 = datetime.utcnow()
         if dry_run:
-            logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
+            logger.info("Would've published %s to %s" %
+                        (local_prod_path, pub_path_url))
         else:
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + '.orig'
             try:
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=force,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
-            except NoClobberPublishContextException, e:
-                logger.warn("A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
-                osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
+            except NoClobberPublishContextException as e:
+                logger.warn(
+                    "A publish context file was found at {}. Retrieving.".format(publ_ctx_url))
+                osaka.main.get(publ_ctx_url, orig_publ_ctx_file,
+                               params=osaka_params)
                 with open(orig_publ_ctx_file) as f:
                     orig_publ_ctx = json.load(f)
-                logger.warn("original publish context: {}".format(json.dumps(orig_publ_ctx, 
-                    indent=2, sort_keys=True)))
+                logger.warn("original publish context: {}".format(json.dumps(orig_publ_ctx,
+                                                                             indent=2, sort_keys=True)))
                 orig_payload_id = orig_publ_ctx.get('payload_id', None)
                 orig_payload_hash = orig_publ_ctx.get('payload_hash', None)
                 orig_task_id = orig_publ_ctx.get('task_id', None)
@@ -386,7 +420,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                 logger.warn("orig payload_hash: {}".format(orig_payload_hash))
                 logger.warn("orig task_id: {}".format(orig_payload_id))
 
-                if orig_payload_id is None: raise
+                if orig_payload_id is None:
+                    raise
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
@@ -394,16 +429,16 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                           "in an orphaned dataset. Forcing publish."
                     logger.warn(msg)
                     log_custom_event('orphaned_dataset-retry_previous_failed', 'clobber',
-                                     { 'orphan_info': {
-                                           'payload_id': payload_id,
-                                           'payload_hash': payload_hash,
-                                           'task_id': task_id,
-                                           'orig_payload_id': orig_payload_id,
-                                           'orig_payload_hash': orig_payload_hash,
-                                           'orig_task_id': orig_task_id,
-                                           'dataset_id': objectid,
-                                           'dataset_url': pub_path_url,
-                                           'msg': msg }})
+                                     {'orphan_info': {
+                                         'payload_id': payload_id,
+                                         'payload_hash': payload_hash,
+                                         'task_id': task_id,
+                                         'orig_payload_id': orig_payload_id,
+                                         'orig_payload_hash': orig_payload_hash,
+                                         'orig_task_id': orig_task_id,
+                                         'dataset_id': objectid,
+                                         'dataset_url': pub_path_url,
+                                         'msg': msg}})
                 else:
                     job_status = get_job_status(orig_payload_id)
                     logger.warn("orig job status: {}".format(job_status))
@@ -414,37 +449,40 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                               "orphaned dataset. Forcing publish."
                         logger.warn(msg)
                         log_custom_event('orphaned_dataset-job_failed', 'clobber',
-                                         { 'orphan_info': {
-                                               'payload_id': payload_id,
-                                               'payload_hash': payload_hash,
-                                               'task_id': task_id,
-                                               'orig_payload_id': orig_payload_id,
-                                               'orig_payload_hash': orig_payload_hash,
-                                               'orig_task_id': orig_task_id,
-                                               'orig_status': job_status,
-                                               'dataset_id': objectid,
-                                               'dataset_url': pub_path_url,
-                                               'msg': msg }})
-                    else: raise
+                                         {'orphan_info': {
+                                             'payload_id': payload_id,
+                                             'payload_hash': payload_hash,
+                                             'task_id': task_id,
+                                             'orig_payload_id': orig_payload_id,
+                                             'orig_payload_hash': orig_payload_hash,
+                                             'orig_task_id': orig_task_id,
+                                             'orig_status': job_status,
+                                             'dataset_id': objectid,
+                                             'dataset_url': pub_path_url,
+                                             'msg': msg}})
+                    else:
+                        raise
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
-            except osaka.utils.NoClobberException, e:
+            except osaka.utils.NoClobberException as e:
                 if dataset_exists(objectid):
-                    try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+                    try:
+                        osaka.main.rmall(publ_ctx_url, params=osaka_params)
                     except:
-                        logger.warn("Failed to clean up publish context {} after attempting to clobber valid dataset.".format(publ_ctx_url))
+                        logger.warn(
+                            "Failed to clean up publish context {} after attempting to clobber valid dataset.".format(publ_ctx_url))
                     raise
                 else:
                     msg = "Detected orphaned dataset without ES doc. Forcing publish."
                     logger.warn(msg)
                     log_custom_event('orphaned_dataset-no_es_doc', 'clobber',
-                                     { 'orphan_info': {
-                                           'payload_id': payload_id,
-                                           'payload_hash': payload_hash,
-                                           'task_id': task_id,
-                                           'dataset_id': objectid,
-                                           'dataset_url': pub_path_url,
-                                           'msg': msg }})
+                                     {'orphan_info': {
+                                         'payload_id': payload_id,
+                                         'payload_hash': payload_hash,
+                                         'task_id': task_id,
+                                         'dataset_id': objectid,
+                                         'dataset_url': pub_path_url,
+                                         'msg': msg}})
                     publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
                                     publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
         tx_t2 = datetime.utcnow()
@@ -490,30 +528,36 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         imgs_metadata = []
         imgs = glob('%s/*browse.png' % local_prod_path)
         for img in imgs:
-            img_metadata = { 'img': os.path.basename(img) }
+            img_metadata = {'img': os.path.basename(img)}
             small_img = img.replace('browse.png', 'browse_small.png')
             if os.path.exists(small_img):
                 small_img_basename = os.path.basename(small_img)
                 if browse_path is not None:
-                    this_browse_path = os.path.join(browse_path, small_img_basename)
+                    this_browse_path = os.path.join(
+                        browse_path, small_img_basename)
                     if dry_run:
-                        logger.info("Would've uploaded %s to %s" % (small_img, browse_path))
+                        logger.info("Would've uploaded %s to %s" %
+                                    (small_img, browse_path))
                     else:
-                        logger.info("Uploading %s to %s" % (small_img, browse_path))
+                        logger.info("Uploading %s to %s" %
+                                    (small_img, browse_path))
                         osaka.main.put(small_img, this_browse_path,
                                        params=osaka_params_browse, noclobber=False)
-            else: small_img_basename = None
+            else:
+                small_img_basename = None
             img_metadata['small_img'] = small_img_basename
             tooltip_match = BROWSE_RE.search(img_metadata['img'])
-            if tooltip_match: img_metadata['tooltip'] = tooltip_match.group(1)
-            else: img_metadata['tooltip'] = ""
+            if tooltip_match:
+                img_metadata['tooltip'] = tooltip_match.group(1)
+            else:
+                img_metadata['tooltip'] = ""
             imgs_metadata.append(img_metadata)
 
         # sort browse images
         browse_sort_order = r.getBrowseSortOrder()
-        if isinstance(browse_sort_order, types.ListType) and len(browse_sort_order) > 0:
+        if isinstance(browse_sort_order, list) and len(browse_sort_order) > 0:
             bso_regexes = [re.compile(i) for i in browse_sort_order]
-            sorter =  {}
+            sorter = {}
             unrecognized = []
             for img in imgs_metadata:
                 matched = None
@@ -522,7 +566,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                         matched = img
                         sorter[i] = matched
                         break
-                if matched is None: unrecognized.append(img)
+                if matched is None:
+                    unrecognized.append(img)
             imgs_metadata = [sorter[i] for i in sorted(sorter)]
             imgs_metadata.extend(unrecognized)
     else:
@@ -550,13 +595,14 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
     # custom index specified?
     index = r.getIndex()
-    if index is not None: update_json['index'] = index
+    if index is not None:
+        update_json['index'] = index
 
     # update GRQ
-    if isinstance(update_json['metadata'], types.DictType) and len(update_json['metadata']) > 0:
+    if isinstance(update_json['metadata'], dict) and len(update_json['metadata']) > 0:
         #logger.info("update_json: %s" % pformat(update_json))
         if dry_run:
-            logger.info("Would've indexed doc at %s: %s" % (grq_update_url, 
+            logger.info("Would've indexed doc at %s: %s" % (grq_update_url,
                                                             json.dumps(update_json, indent=2, sort_keys=True)))
         else:
             res = index_dataset(grq_update_url, update_json)
@@ -565,34 +611,42 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
     # finish if dry run
     if dry_run:
-        try: shutil.rmtree(publ_ctx_dir)
-        except: pass
+        try:
+            shutil.rmtree(publ_ctx_dir)
+        except:
+            pass
         return (prod_metrics, update_json)
 
     # create PROV-ES JSON file for publish processStep
-    prod_prov_es_file = os.path.join(local_prod_path, '%s.prov_es.json' % os.path.basename(local_prod_path))
+    prod_prov_es_file = os.path.join(
+        local_prod_path, '%s.prov_es.json' % os.path.basename(local_prod_path))
     pub_prov_es_bn = "publish.prov_es.json"
     if os.path.exists(prod_prov_es_file):
         pub_prov_es_file = os.path.join(local_prod_path, pub_prov_es_bn)
         prov_es_info = {}
         with open(prod_prov_es_file) as f:
-            try: prov_es_info = json.load(f)
-            except Exception, e:
+            try:
+                prov_es_info = json.load(f)
+            except Exception as e:
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to load PROV-ES from %s: %s\n%s" % (prod_prov_es_file, str(e), tb)))
+                raise RuntimeError
         log_publish_prov_es(prov_es_info, pub_prov_es_file, local_prod_path,
                             pub_urls, prod_metrics, objectid)
         # upload publish PROV-ES file
         osaka.main.put(pub_prov_es_file, os.path.join(pub_path_url, pub_prov_es_bn),
                        params=osaka_params, noclobber=False)
-    
+
     # cleanup publish context
     if publ_ctx_url is not None:
-        try: osaka.main.rmall(publ_ctx_url, params=osaka_params)
+        try:
+            osaka.main.rmall(publ_ctx_url, params=osaka_params)
         except:
-            logger.warn("Failed to clean up publish context at {} on successful publish.".format(publ_ctx_url))
-    try: shutil.rmtree(publ_ctx_dir)
-    except: pass
+            logger.warn(
+                "Failed to clean up publish context at {} on successful publish.".format(publ_ctx_url))
+    try:
+        shutil.rmtree(publ_ctx_dir)
+    except:
+        pass
 
     # queue data dataset
     queue_dataset(ipath, update_json, dataset_processed_queue)

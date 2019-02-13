@@ -3,8 +3,17 @@
 Watchdog completed job type execution with an expected periodicity.
 """
 
-import os, sys, getpass, requests, json, types, base64, socket
-import traceback, logging, argparse
+import os
+import sys
+import getpass
+import requests
+import json
+import types
+import base64
+import socket
+import traceback
+import logging
+import argparse
 from datetime import datetime
 from smtplib import SMTP
 from email.MIMEMultipart import MIMEMultipart
@@ -22,22 +31,25 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
 
 
-def send_slack_notification(channel_url, subject, text, color=None, subject_link=None, 
+def send_slack_notification(channel_url, subject, text, color=None, subject_link=None,
                             attachment_only=False):
     """Send slack notification."""
 
     attachment = {
         "title": subject,
-        "text": text, 
+        "text": text,
     }
-    if color is not None: attachment['color'] = color
-    if subject_link is not None: attachment['subject_link'] = subject_link
+    if color is not None:
+        attachment['color'] = color
+    if subject_link is not None:
+        attachment['subject_link'] = subject_link
     payload = {
         'attachments': [attachment]
     }
-    if not attachment_only: payload['text'] = text
+    if not attachment_only:
+        payload['text'] = text
     r = requests.post(channel_url, data=json.dumps(payload),
-                      headers={ 'Content-Type': 'application/json' })
+                      headers={'Content-Type': 'application/json'})
     r.raise_for_status()
 
 
@@ -45,12 +57,15 @@ def get_hostname():
     """Get hostname."""
 
     # get hostname
-    try: return socket.getfqdn()
+    try:
+        return socket.getfqdn()
     except:
         # get IP
-        try: return socket.gethostbyname(socket.gethostname())
+        try:
+            return socket.gethostbyname(socket.gethostname())
         except:
-            raise RuntimeError("Failed to resolve hostname for full email address. Check system.")
+            raise RuntimeError(
+                "Failed to resolve hostname for full email address. Check system.")
 
 
 def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments=None):
@@ -67,7 +82,7 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     The charset of the email will be the first one out of US-ASCII, ISO-8859-1
     and UTF-8 that can represent all the characters occurring in the email.
     """
-    
+
     # combined recipients
     recipients = cc_recipients + bcc_recipients
 
@@ -92,16 +107,16 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
 
     # We must always pass Unicode strings to Header, otherwise it will
     # use RFC 2047 encoding even on plain ASCII strings.
-    sender_name = str(Header(unicode(sender_name), header_charset))
+    sender_name = str(Header(str(sender_name), header_charset))
     unicode_parsed_cc_recipients = []
     for recipient_name, recipient_addr in parsed_cc_recipients:
-        recipient_name = str(Header(unicode(recipient_name), header_charset))
+        recipient_name = str(Header(str(recipient_name), header_charset))
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_cc_recipients.append((recipient_name, recipient_addr))
     unicode_parsed_bcc_recipients = []
     for recipient_name, recipient_addr in parsed_bcc_recipients:
-        recipient_name = str(Header(unicode(recipient_name), header_charset))
+        recipient_name = str(Header(str(recipient_name), header_charset))
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_bcc_recipients.append((recipient_name, recipient_addr))
@@ -115,17 +130,18 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
                                  for recipient_name, recipient_addr in unicode_parsed_cc_recipients])
     msg['BCC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
                                   for recipient_name, recipient_addr in unicode_parsed_bcc_recipients])
-    msg['Subject'] = Header(unicode(subject), header_charset)
+    msg['Subject'] = Header(str(subject), header_charset)
     msg['FROM'] = "no-reply@jpl.nasa.gov"
     msg.attach(MIMEText(body.encode(body_charset), 'plain', body_charset))
-    
+
     # Add attachments
-    if isinstance(attachments, types.DictType):
+    if isinstance(attachments, dict):
         for fname in attachments:
             part = MIMEBase('application', "octet-stream")
             part.set_payload(attachments[fname])
             Encoders.encode_base64(part)
-            part.add_header('Content-Disposition', 'attachment; filename="%s"' % fname)
+            part.add_header('Content-Disposition',
+                            'attachment; filename="%s"' % fname)
             msg.attach(part)
 
     # Send the message via SMTP to docker host
@@ -135,6 +151,7 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
 
+
 def do_job_query(url, job_type, job_status):
 
     query = {
@@ -143,26 +160,26 @@ def do_job_query(url, job_type, job_status):
                 "must": [
                     {
                         "terms": {
-                            "status": [ job_status ]
+                            "status": [job_status]
                         }
                     },
                     {
                         "terms": {
-                            "resource": [ "job" ]
+                            "resource": ["job"]
                         }
                     },
                     {
                         "terms": {
-                            "type": [ job_type ]
+                            "type": [job_type]
                         }
                     }
                 ]
             }
         },
-        "sort": [ {"job.job_info.time_end": { "order":"desc" } } ],
-        "_source": [ "job_id", "payload_id", "payload_hash", "uuid",
-                     "job.job_info.time_queued", "job.job_info.time_start",
-                     "job.job_info.time_end", "error", "traceback" ],
+        "sort": [{"job.job_info.time_end": {"order": "desc"}}],
+        "_source": ["job_id", "payload_id", "payload_hash", "uuid",
+                    "job.job_info.time_queued", "job.job_info.time_start",
+                    "job.job_info.time_end", "error", "traceback"],
         "size": 1
     }
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
@@ -177,6 +194,7 @@ def do_job_query(url, job_type, job_status):
     result = r.json()
 
     return result
+
 
 def send_email_notification(emails, job_type, text, attachments=[]):
     """Send email notification."""
@@ -200,16 +218,19 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
     # build query
     result = do_job_query(url, job_type, "job-failed")
     count = result['hits']['total']
-    if count == 0: 
-        error+="\n\nNo Failed jobs found for job type %s." % job_type
+    if count == 0:
+        error += "\n\nNo Failed jobs found for job type %s." % job_type
     else:
         latest_job = result['hits']['hits'][0]['_source']
-        logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-        end_dt = datetime.strptime(latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
+        logging.info("latest_job: %s" % json.dumps(
+            latest_job, indent=2, sort_keys=True))
+        end_dt = datetime.strptime(
+            latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
         now = datetime.utcnow()
         delta = (now-end_dt).total_seconds()
         logging.info("Failed Job delta: %s" % delta)
-        error +="\nThe last failed job of type %s was %.2f-hours ago:\n" %(job_type, delta/3600.)
+        error += "\nThe last failed job of type %s was %.2f-hours ago:\n" % (
+            job_type, delta/3600.)
         error += "\njob_id: %s\n" % latest_job['job_id']
         #error += "payload_id: %s\n" % latest_job['payload_id']
         #error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
@@ -217,17 +238,18 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
         error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
         error += "Error: %s\n" % latest_job['error']
         error += "Tracebak: %s\n" % latest_job['traceback']
-    
+
     subject = "\nJob Status checking for job type %s:\n\n" % job_type
 
     # send notification via slack
     if slack_url:
-        send_slack_notification(slack_url, subject, error, "#f23e26", attachment_only=True)
+        send_slack_notification(slack_url, subject, error,
+                                "#f23e26", attachment_only=True)
 
     # send notification via email
     if email:
         send_email_notification(email, job_type, subject + error)
-    
+
 
 def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None):
     """Check that job type ran successfully within the expected periodicity."""
@@ -239,17 +261,20 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
     # build query
     result = do_job_query(url, job_type, "job-completed")
     count = result['hits']['total']
-    if count == 0: 
+    if count == 0:
         error = "No Successfully Completed jobs found for job type %s!!\n." % job_type
     else:
         latest_job = result['hits']['hits'][0]['_source']
-        logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-        end_dt = datetime.strptime(latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
+        logging.info("latest_job: %s" % json.dumps(
+            latest_job, indent=2, sort_keys=True))
+        end_dt = datetime.strptime(
+            latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
         now = datetime.utcnow()
         delta = (now-end_dt).total_seconds()
         logging.info("Successful Job delta: %s" % delta)
         if delta > periodicity:
-            error  = '\nThere has not been a successfully completed job type "%s" for more than %.2f-hours.\n' % (job_type, delta/3600.) 
+            error = '\nThere has not been a successfully completed job type "%s" for more than %.2f-hours.\n' % (
+                job_type, delta/3600.)
             error += 'The last successfully completed job:\n'
             error += "job_id: %s\n" % latest_job['job_id']
             #error += "payload_id: %s\n" % latest_job['payload_id']
@@ -257,10 +282,12 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
             #error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
             error += "time_end: %s\n" % latest_job['job']['job_info']['time_end']
             color = "#f23e26"
-        else: return
+        else:
+            return
 
-    #check for failed job now.
+    # check for failed job now.
     check_failed_job(url, job_type, periodicity, error, slack_url, email)
+
 
 if __name__ == "__main__":
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
@@ -269,8 +296,10 @@ if __name__ == "__main__":
     parser.add_argument('periodicity', type=int,
                         help="successful job execution periodicity in seconds")
     parser.add_argument('-u', '--url', default=host, help="ElasticSearch URL")
-    parser.add_argument('-s', '--slack_url', default=None, help="Slack URL for notification")
-    parser.add_argument('-e', '--email', default=None, help="email addresses (comma-separated) for notification")
+    parser.add_argument('-s', '--slack_url', default=None,
+                        help="Slack URL for notification")
+    parser.add_argument('-e', '--email', default=None,
+                        help="email addresses (comma-separated) for notification")
     args = parser.parse_args()
-    check_job_execution(args.url, args.job_type, args.periodicity, args.slack_url, args.email)
-
+    check_job_execution(args.url, args.job_type,
+                        args.periodicity, args.slack_url, args.email)
