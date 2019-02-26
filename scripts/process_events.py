@@ -221,7 +221,7 @@ def event_monitor(app):
         state.event(event)
         if ORCH_HOST_RE.search(event['hostname']):
             return
-        rd.delete([WORKER_STATUS_KEY_TMPL % event['hostname']])
+        rd.delete(WORKER_STATUS_KEY_TMPL % event['hostname'])
         time_end = datetime.utcnow().isoformat() + 'Z'
         query = {
             "query": {
