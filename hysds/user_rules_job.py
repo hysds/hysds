@@ -50,7 +50,7 @@ def ensure_job_indexed(job_id, es_url, alias):
     logger.info("ensure_job_indexed result: %s" % json.dumps(result, indent=2))
     total = result['hits']['total']
     if total == 0:
-        raise RuntimeError("Failed to find indexed job: %s" % job_id)
+        raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
 def get_job(job_id, rule, result):

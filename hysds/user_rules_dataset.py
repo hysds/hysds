@@ -55,7 +55,7 @@ def ensure_dataset_indexed(objectid, system_version, es_url, alias):
                 json.dumps(result, indent=2))
     total = result['hits']['total']
     if total == 0:
-        raise RuntimeError("Failed to find indexed dataset: %s (%s)" % (
+        raise RuntimeError("Failed to find indexed dataset: {} ({})".format(
             objectid, system_version))
 
 

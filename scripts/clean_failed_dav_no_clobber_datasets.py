@@ -138,7 +138,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
             match = DAV_RE.search(error)
             if not match:
                 raise RuntimeError(
-                    "Failed to find DAV url in error: %s" % error)
+                    "Failed to find DAV url in error: {}".format(error))
             proto, prefix, dataset_id = match.groups()
 
             # query if dataset exists in GRQ; then no-clobber happened because of dataset deduplication

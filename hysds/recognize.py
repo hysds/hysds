@@ -53,7 +53,7 @@ class Recognizer(object):
         for ds in self.dataset_info['datasets']:
             if 'match_pattern' not in ds:
                 raise RecognizerError(
-                    "No 'match_pattern' defined:\n%s" % pprint(ds))
+                    "No 'match_pattern' defined:\n{}".format(pprint(ds)))
             ds['match_pattern'] = re.compile(ds['match_pattern'])
             if 'alt_match_pattern' not in ds:
                 ds['alt_match_pattern'] = None
@@ -100,7 +100,7 @@ class Recognizer(object):
                 self.currentIpath = ds['ipath']
                 return self.currentIpath
         raise RecognizerError(
-            "No dataset configured for %s. Check %s." % (path, self.dataset_file))
+            "No dataset configured for {}. Check {}.".format(path, self.dataset_file))
 
     def setDataset(self, dataset):
         """Add dataset values to group dict."""

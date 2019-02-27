@@ -637,7 +637,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                 prov_es_info = json.load(f)
             except Exception as e:
                 tb = traceback.format_exc()
-                raise RuntimeError
+                raise RuntimeError("Failed to load PROV-ES from {}: {}\n{}".format(prod_prov_es_file, str(e), tb))
         log_publish_prov_es(prov_es_info, pub_prov_es_file, local_prod_path,
                             pub_urls, prod_metrics, objectid)
         # upload publish PROV-ES file

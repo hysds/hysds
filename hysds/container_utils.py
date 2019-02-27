@@ -32,10 +32,10 @@ def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 
     if m == "/":
-        raise RuntimeError
+        raise RuntimeError("Cannot mount host root directory")
     for k in blacklist:
         if m.startswith(k):
-            raise RuntimeError
+            raise RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k))
     return True
 
 
@@ -113,7 +113,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             elif len(v) == 1:
                 v = v[0]
             else:
-                raise RuntimeError
+                raise RuntimeError("Invalid image mapping: %s:%s" % (k, v))
         if v.startswith('/'):
             mnt = v
         else:
@@ -149,7 +149,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                 try:
                     osaka.main.get(image_url, image_file)
                 except Exception as e:
-                    raise RuntimeError
+                    raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
             load_lock = "{}.load.lock".format(image_file)
@@ -161,7 +161,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                           stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
                 if p.returncode != 0:
-                    raise RuntimeError
+                    raise RuntimeError("Failed to load image {} ({}): {}".format(image_file, image_name, stderr))
                 logger.info("Loaded image %s (%s)" % (image_file, image_name))
                 try:
                     os.unlink(image_file)

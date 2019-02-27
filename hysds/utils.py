@@ -140,7 +140,8 @@ def download_file(url, path, cache=False):
             except Exception as e:
                 shutil.rmtree(cache_dir)
                 tb = traceback.format_exc()
-                raise RuntimeError
+                raise RuntimeError("Failed to download {} to cache {}: {}\n{}".format(
+                    url, cache_dir, str(e), tb))
             with atomic_write(signal_file, overwrite=True) as f:
                 f.write("%sZ\n" % datetime.utcnow().isoformat())
         for i in os.listdir(cache_dir):
@@ -204,7 +205,7 @@ def get_threshold(path, disk_usage):
             break
     if du_bytes is None:
         raise RuntimeError(
-            "Failed to determine disk usage requirements from verdi config: %s" % disk_usage)
+            "Failed to determine disk usage requirements from verdi config: {}".format(disk_usage))
     return math.ceil(float(100) / float(capacity) * du_bytes)
 
 
@@ -478,7 +479,7 @@ def localize_urls(job, ctx):
             download_file(url, path, cache=cache)
         except Exception as e:
             tb = traceback.format_exc()
-            raise RuntimeError
+            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
         loc_t2 = datetime.utcnow()
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
@@ -541,7 +542,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
                 prov_es_info = json.load(f)
             except Exception as e:
                 tb = traceback.format_exc()
-                raise RuntimeError
+                raise RuntimeError("Failed to log PROV-ES from {}: {}\n{}".format(prov_es_file, str(e), tb))
         log_prov_es(job, prov_es_info, prov_es_file)
 
     # copy _context.json

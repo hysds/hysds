@@ -418,7 +418,8 @@ def fail_job(job_status_json, jd_file):
             pass
         shutdown_worker(job_status_json['celery_hostname'])
         time.sleep(30)  # give ample time for shutdown to come back
-    raise WorkerExecutionError
+    raise WorkerExecutionError(job_status_json.get('error', def_err),
+                               job_status_json)
 
 
 @app.task
@@ -462,7 +463,7 @@ def run_job(job, queue_when_finished=True):
                            'traceback': error,
                            'celery_hostname': run_job.request.hostname}
         log_job_status(job_status_json)
-        raise WorkerExecutionError
+        raise WorkerExecutionError(error, job_status_json)
 
     # install hysds signal handler?
     if app.conf.HYSDS_HANDLE_SIGNALS:
@@ -521,7 +522,7 @@ def run_job(job, queue_when_finished=True):
                            'traceback': traceback.format_exc(),
                            'celery_hostname': run_job.request.hostname}
         log_job_status(job_status_json)
-        raise WorkerExecutionError
+        raise WorkerExecutionError(error, job_status_json)
 
     # set job drain detector file
     jd_file = os.path.join(
@@ -920,7 +921,7 @@ def run_job(job, queue_when_finished=True):
                 error = "verdi worker found duplicate job %s with status %s" % (
                     dj['_id'], dj['status'])
                 dedupJob = dj['_id']
-                raise JobDedupedError
+                raise JobDedupedError(error)
 
         # set status to job-started
         job['job_info']['time_start'] = time_start_iso
@@ -1015,7 +1016,7 @@ def run_job(job, queue_when_finished=True):
             tb = traceback.format_exc()
             err = "Failed to dump docker params to file %s: %s\n%s" % (
                 docker_params_file, str(e), tb)
-            raise RuntimeError
+            raise RuntimeError(err)
 
         # make sure command-line list items are string
         cmdLineList = [str(i) for i in cmdLineList]
@@ -1093,9 +1094,9 @@ def run_job(job, queue_when_finished=True):
         # handle non-zero exit status
         if status != 0:
             if status is None:
-                raise RuntimeError
+                raise RuntimeError("Failed to get exit status.")
             else:
-                raise RuntimeError
+                raise RuntimeError("Got non-zero exit code: {}".format(status))
 
         # check for metrics from PGE
         for pge_metrics_file in find_pge_metrics(job_dir):
@@ -1107,7 +1108,7 @@ def run_job(job, queue_when_finished=True):
                     tb = traceback.format_exc()
                     err = "Failed to load PGE-generated metrics from %s: %s\n%s" % (
                         pge_metrics_file, str(e), tb)
-                    raise RuntimeError
+                    raise RuntimeError(err)
 
             # append input localization metrics
             job['job_info']['metrics']['inputs_localized'].extend(

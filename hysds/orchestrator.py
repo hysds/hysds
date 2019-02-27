@@ -162,7 +162,7 @@ def submit_job(j):
                            'short_error': get_short_error(error_info),
                            'traceback': error_info}
         log_job_status(job_status_json)
-        raise OrchestratorExecutionError
+        raise OrchestratorExecutionError(error, job_status_json)
 
     #logger.info("HYSDS_ORCHESTRATOR_CFG:%s" % orch_cfg_file)
     if not os.path.exists(orch_cfg_file):
@@ -178,7 +178,7 @@ def submit_job(j):
                            'short_error': get_short_error(error_info),
                            'traceback': error_info}
         log_job_status(job_status_json)
-        raise OrchestratorExecutionError
+        raise OrchestratorExecutionError(error, job_status_json)
 
     with open(orch_cfg_file) as f:
         orch_cfg = json.load(f)
@@ -198,7 +198,7 @@ def submit_job(j):
                            'short_error': get_short_error(error_info),
                            'traceback': error_info}
         log_job_status(job_status_json)
-        raise OrchestratorExecutionError
+        raise OrchestratorExecutionError(error, job_status_json)
     #logger.info("HYSDS_JOB_CREATORS_DIR:%s" % job_creators_dir)
 
     # parse job configurations
@@ -220,7 +220,7 @@ def submit_job(j):
                            'short_error': get_short_error(error_info),
                            'traceback': error_info}
         log_job_status(job_status_json)
-        raise OrchestratorExecutionError
+        raise OrchestratorExecutionError(error, job_status_json)
     job_type = j['job_type']
     job_queue = j.get('job_queue', None)
 
@@ -237,7 +237,7 @@ def submit_job(j):
                            'short_error': get_short_error(error_info),
                            'traceback': error_info}
         log_job_status(job_status_json)
-        raise OrchestratorExecutionError
+        raise OrchestratorExecutionError(error, job_status_json)
     payload = j['payload']
     #logger.info("got job_type: %s" % job_type)
     #logger.info("payload: %s" % payload)
@@ -313,7 +313,7 @@ def submit_job(j):
                 'short_error': get_short_error(error_info),
                 'traceback': traceback.format_exc()}
             log_job_status(job_status_json)
-            raise OrchestratorExecutionError
+            raise OrchestratorExecutionError(error, job_status_json)
         #logger.info("job: %s" % job)
 
         # set context

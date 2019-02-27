@@ -46,7 +46,7 @@ def get_desired_capacity(asg):
     r = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
     groups = r['AutoScalingGroups']
     if len(groups) == 0:
-        raise RuntimeError("Autoscaling group %s not found." % asg)
+        raise RuntimeError("Autoscaling group {} not found.".format(asg))
     return groups[0]['DesiredCapacity']
 
 

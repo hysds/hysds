@@ -175,7 +175,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
             match = S3_RE.search(error)
             if not match:
                 raise RuntimeError(
-                    "Failed to find S3 url in error: %s" % error)
+                    "Failed to find S3 url in error: {}".format(error))
             bucket, prefix, dataset_id = match.groups()
 
             # query if dataset exists in GRQ; then no-clobber happened because of dataset deduplication
