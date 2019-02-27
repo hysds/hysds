@@ -71,7 +71,7 @@ class MessagingThread(AbstractInterruptableProcess):
                     if item == None:
                         self._isRunnable = False
                     else:
-                        items.append(item)
+                        items.append(item.decode())
                     # end if
 
                     self._queue.task_done()
