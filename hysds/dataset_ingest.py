@@ -224,7 +224,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
 
     # get default job path
     if job_path is None:
-        job_path = os.getcwdu()
+        job_path = os.getcwd()
 
     # detect job info
     job = {}
