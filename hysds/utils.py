@@ -125,7 +125,7 @@ def download_file(url, path, cache=False):
 
     params = get_download_params(url)
     if cache:
-        url_hash = hashlib.md5(url).hexdigest()
+        url_hash = hashlib.md5(url.encode()).hexdigest()
         hash_dir = os.path.join(app.conf.ROOT_WORK_DIR,
                                 'cache', *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
@@ -331,7 +331,7 @@ def get_payload_hash(payload):
         if k in clean_payload:
             del clean_payload[k]
     return hashlib.md5(json.dumps(clean_payload, sort_keys=2,
-                                  ensure_ascii=True)).hexdigest()
+                                  ensure_ascii=True).encode()).hexdigest()
 
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException,

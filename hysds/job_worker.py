@@ -814,7 +814,7 @@ def run_job(job, queue_when_finished=True):
         try:
             r = requests.get(md_url, timeout=1)
             if r.status_code == 200:
-                facts[md_name] = r.content
+                facts[md_name] = r.content.decode()
         except:
             pass
 
