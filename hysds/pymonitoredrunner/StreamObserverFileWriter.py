@@ -59,7 +59,7 @@ class StreamObserverFileWriter(object):
         Note that lines include the line separator.
         """
         try:
-            self._file.write(line)
+            self._file.write(line.decode())
             # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
             self._file.flush()
         except IOError as e:
