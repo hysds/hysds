@@ -469,7 +469,19 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
                                              'dataset_url': pub_path_url,
                                              'msg': msg}})
                     else:
-                        raise
+                        # overwrite if dataset doesn't exist in grq
+                        if not dataset_exists(objectid):
+                            msg = "Detected orphaned dataset without ES doc. Forcing publish."
+                            logger.warn(msg)
+                            log_custom_event('orphaned_dataset-no_es_doc', 'clobber',
+                                             {'orphan_info': {
+                                                 'payload_id': payload_id,
+                                                 'payload_hash': payload_hash,
+                                                 'task_id': task_id,
+                                                 'dataset_id': objectid,
+                                                 'dataset_url': pub_path_url,
+                                                 'msg': msg }})
+                        else: raise
                 publish_dataset(local_prod_path, pub_path_url, params=osaka_params, force=True,
                                 publ_ctx_file=publ_ctx_file, publ_ctx_url=publ_ctx_url)
             except osaka.utils.NoClobberException as e:
