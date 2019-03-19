@@ -184,7 +184,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             check_output(['docker', 'pull', image_name])
             logger.info("Pulled image %s from docker hub" % image_name)
         image_info = check_output(['docker', 'inspect', image_name])
-    logger.info("image info for %s: %s" % (image_name, image_info))
+    logger.info("image info for %s: %s" % (image_name, image_info.decode()))
     return json.loads(image_info)[0]
 
 

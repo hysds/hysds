@@ -316,7 +316,7 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
             logger.info("Running metadata extractor %s on %s" %
                         (extractor, local_prod_path))
             m = check_output([extractor, local_prod_path])
-            logger.info("Output: %s" % m)
+            logger.info("Output: %s" % m.decode())
 
             # generate json to update metadata and urls
             metadata = json.loads(m)
