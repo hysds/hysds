@@ -21,7 +21,7 @@ setup(
         'msgpack-python>=0.4.6', 'boto3>=1.2.6', 'backoff>=1.3.1',
         'protobuf>=3.1.0.post1', 'google-cloud>=0.22.0', 
         'google-cloud-monitoring>=0.22.0', 'osaka>=0.0.1', 
-        'prov_es==0.1.1', 'hysds_commons>=0.1', 'atomicwrites>=1.1.5',
+        'prov_es>=0.2.0', 'hysds_commons>=0.1', 'atomicwrites>=1.1.5',
         'future>=0.17.1', 'greenlet>=0.4.15', 'fabric3', 'pytz'
     ]
 )
