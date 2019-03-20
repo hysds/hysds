@@ -6,8 +6,20 @@ final celery task status and resynchronizes job status. If no task
 status exists in ES, it queries the celery task metadata store in redis
 for task status. If none exists, the job is offlined.
 """
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+from __future__ import absolute_import
 
-import os, sys, requests, json, logging, argparse
+from builtins import input
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import requests
+import json
+import logging
+import argparse
 from redis import ConnectionPool, StrictRedis
 from kombu.serialization import loads, registry, prepare_accept_content
 
@@ -32,14 +44,15 @@ def set_redis_pool():
 def offline_orphaned_jobs(es_url, dry_run=False):
     """Set jobs with job-queued or job-started state to job-offline
        if not synced with celery task state."""
-    
+
     # get redis connection
     set_redis_pool()
     global POOL
     rd = StrictRedis(connection_pool=POOL)
 
     # get celery task result serializer
-    content_type, content_encoding, encoder = registry._encoders[app.conf.CELERY_RESULT_SERIALIZER]
+    content_type, content_encoding, encoder = registry._encoders[
+        app.conf.CELERY_RESULT_SERIALIZER]
     accept = prepare_accept_content(app.conf.CELERY_ACCEPT_CONTENT)
     logging.info("content_type: {}".format(content_type))
     logging.info("content_encoding: {}".format(content_encoding))
@@ -51,15 +64,15 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         "query": {
             "bool": {
                 "must": [
-                    {   
+                    {
                         "terms": {
-                            "status": [ "job-started", "job-queued" ]
+                            "status": ["job-started", "job-queued"]
                         }
                     }
                 ]
             }
         },
-        "_source": [ "status", "tags", "uuid" ]
+        "_source": ["status", "tags", "uuid"]
     }
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(es_url), data=json.dumps(query))
@@ -74,12 +87,14 @@ def offline_orphaned_jobs(es_url, dry_run=False):
     # get list of results
     results = []
     while True:
-        r = requests.post('%s/_search/scroll?scroll=10m' % es_url, data=scroll_id)
+        r = requests.post('%s/_search/scroll?scroll=10m' %
+                          es_url, data=scroll_id)
         res = r.json()
         scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0: break
-        for hit in res['hits']['hits']: results.append(hit)
-
+        if len(res['hits']['hits']) == 0:
+            break
+        for hit in res['hits']['hits']:
+            results.append(hit)
 
     # check for celery state
     for res in results:
@@ -96,7 +111,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                     "_id": task_id
                 }
             },
-            "_source": [ "status" ]
+            "_source": ["status"]
         }
         r = requests.post('%s/task_status-current/task/_search' % es_url,
                           data=json.dumps(task_query))
@@ -107,17 +122,22 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         task_res = r.json()
         if task_res['hits']['total'] > 0:
             task_info = task_res['hits']['hits'][0]
-            if task_info['_source']['status'] == 'task-failed': updated_status = 'job-failed'
-            elif task_info['_source']['status'] == 'task-succeeded': updated_status = 'job-completed'
-            elif task_info['_source']['status'] in ('task-sent', 'task-started'): continue
+            if task_info['_source']['status'] == 'task-failed':
+                updated_status = 'job-failed'
+            elif task_info['_source']['status'] == 'task-succeeded':
+                updated_status = 'job-completed'
+            elif task_info['_source']['status'] in ('task-sent', 'task-started'):
+                continue
             else:
-                logging.error("Cannot handle task status %s for %s." % (task_info['_source']['status'], task_id))
+                logging.error("Cannot handle task status %s for %s." %
+                              (task_info['_source']['status'], task_id))
                 continue
             if dry_run:
-                logging.info("Would've update job status to %s for %s." % (updated_status, task_id))
+                logging.info("Would've update job status to %s for %s." %
+                             (updated_status, task_id))
             else:
                 new_doc = {
-                    "doc": { "status": updated_status },
+                    "doc": {"status": updated_status},
                     "doc_as_upsert": True
                 }
                 r = requests.post('%s/job_status-current/job/%s/_update' % (es_url, id),
@@ -138,10 +158,11 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         if task_meta is None:
             updated_status = 'job-offline'
             if dry_run:
-                logging.info("Would've update job status to %s for %s." % (updated_status, task_id))
+                logging.info("Would've update job status to %s for %s." %
+                             (updated_status, task_id))
             else:
                 new_doc = {
-                    "doc": { "status": updated_status },
+                    "doc": {"status": updated_status},
                     "doc_as_upsert": True
                 }
                 r = requests.post('%s/job_status-current/job/%s/_update' % (es_url, id),
@@ -164,8 +185,11 @@ if __name__ == "__main__":
     # prompt user system is quiet
     print("\033[1;31;40mThis script should run when no workers are consuming jobs from any queues.")
     print("(i.e. RabbitMQ admin shows all 0's in the unacked column).\033[0m")
-    try: input_str = raw_input("Type YES to continue: ").strip()
-    except: sys.exit(1)
-    if input_str != "YES": sys.exit(0)
+    try:
+        input_str = input("Type YES to continue: ").strip()
+    except:
+        sys.exit(1)
+    if input_str != "YES":
+        sys.exit(0)
 
     offline_orphaned_jobs(host, args.dry_run)

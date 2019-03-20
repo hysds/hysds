@@ -1,6 +1,19 @@
 #!/usr/bin/env python
-import os, sys, json, time, traceback, logging, argparse
-import boto3, requests
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import json
+import time
+import traceback
+import logging
+import argparse
+import boto3
+import requests
 
 from hysds.celery import app
 
@@ -13,15 +26,17 @@ def get_waiting_job_count(job, user='guest', password='guest'):
     """Return number of jobs waiting."""
 
     # get rabbitmq admin api host
-    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get('rabbitmq', {}).get('hostname', 'localhost')
+    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get(
+        'rabbitmq', {}).get('hostname', 'localhost')
 
     # get number of jobs waiting (ready)
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, job)
     r = requests.get(url, auth=(user, password))
-    #r.raise_for_status()
+    # r.raise_for_status()
     if r.status_code == 200:
         return r.json()['messages_ready']
-    else: return 0
+    else:
+        return 0
 
 
 def submit_metric(job, job_count, metric_ns):
@@ -50,10 +65,10 @@ def daemon(job, interval, namespace, user="guest", password="guest"):
             job_count = get_waiting_job_count(job, user, password)
             logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
             submit_metric(job, job_count, namespace)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
-        time.sleep(interval)    
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
@@ -65,6 +80,7 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--namespace', default='HySDS',
                         help="CloudWatch metrics namespace")
     parser.add_argument('-u', '--user', default="guest", help="rabbitmq user")
-    parser.add_argument('-p', '--password', default="guest", help="rabbitmq password")
+    parser.add_argument('-p', '--password', default="guest",
+                        help="rabbitmq password")
     args = parser.parse_args()
     daemon(args.queue, args.interval, args.namespace, args.user, args.password)

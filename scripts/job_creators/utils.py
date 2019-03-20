@@ -1,3 +1,9 @@
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
 import json
 from pprint import pprint, pformat
 
@@ -17,7 +23,7 @@ def get_job_json(info, job_type):
 def ingest_dataset(info):
     """
     Create job json for dataset ingest.
-    
+
     Example:
 
     job = {
@@ -47,13 +53,13 @@ def ingest_dataset(info):
     params = {}
     params['dataset'] = info['dataset']
     job = {
-            'type': 'ingest_dataset',
-            'name': 'ingest_dataset-%s' % params['dataset'],
-            'params': params,
-            'localize_urls': info['dataset_urls']
-          }
+        'type': 'ingest_dataset',
+        'name': 'ingest_dataset-%s' % params['dataset'],
+        'params': params,
+        'localize_urls': info['dataset_urls']
+    }
 
-    #print "Job:"
+    # print "Job:"
     #pprint(job, indent=2)
     return job
 
@@ -61,7 +67,7 @@ def ingest_dataset(info):
 def notify_by_email(info):
     """
     Create job json for email notification.
-    
+
     Example:
 
     job = {
@@ -88,16 +94,18 @@ def notify_by_email(info):
     params['emails'] = kwargs['email_addresses']
     rule_hit = info['rule_hit']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     job = {
-            'type': 'notify_by_email',
-            'name': 'action-notify_by_email-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'notify_by_email',
+        'name': 'action-notify_by_email-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -106,7 +114,7 @@ def notify_by_email(info):
 def notify_by_tweet(info):
     """
     Create job json for tweet notification.
-    
+
     Example:
 
     job = {
@@ -133,16 +141,18 @@ def notify_by_tweet(info):
     params['hash_tags'] = kwargs['hash_tags']
     rule_hit = info['rule_hit']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     job = {
-            'type': 'notify_by_tweet',
-            'name': 'action-notify_by_tweet-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'notify_by_tweet',
+        'name': 'action-notify_by_tweet-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -151,7 +161,7 @@ def notify_by_tweet(info):
 def ftp_push(info):
     """
     Create job json for FTP push.
-    
+
     Example:
 
     job = {
@@ -180,16 +190,18 @@ def ftp_push(info):
     params['emails'] = kwargs['email_addresses']
     rule_hit = info['rule_hit']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     job = {
-            'type': 'ftp_push',
-            'name': 'action-ftp_push-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'ftp_push',
+        'name': 'action-ftp_push-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -198,7 +210,7 @@ def ftp_push(info):
 def sftp_push(info):
     """
     Create job json for FTP push.
-    
+
     Example:
 
     job = {
@@ -227,16 +239,18 @@ def sftp_push(info):
     params['emails'] = kwargs['email_addresses']
     rule_hit = info['rule_hit']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     job = {
-            'type': 'sftp_push',
-            'name': 'action-sftp_push-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'sftp_push',
+        'name': 'action-sftp_push-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -245,7 +259,7 @@ def sftp_push(info):
 def rsync_push(info):
     """
     Create job json for rsync push.
-    
+
     Example:
 
     job = {
@@ -274,16 +288,18 @@ def rsync_push(info):
     params['emails'] = kwargs['email_addresses']
     rule_hit = info['rule_hit']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     job = {
-            'type': 'rsync_push',
-            'name': 'action-rsync_push-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'rsync_push',
+        'name': 'action-rsync_push-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -292,7 +308,7 @@ def rsync_push(info):
 def purge_dataset(info):
     """
     Create job json for dataset purge.
-    
+
     Example:
 
     job = {
@@ -316,18 +332,20 @@ def purge_dataset(info):
     params['doctype'] = rule_hit['_type']
     params['id'] = info['objectid']
     urls = rule_hit['_source']['urls']
-    if len(urls) > 0: params['url'] = urls[0]
-    else: params['url'] = None
+    if len(urls) > 0:
+        params['url'] = urls[0]
+    else:
+        params['url'] = None
     params['rule_name'] = info['rule']['rule_name']
     params['username'] = info['rule']['username']
     job = {
-            'type': 'purge_dataset',
-            'name': 'action-purge_dataset-%s' % info['objectid'],
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'purge_dataset',
+        'name': 'action-purge_dataset-%s' % info['objectid'],
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -336,7 +354,7 @@ def purge_dataset(info):
 def purge_datasets(info):
     """
     Create job json for purge of datasets by query.
-    
+
     Example:
 
     job = {
@@ -359,13 +377,13 @@ def purge_datasets(info):
     params['rule_name'] = info['rule']['rule_name']
     params['username'] = info['rule']['username']
     job = {
-            'type': 'purge_datasets',
-            'name': 'action-purge_datasets',
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'purge_datasets',
+        'name': 'action-purge_datasets',
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -374,7 +392,7 @@ def purge_datasets(info):
 def custom_script(info):
     """
     Create job json for custom script.
-    
+
     Example:
 
     job = {
@@ -402,13 +420,13 @@ def custom_script(info):
     params.update(kwargs)
 
     job = {
-            'type': 'custom_script',
-            'name': 'action-custom_script',
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'custom_script',
+        'name': 'action-custom_script',
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job
@@ -417,7 +435,7 @@ def custom_script(info):
 def import_prov_es(info):
     """
     Create job json for importing of PROV-ES JSON.
-    
+
     Example:
 
     job = {
@@ -445,17 +463,18 @@ def import_prov_es(info):
             if url.startswith('s3'):
                 params['prod_url'] = url
                 break
-    else: params['prod_url'] = None
+    else:
+        params['prod_url'] = None
     params['rule_name'] = info['rule']['rule_name']
     params['username'] = info['rule']['username']
     job = {
-            'type': 'import_prov_es',
-            'name': 'action-import_prov_es',
-            'tag': params['rule_name'],
-            'username': params['username'],
-            'params': params,
-            'localize_urls': []
-          }
+        'type': 'import_prov_es',
+        'name': 'action-import_prov_es',
+        'tag': params['rule_name'],
+        'username': params['username'],
+        'params': params,
+        'localize_urls': []
+    }
 
     #pprint(job, indent=2)
     return job

@@ -10,11 +10,18 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
+import time
+from billiard import Process
 import logging
 logger = logging.getLogger()
 
-from billiard import Process
-import time
 
 class AbstractInterruptableProcess(Process):
     """
@@ -29,15 +36,13 @@ class AbstractInterruptableProcess(Process):
         self._isRunnable = True
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         pass
-        #Process.__del__(self) does not exists
+        # Process.__del__(self) does not exists
     # end def
-
 
     def stop(self):
         """
@@ -47,12 +52,12 @@ class AbstractInterruptableProcess(Process):
         self._isRunnable = False
     # end def
 
-
     def run(self):
         """
         Process loop.
         """
-        raise NotImplementedError('Subclasses should provide a concrete implementation.')
+        raise NotImplementedError(
+            'Subclasses should provide a concrete implementation.')
 
 #        # recommended essentials for implementation:
 #
@@ -72,7 +77,6 @@ class AbstractInterruptableProcess(Process):
 
     # end def
 
-
     def interruptableJoin(self, timeout=3):
         """
         Waits for the process to end before returning. However, the current
@@ -83,18 +87,18 @@ class AbstractInterruptableProcess(Process):
         """
         try:
             while self.is_alive():
-                self.join(timeout) # seconds
+                self.join(timeout)  # seconds
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
-            logger.debug('=> Process interrupted. %s' % (str(e)) )
+        except KeyboardInterrupt as e:
+            logger.debug('=> Process interrupted. %s' % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
 
             # wait a little more for the process to fully stop
             while self.isAlive():
-                self.join(timeout) # seconds
+                self.join(timeout)  # seconds
                 # this area and the while check is interruptable.
             # end while
 
@@ -102,7 +106,6 @@ class AbstractInterruptableProcess(Process):
             raise e
         # end try-except
     # end def
-
 
     def interruptableSleep(self, seconds):
         """
@@ -115,15 +118,15 @@ class AbstractInterruptableProcess(Process):
                 remainingSeconds -= 1
                 # this area and the while check is interruptable.
             # end while
-        except KeyboardInterrupt, e:
-            logger.debug('=> Sleep interrupted. %s' % (str(e)) )
+        except KeyboardInterrupt as e:
+            logger.debug('=> Sleep interrupted. %s' % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
 
             # wait a little more for the process to fully stop
             while self.isAlive():
-                self.join(1) # seconds
+                self.join(1)  # seconds
                 # this area and the while check is interruptable.
             # end while
 
@@ -131,7 +134,6 @@ class AbstractInterruptableProcess(Process):
             raise e
         # end try-except
     # end def
-
 
     def sleep(self, seconds):
         """

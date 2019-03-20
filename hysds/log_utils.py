@@ -1,6 +1,22 @@
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
 from __future__ import absolute_import
 
-import os, re, json, copy, socket, msgpack, traceback, types, backoff
+
+from builtins import open
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
+import os
+import re
+import json
+import copy
+import socket
+import msgpack
+import traceback
+import types
+import backoff
 from datetime import datetime
 from uuid import uuid4
 from redis import BlockingConnectionPool, StrictRedis, RedisError
@@ -13,7 +29,7 @@ from hysds.celery import app
 from prov_es.model import get_uuid, ProvEsDocument
 
 
-#logger
+# logger
 logger = get_task_logger(__name__)
 
 # redis connection pools
@@ -62,7 +78,8 @@ def set_redis_job_status_pool():
 
     global JOB_STATUS_POOL
     if JOB_STATUS_POOL is None:
-        JOB_STATUS_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_STATUS_URL)
+        JOB_STATUS_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL)
 
 
 def set_redis_job_info_pool():
@@ -70,7 +87,8 @@ def set_redis_job_info_pool():
 
     global JOB_INFO_POOL
     if JOB_INFO_POOL is None:
-        JOB_INFO_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_INFO_URL)
+        JOB_INFO_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_INFO_URL)
 
 
 def set_redis_worker_status_pool():
@@ -78,7 +96,8 @@ def set_redis_worker_status_pool():
 
     global WORKER_STATUS_POOL
     if WORKER_STATUS_POOL is None:
-        WORKER_STATUS_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_STATUS_URL)
+        WORKER_STATUS_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL)
 
 
 def set_redis_event_status_pool():
@@ -86,7 +105,8 @@ def set_redis_event_status_pool():
 
     global EVENT_STATUS_POOL
     if EVENT_STATUS_POOL is None:
-        EVENT_STATUS_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_STATUS_URL)
+        EVENT_STATUS_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL)
 
 
 @backoff.on_exception(backoff.expo,
@@ -95,7 +115,7 @@ def set_redis_event_status_pool():
                       max_value=backoff_max_value)
 def log_task_worker(task_id, worker):
     """Log task worker for task ID in redis."""
-    
+
     set_redis_worker_status_pool()
     global WORKER_STATUS_POOL
 
@@ -112,7 +132,7 @@ def log_task_worker(task_id, worker):
                       max_value=backoff_max_value)
 def get_task_worker(task_id):
     """Retrieve task worker by task ID from redis."""
-    
+
     set_redis_worker_status_pool()
     global WORKER_STATUS_POOL
 
@@ -127,7 +147,7 @@ def get_task_worker(task_id):
                       max_value=backoff_max_value)
 def get_worker_status(worker):
     """Retrieve worker status by worker ID from redis."""
-    
+
     set_redis_worker_status_pool()
     global WORKER_STATUS_POOL
 
@@ -142,7 +162,7 @@ def get_worker_status(worker):
                       max_value=backoff_max_value)
 def get_job_status(task_id):
     """Retrieve job status by task ID from redis."""
-    
+
     set_redis_job_status_pool()
     global JOB_STATUS_POOL
 
@@ -157,7 +177,7 @@ def get_job_status(task_id):
                       max_value=backoff_max_value)
 def log_job_status(job):
     """Print job status."""
-    
+
     set_redis_job_status_pool()
     global JOB_STATUS_POOL
     job['resource'] = 'job'
@@ -166,7 +186,8 @@ def log_job_status(job):
     job['@timestamp'] = "%sZ" % datetime.utcnow().isoformat()
     if 'tag' in job.get('job', {}):
         tags = job.setdefault('tags', [])
-        if isinstance(tags, types.StringTypes): tags = [ tags ]
+        if isinstance(tags, str):
+            tags = [tags]
         tags.append(job['job']['tag'])
         job['tags'] = tags
 
@@ -174,8 +195,8 @@ def log_job_status(job):
     r = StrictRedis(connection_pool=JOB_STATUS_POOL)
     r.setex(JOB_STATUS_KEY_TMPL % job['uuid'],
             app.conf.HYSDS_JOB_STATUS_EXPIRES,
-            job['status']) # for dedup
-    r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job)) # for ES
+            job['status'])  # for dedup
+    r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
     logger.info("job_status_json:%s" % json.dumps(job))
 
 
@@ -185,19 +206,20 @@ def log_job_status(job):
                       max_value=backoff_max_value)
 def log_job_info(job):
     """Print job info."""
-    
+
     set_redis_job_info_pool()
     global JOB_INFO_POOL
     filtered_info = {}
     for info in ('job_info', 'job_id', 'task_id', 'delivery_info', 'tag',
                  'priority', 'container_image_name', 'container_image_url',
                  'name'):
-        if info in job: filtered_info[info] = job[info]
-    job_info = { 'type': 'job_info',
-                 '@version': '1',
-                 '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
-                 'job': filtered_info,
-                 'job_type': job['type'] }
+        if info in job:
+            filtered_info[info] = job[info]
+    job_info = {'type': 'job_info',
+                '@version': '1',
+                '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
+                'job': filtered_info,
+                'job_type': job['type']}
 
     # send update to redis
     r = StrictRedis(connection_pool=JOB_INFO_POOL)
@@ -217,19 +239,22 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
 
     uuid = str(uuid4())
     if hostname is None:
-        try: hostname = socket.getfqdn()
+        try:
+            hostname = socket.getfqdn()
         except:
-            try: hostname = socket.gethostbyname(socket.gethostname())
-            except: hostname = ''
-    info = { 'resource': 'event',
-             'type': event_type,
-             'status': event_status,
-             '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
-             'hostname': hostname,
-             'uuid': uuid,
-             'tags': tags,
-             '@version': '1',
-             'event': event }
+            try:
+                hostname = socket.gethostbyname(socket.gethostname())
+            except:
+                hostname = ''
+    info = {'resource': 'event',
+            'type': event_type,
+            'status': event_status,
+            '@timestamp': "%sZ" % datetime.utcnow().isoformat(),
+            'hostname': hostname,
+            'uuid': uuid,
+            'tags': tags,
+            '@version': '1',
+            'event': event}
 
     # send update to redis
     r = StrictRedis(connection_pool=EVENT_STATUS_POOL)
@@ -268,49 +293,59 @@ def log_prov_es(job, prov_es_info, prov_es_file):
                     prov_type="hysds:%s" % job['type'])
 
     # get json
-    pd = json.loads(doc.serialize()) 
+    pd = json.loads(doc.serialize())
 
     # update software agent and process step
     if 'bundle' in prov_es_info:
         if len(prov_es_info['bundle']) == 1:
-            bundle_id_orig = prov_es_info['bundle'].keys()[0]
+            bundle_id_orig = list(prov_es_info['bundle'].keys())[0]
 
             # update software agent
-            prov_es_info['bundle'][bundle_id_orig].setdefault('agent', {}).update(pd['bundle'][bundle_id]['agent'])
+            prov_es_info['bundle'][bundle_id_orig].setdefault(
+                'agent', {}).update(pd['bundle'][bundle_id]['agent'])
 
             # update wasAssociatedWith
-            prov_es_info['bundle'][bundle_id_orig].setdefault('wasAssociatedWith', {}).update(pd['bundle'][bundle_id]['wasAssociatedWith'])
+            prov_es_info['bundle'][bundle_id_orig].setdefault(
+                'wasAssociatedWith', {}).update(pd['bundle'][bundle_id]['wasAssociatedWith'])
 
             # update activity
             if 'activity' in prov_es_info['bundle'][bundle_id_orig]:
                 if len(prov_es_info['bundle'][bundle_id_orig]['activity']) == 1:
-                    ps_id_orig = prov_es_info['bundle'][bundle_id_orig]['activity'].keys()[0]
-                    prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['prov:startTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:startTime']
-                    prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['prov:endTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:endTime']
+                    ps_id_orig = list(
+                        prov_es_info['bundle'][bundle_id_orig]['activity'].keys())[0]
+                    prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig][
+                        'prov:startTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:startTime']
+                    prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig][
+                        'prov:endTime'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:endTime']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['hysds:job_id'] = job['job_id']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['hysds:job_type'] = job['type']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['hysds:job_url'] = job['job_info']['job_url']
                     prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['hysds:mozart_url'] = app.conf.MOZART_URL
                     if 'prov:type' not in prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]:
-                        prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig]['prov:type'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:type']
+                        prov_es_info['bundle'][bundle_id_orig]['activity'][ps_id_orig][
+                            'prov:type'] = pd['bundle'][bundle_id]['activity'][ps_id]['prov:type']
 
                     # update wasAssociatedWith activity ids
                     for waw_id in prov_es_info['bundle'][bundle_id_orig]['wasAssociatedWith']:
                         if prov_es_info['bundle'][bundle_id_orig]['wasAssociatedWith'][waw_id]['prov:activity'] == ps_id:
                             prov_es_info['bundle'][bundle_id_orig]['wasAssociatedWith'][waw_id]['prov:activity'] = ps_id_orig
-                else: prov_es_info['bundle'][bundle_id_orig]['activity'].update(pd['bundle'][bundle_id]['activity'])
-            else: prov_es_info['bundle'][bundle_id_orig]['activity'] = pd['bundle'][bundle_id]['activity']
+                else:
+                    prov_es_info['bundle'][bundle_id_orig]['activity'].update(
+                        pd['bundle'][bundle_id]['activity'])
+            else:
+                prov_es_info['bundle'][bundle_id_orig]['activity'] = pd['bundle'][bundle_id]['activity']
     else:
         # update software agent
         prov_es_info.setdefault('agent', {}).update(pd['agent'])
-    
+
         # update wasAssociatedWith
-        prov_es_info.setdefault('wasAssociatedWith', {}).update(pd['wasAssociatedWith'])
-    
+        prov_es_info.setdefault('wasAssociatedWith', {}).update(
+            pd['wasAssociatedWith'])
+
         # update process step
         if 'activity' in prov_es_info:
             if len(prov_es_info['activity']) == 1:
-                ps_id_orig = prov_es_info['activity'].keys()[0]
+                ps_id_orig = list(prov_es_info['activity'].keys())[0]
                 prov_es_info['activity'][ps_id_orig]['prov:startTime'] = pd['activity'][ps_id]['prov:startTime']
                 prov_es_info['activity'][ps_id_orig]['prov:endTime'] = pd['activity'][ps_id]['prov:endTime']
                 prov_es_info['activity'][ps_id_orig]['hysds:job_id'] = job['job_id']
@@ -324,9 +359,11 @@ def log_prov_es(job, prov_es_info, prov_es_file):
                 for waw_id in prov_es_info['wasAssociatedWith']:
                     if prov_es_info['wasAssociatedWith'][waw_id]['prov:activity'] == ps_id:
                         prov_es_info['wasAssociatedWith'][waw_id]['prov:activity'] = ps_id_orig
-            else: prov_es_info['activity'].update(pd['activity'])
-        else: prov_es_info['activity'] = pd['activity']
-            
+            else:
+                prov_es_info['activity'].update(pd['activity'])
+        else:
+            prov_es_info['activity'] = pd['activity']
+
     # write prov
     with open(prov_es_file, 'w') as f:
         json.dump(prov_es_info, f, indent=2)
@@ -380,7 +417,7 @@ def log_publish_prov_es(prov_es_info, prov_es_file, prod_path, pub_urls,
                     prov_type="hysds:publish_dataset")
 
     # get json
-    pd = json.loads(doc.serialize()) 
+    pd = json.loads(doc.serialize())
 
     # update input entity
     orig_ent = prov_es_info.get('entity', {}).get(input_id, {})
@@ -388,7 +425,8 @@ def log_publish_prov_es(prov_es_info, prov_es_file, prod_path, pub_urls,
 
     # update output entity
     for attr in orig_ent:
-        if attr in ('prov:location', 'prov:label', 'prov:type'): continue
+        if attr in ('prov:location', 'prov:label', 'prov:type'):
+            continue
         pd['entity'][output_id][attr] = orig_ent[attr]
 
     # write prov

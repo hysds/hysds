@@ -1,6 +1,19 @@
 #!/usr/bin/env python
-import os, sys, json, time, traceback, logging, argparse
-import boto3, requests
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import json
+import time
+import traceback
+import logging
+import argparse
+import boto3
+import requests
 
 from hysds.celery import app
 
@@ -13,15 +26,17 @@ def get_waiting_job_count(queue, user='guest', password='guest'):
     """Return number of jobs waiting."""
 
     # get rabbitmq admin api host
-    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get('rabbitmq', {}).get('hostname', 'localhost')
+    host = app.conf.get('PYMONITOREDRUNNER_CFG', {}).get(
+        'rabbitmq', {}).get('hostname', 'localhost')
 
     # get number of jobs waiting (ready)
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
     r = requests.get(url, auth=(user, password))
-    #r.raise_for_status()
+    # r.raise_for_status()
     if r.status_code == 200:
         return r.json()['messages_ready']
-    else: return 0
+    else:
+        return 0
 
 
 def get_desired_capacity(asg):
@@ -31,7 +46,7 @@ def get_desired_capacity(asg):
     r = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
     groups = r['AutoScalingGroups']
     if len(groups) == 0:
-        raise RuntimeError("Autoscaling group %s not found." % asg)
+        raise RuntimeError("Autoscaling group {} not found.".format(asg))
     return groups[0]['DesiredCapacity']
 
 
@@ -81,14 +96,16 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
             if desired_capacity == 0:
                 if job_count > 0:
                     desired_capacity = float(bootstrap_asg(asg))
-                    logging.info("bootstrapped ASG %s to desired=%s" % (asg, desired_capacity))
-                else: desired_capacity = 1.0
+                    logging.info("bootstrapped ASG %s to desired=%s" %
+                                 (asg, desired_capacity))
+                else:
+                    desired_capacity = 1.0
             metric = job_count/desired_capacity
             submit_metric(queue, asg, metric, namespace)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
-        time.sleep(interval)    
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
@@ -101,6 +118,8 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--namespace', default='HySDS',
                         help="CloudWatch metrics namespace")
     parser.add_argument('-u', '--user', default="guest", help="rabbitmq user")
-    parser.add_argument('-p', '--password', default="guest", help="rabbitmq password")
+    parser.add_argument('-p', '--password', default="guest",
+                        help="rabbitmq password")
     args = parser.parse_args()
-    daemon(args.queue, args.asg, args.interval, args.namespace, args.user, args.password)
+    daemon(args.queue, args.asg, args.interval,
+           args.namespace, args.user, args.password)

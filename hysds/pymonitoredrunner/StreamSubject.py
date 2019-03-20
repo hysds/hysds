@@ -10,7 +10,14 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
 from hysds.pymonitoredrunner.commons.patterns.AbstractSubject import AbstractSubject
+
 
 class StreamSubject(AbstractSubject):
     """
@@ -28,7 +35,6 @@ class StreamSubject(AbstractSubject):
         AbstractSubject.__init__(self)
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
@@ -36,16 +42,14 @@ class StreamSubject(AbstractSubject):
         AbstractSubject.__del__(self)
     # end def
 
-
     def __str__(self):
         """
         Gets the string representation of this object.
         @return: the string representation of this object.
         @rtype: str
         """
-        return '%s' % ( AbstractSubject.__str__(self) )
+        return '%s' % (AbstractSubject.__str__(self))
     # end def
-
 
     # -------------------------------------------------------------------------
     # Observer design pattern notification methods
@@ -60,7 +64,6 @@ class StreamSubject(AbstractSubject):
         # end for
     # end def
 
-
     def notifyEOF(self):
         """
         Invoked when end of stream is reached.
@@ -71,6 +74,4 @@ class StreamSubject(AbstractSubject):
     # end def
 
 
-
 # end class
-

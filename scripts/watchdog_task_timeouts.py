@@ -1,6 +1,21 @@
 #!/usr/bin/env python
-import os, sys, json, time, traceback, logging, argparse, random
-import boto3, requests
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import absolute_import
+from builtins import int
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import json
+import time
+import traceback
+import logging
+import argparse
+import random
+import boto3
+import requests
 
 from hysds.celery import app
 
@@ -18,7 +33,7 @@ def tag_timedout_tasks(url, timeout):
                 "must": [
                     {
                         "terms": {
-                            "status": [ "task-started" ]
+                            "status": ["task-started"]
                         }
                     },
                     {
@@ -31,9 +46,8 @@ def tag_timedout_tasks(url, timeout):
                 ]
             }
         },
-        "_source": [ "status", "tags", "uuid" ]
+        "_source": ["status", "tags", "uuid"]
     }
-
 
     # query
     url_tmpl = "{}/task_status-current/_search?search_type=scan&scroll=10m&size=100"
@@ -52,8 +66,10 @@ def tag_timedout_tasks(url, timeout):
         r = requests.post('%s/_search/scroll?scroll=10m' % url, data=scroll_id)
         res = r.json()
         scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0: break
-        for hit in res['hits']['hits']: results.append(hit)
+        if len(res['hits']['hits']) == 0:
+            break
+        for hit in res['hits']['hits']:
+            results.append(hit)
 
     logging.info("Found %d stuck tasks in task-started" % len(results) +
                  " older than %d seconds." % timeout)
@@ -69,7 +85,7 @@ def tag_timedout_tasks(url, timeout):
         if 'timedout' not in tags:
             tags.append('timedout')
             new_doc = {
-                "doc": { "tags": tags },
+                "doc": {"tags": tags},
                 "doc_as_upsert": True
             }
             r = requests.post('%s/task_status-current/task/%s/_update' % (url, id),
@@ -98,7 +114,7 @@ def daemon(interval, url, timeout):
     while True:
         try:
             tag_timedout_tasks(url, timeout)
-        except Exception, e:
+        except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
         time.sleep(random.randint(interval_min, interval_max))

@@ -1,27 +1,25 @@
-BROKER_URL = "amqp://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672//"
-CELERY_RESULT_BACKEND = "redis://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}"
+broker_url = "amqp://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672//"
+result_backend = "redis://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}"
 
-CELERY_TASK_SERIALIZER = "msgpack"
-CELERY_RESULT_SERIALIZER = "msgpack"
-CELERY_ACCEPT_CONTENT = ["msgpack"]
-CELERY_TIMEZONE = "US/Pacific-New"
-CELERY_ENABLE_UTC = True
+task_serializer = "msgpack"
+result_serializer = "msgpack"
+accept_content = ["msgpack"]
 
-CELERY_ACKS_LATE = True
-CELERY_TASK_RESULT_EXPIRES = 86400
-CELERYD_PREFETCH_MULTIPLIER = 1
+task_acks_late = True
+result_expires = 86400
+worker_prefetch_multiplier = 1
 
-CELERY_EVENT_SERIALIZER = "msgpack"
-CELERY_SEND_EVENTS = True
-CELERY_SEND_TASK_SENT_EVENT = True
-CELERY_TRACK_STARTED = True
+event_serializer = "msgpack"
+worker_send_task_events = True
+task_send_sent_event = True
+task_track_started = True
 
-CELERY_QUEUE_MAX_PRIORITY = 10
+task_queue_max_priority = 10
 
-BROKER_HEARTBEAT = 300
-BROKER_HEARTBEAT_CHECKRATE = 5
+broker_heartbeat = 300
+broker_heartbeat_checkrate = 5
 
-CELERY_IMPORTS = [
+imports = [
     "hysds.task_worker",
     "hysds.job_worker",
     "hysds.orchestrator",

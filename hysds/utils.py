@@ -1,18 +1,39 @@
-from __future__ import absolute_import
+from __future__ import division
+from __future__ import unicode_literals
 from __future__ import print_function
+from __future__ import absolute_import
 
-import os, sys, re, urllib, json, requests, math, backoff, hashlib, copy, errno
-import shutil, traceback
+
+from builtins import str
+from builtins import int
+from builtins import open
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import re
+import urllib.request
+import urllib.parse
+import urllib.error
+import json
+import requests
+import math
+import backoff
+import hashlib
+import copy
+import errno
+import shutil
+import traceback
 from glob import glob
 from datetime import datetime
 from subprocess import check_output
-from urllib2 import urlopen
-from urlparse import urlparse,ParseResult
-from StringIO import StringIO
+from urllib.request import urlopen
+from urllib.parse import urlparse, ParseResult
+from io import StringIO
 from lxml.etree import XMLParser, parse, tostring
 from importlib import import_module
 from celery.result import AsyncResult
-from urlparse import urlparse
+from urllib.parse import urlparse
 from atomicwrites import atomic_write
 from bisect import insort
 
@@ -46,12 +67,15 @@ def get_func(f):
     if '.' in f:
         mod_name, func_name = f.rsplit('.', 1)
         mod = get_module(mod_name)
-        try: return getattr(mod, func_name)
+        try:
+            return getattr(mod, func_name)
         except AttributeError:
-            logger.error('Failed to get function "%s" from module "%s".' % (func_name, mod_name))
+            logger.error('Failed to get function "%s" from module "%s".' %
+                         (func_name, mod_name))
             raise
     else:
-        try: return eval(f)
+        try:
+            return eval(f)
         except NameError:
             logger.error('Failed to get function "%s".' % (f))
             raise
@@ -61,7 +85,7 @@ def get_func(f):
 def error_handler(uuid):
     """Error handler function."""
 
-    result = AsyncResult(uuid) 
+    result = AsyncResult(uuid)
     exc = result.get(propagate=False)
     logger.info("Task %s raised exception: %s\n%s" %
                 (uuid, exc, result.traceback))
@@ -74,32 +98,36 @@ def get_download_params(url):
 
     # set profile
     for prof in app.conf.get('BUCKET_PROFILES', []):
-        if 'profile_name' in params: break
+        if 'profile_name' in params:
+            break
         if prof.get('bucket_patterns', None) is None:
             params['profile_name'] = prof['profile']
             break
         else:
             if isinstance(prof['bucket_patterns'], list):
                 bucket_patterns = prof['bucket_patterns']
-            else: bucket_patterns = [ prof['bucket_patterns'] ]
+            else:
+                bucket_patterns = [prof['bucket_patterns']]
             for bucket_pattern in prof['bucket_patterns']:
                 regex = re.compile(bucket_pattern)
                 match = regex.search(url)
                 if match:
-                    logger.info("{} matched '{}' for profile {}.".format(url, bucket_pattern, prof['profile']))
+                    logger.info("{} matched '{}' for profile {}.".format(
+                        url, bucket_pattern, prof['profile']))
                     params['profile_name'] = prof['profile']
                     break
-                
+
     return params
 
- 
+
 def download_file(url, path, cache=False):
     """Download file/dir for input."""
 
     params = get_download_params(url)
     if cache:
-        url_hash = hashlib.md5(url).hexdigest()
-        hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, 'cache', *url_hash[0:4])
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        hash_dir = os.path.join(app.conf.ROOT_WORK_DIR,
+                                'cache', *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
         signal_file = os.path.join(cache_dir, '.localized')
@@ -107,29 +135,36 @@ def download_file(url, path, cache=False):
             logger.info("cache hit for {} at {}".format(url, cache_dir))
         else:
             logger.info("cache miss for {}".format(url))
-            try: osaka.main.get(url, cache_dir, params=params)
-            except Exception, e:
+            try:
+                osaka.main.get(url, cache_dir, params=params)
+            except Exception as e:
                 shutil.rmtree(cache_dir)
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to download %s to cache %s: %s\n%s" % \
-                    (url, cache_dir, str(e), tb)))
+                raise RuntimeError("Failed to download {} to cache {}: {}\n{}".format(
+                    url, cache_dir, str(e), tb))
             with atomic_write(signal_file, overwrite=True) as f:
                 f.write("%sZ\n" % datetime.utcnow().isoformat())
         for i in os.listdir(cache_dir):
-            if i == '.localized': continue
+            if i == '.localized':
+                continue
             cached_obj = os.path.join(cache_dir, i)
             if os.path.isdir(cached_obj):
                 dst = os.path.join(path, i) if os.path.isdir(path) else path
-                try: os.symlink(cached_obj, dst)
+                try:
+                    os.symlink(cached_obj, dst)
                 except:
-                    logger.error("Failed to soft link {} to {}".format(cached_obj, dst))
+                    logger.error(
+                        "Failed to soft link {} to {}".format(cached_obj, dst))
                     raise
             else:
-                try: os.symlink(cached_obj, path)
+                try:
+                    os.symlink(cached_obj, path)
                 except:
-                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
+                    logger.error(
+                        "Failed to soft link {} to {}".format(cached_obj, path))
                     raise
-    else: return osaka.main.get(url, path, params=params)
+    else:
+        return osaka.main.get(url, path, params=params)
 
 
 def find_cache_dir(cache_dir):
@@ -169,7 +204,8 @@ def get_threshold(path, disk_usage):
             du_bytes = int(disk_usage[0:-2]) * DU_CALC[unit]
             break
     if du_bytes is None:
-        raise RuntimeError("Failed to determine disk usage requirements from verdi config: %s" % disk_usage)
+        raise RuntimeError(
+            "Failed to determine disk usage requirements from verdi config: {}".format(disk_usage))
     return math.ceil(float(100) / float(capacity) * du_bytes)
 
 
@@ -178,35 +214,44 @@ def get_disk_usage(path):
 
     size = 0
     try:
-        size = int(check_output(['du', '-sk', path]).split()[0]) * DU_CALC['KB']
-    except: pass
+        size = int(check_output(['du', '-sk', path]
+                                ).split()[0]) * DU_CALC['KB']
+    except:
+        pass
     return size
 
 
-def makedirs(dir, mode=0777):
+def makedirs(dir, mode=0o777):
     """Make directory along with any parent directory that may be needed."""
 
-    try: os.makedirs(dir, mode)
-    except OSError, e:
-        if e.errno == errno.EEXIST and os.path.isdir(dir): pass
-        else: raise
+    try:
+        os.makedirs(dir, mode)
+    except OSError as e:
+        if e.errno == errno.EEXIST and os.path.isdir(dir):
+            pass
+        else:
+            raise
 
-    
-def validateDirectory(dir, mode=0755, noExceptionRaise=False):
+
+def validateDirectory(dir, mode=0o755, noExceptionRaise=False):
     """Validate that a directory can be written to by the current process and return 1.
     Otherwise, try to create it.  If successful, return 1.  Otherwise return None.
     """
 
     if os.path.isdir(dir):
-        if os.access(dir, 7): return 1
-        else: return None
+        if os.access(dir, 7):
+            return 1
+        else:
+            return None
     else:
         try:
             makedirs(dir, mode)
             os.chmod(dir, mode)
         except:
-            if noExceptionRaise: pass
-            else: raise
+            if noExceptionRaise:
+                pass
+            else:
+                raise
         return 1
 
 
@@ -219,8 +264,10 @@ def getXmlEtree(xml):
         return (parse(StringIO(xml), parser).getroot(),
                 getNamespacePrefixDict(xml))
     else:
-        if os.path.isfile(xml): xmlStr = open(xml).read()
-        else: xmlStr = urlopen(xml).read()
+        if os.path.isfile(xml):
+            xmlStr = open(xml).read()
+        else:
+            xmlStr = urlopen(xml).read()
         return (parse(StringIO(xmlStr), parser).getroot(),
                 getNamespacePrefixDict(xmlStr))
 
@@ -228,12 +275,13 @@ def getXmlEtree(xml):
 def getNamespacePrefixDict(xmlString):
     """Take an xml string and return a dict of namespace prefixes to
     namespaces mapping."""
-    
-    nss = {} 
+
+    nss = {}
     defCnt = 0
     matches = re.findall(r'\s+xmlns:?(\w*?)\s*=\s*[\'"](.*?)[\'"]', xmlString)
     for match in matches:
-        prefix = match[0]; ns = match[1]
+        prefix = match[0]
+        ns = match[1]
         if prefix == '':
             defCnt += 1
             prefix = '_' * defCnt
@@ -246,15 +294,17 @@ def xpath(elt, xp, ns, default=None):
     Run an xpath on an element and return the first result.  If no results
     were returned then return the default value.
     """
-    
+
     res = elt.xpath(xp, namespaces=ns)
-    if len(res) == 0: return default
-    else: return res[0]
-    
+    if len(res) == 0:
+        return default
+    else:
+        return res[0]
+
 
 def pprintXml(et):
     """Return pretty printed string of xml element."""
-    
+
     return tostring(et, pretty_print=True)
 
 
@@ -270,7 +320,8 @@ def get_short_error(e):
     e_str = str(e)
     if len(e_str) > 35:
         return "%s.....%s" % (e_str[:20], e_str[-10:])
-    else: return e_str
+    else:
+        return e_str
 
 
 def get_payload_hash(payload):
@@ -278,9 +329,10 @@ def get_payload_hash(payload):
 
     clean_payload = copy.deepcopy(payload)
     for k in ('_disk_usage', '_sciflo_job_num', '_sciflo_wuid'):
-        if k in clean_payload: del clean_payload[k]
-    return hashlib.md5(json.dumps(clean_payload, sort_keys=2, 
-                                  ensure_ascii=True)).hexdigest()
+        if k in clean_payload:
+            del clean_payload[k]
+    return hashlib.md5(json.dumps(clean_payload, sort_keys=2,
+                                  ensure_ascii=True).encode()).hexdigest()
 
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
@@ -292,13 +344,14 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
 
     # get states
-    if states is None: states = [ 'job-queued', 'job-started', 'job-completed' ]
+    if states is None:
+        states = ['job-queued', 'job-started', 'job-completed']
 
     # build query
     query = {
-        "sort" : [ { "job.job_info.time_queued" : {"order" : "asc"} } ],
+        "sort": [{"job.job_info.time_queued": {"order": "asc"}}],
         "size": 1,
-        "fields": [ "_id", "status" ],
+        "fields": ["_id", "status"],
         "query": {
             "filtered": {
                 "filter": {
@@ -328,18 +381,21 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     es_url = "%s/job_status-current/_search" % app.conf['JOBS_ES_URL']
     r = requests.post(es_url, data=json.dumps(query))
     if r.status_code != 200:
-        if r.status_code == 404: pass
-        else: r.raise_for_status()
+        if r.status_code == 404:
+            pass
+        else:
+            r.raise_for_status()
     hits = []
     j = r.json()
     if j.get('hits', {}).get('total', 0) == 0:
         return None
     else:
         hit = j['hits']['hits'][0]
-        logger.info("Found duplicate job: %s" % json.dumps(hit, indent=2, sort_keys=True))
-        return { '_id': hit['_id'],
-                 'status': hit['fields']['status'][0],
-                 'query_timestamp': datetime.utcnow().isoformat() }
+        logger.info("Found duplicate job: %s" %
+                    json.dumps(hit, indent=2, sort_keys=True))
+        return {'_id': hit['_id'],
+                'status': hit['fields']['status'][0],
+                'query_timestamp': datetime.utcnow().isoformat()}
 
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
@@ -348,7 +404,7 @@ def get_job_status(id):
     """Get job status."""
 
     es_url = "%s/job_status-current/job/%s" % (app.conf['JOBS_ES_URL'], id)
-    r = requests.get(es_url, params={ 'fields': 'status' })
+    r = requests.get(es_url, params={'fields': 'status'})
     logger.info("get_job_status status: %s" % r.status_code)
     result = r.json()
     logger.info("get_job_status result: %s" % json.dumps(result, indent=2))
@@ -361,10 +417,10 @@ def check_dataset(id, es_index="grq"):
     """Query for dataset with specified input ID."""
 
     query = {
-        "query":{
-            "bool":{
-                "must":[
-                    {"term":{"_id":id}},
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"_id": id}},
                 ]
             }
         },
@@ -383,15 +439,17 @@ def check_dataset(id, es_index="grq"):
         logger.warn("Failed to query %s:\n%s" % (es_url, r.text))
         logger.warn("query: %s" % json.dumps(query, indent=2))
         logger.warn("returned: %s" % r.text)
-        if r.status_code == 404: total = 0
-        else: r.raise_for_status()
+        if r.status_code == 404:
+            total = 0
+        else:
+            r.raise_for_status()
     return total
 
 
 def dataset_exists(id, es_index="grq"):
     """Return true if dataset id exists."""
 
-    return True if check_dataset(id, es_index)  > 0 else False
+    return True if check_dataset(id, es_index) > 0 else False
 
 
 def localize_urls(job, ctx):
@@ -405,19 +463,23 @@ def localize_urls(job, ctx):
         url = i['url']
         path = i.get('local_path', None)
         cache = i.get('cache', True)
-        if path is None: path = '%s/' % job_dir
+        if path is None:
+            path = '%s/' % job_dir
         else:
-            if path.startswith('/'): pass
-            else: path = os.path.join(job_dir, path)
+            if path.startswith('/'):
+                pass
+            else:
+                path = os.path.join(job_dir, path)
         if os.path.isdir(path) or path.endswith('/'):
             path = os.path.join(path, os.path.basename(url))
         dir_path = os.path.dirname(path)
         makedirs(dir_path)
         loc_t1 = datetime.utcnow()
-        try: download_file(url, path, cache=cache)
-        except Exception, e:
+        try:
+            download_file(url, path, cache=cache)
+        except Exception as e:
             tb = traceback.format_exc()
-            raise(RuntimeError("Failed to download %s: %s\n%s" % (url, str(e), tb)))
+            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
         loc_t2 = datetime.utcnow()
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
@@ -453,7 +515,8 @@ def find_dataset_json(work_dir):
                 elif not os.path.exists(prod_dir):
                     logger.info("Couldn't find product directory %s for dataset.json %s. Not uploading."
                                 % (prod_dir, dataset_file))
-                else: yield (dataset_file, prod_dir)
+                else:
+                    yield (dataset_file, prod_dir)
 
 
 def publish_dataset(prod_dir, dataset_file, job, ctx):
@@ -475,10 +538,11 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     prov_es_info = {}
     if os.path.exists(prov_es_file):
         with open(prov_es_file) as f:
-            try: prov_es_info = json.load(f)
-            except Exception, e:
+            try:
+                prov_es_info = json.load(f)
+            except Exception as e:
                 tb = traceback.format_exc()
-                raise(RuntimeError("Failed to log PROV-ES from %s: %s\n%s" % (prov_es_file, str(e), tb)))
+                raise RuntimeError("Failed to log PROV-ES from {}: {}\n{}".format(prov_es_file, str(e), tb))
         log_prov_es(job, prov_es_info, prov_es_file)
 
     # copy _context.json
@@ -487,11 +551,10 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
 
     # upload
     tx_t1 = datetime.utcnow()
-    metrics, prod_json = apply(get_func("hysds.dataset_ingest.ingest"),
-                               (prod_id, datasets_cfg_file,
-                                app.conf.GRQ_UPDATE_URL,
-                                app.conf.DATASET_PROCESSED_QUEUE,
-                                prod_dir, job_dir))
+    metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(*(prod_id, datasets_cfg_file,
+                                                                   app.conf.GRQ_UPDATE_URL,
+                                                                   app.conf.DATASET_PROCESSED_QUEUE,
+                                                                   prod_dir, job_dir))
     tx_t2 = datetime.utcnow()
     tx_dur = (tx_t2 - tx_t1).total_seconds()
     prod_dir_usage = get_disk_usage(prod_dir)
@@ -515,10 +578,10 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
                 parse_iso8601(prod_prov['source_production_time']) -
                 parse_iso8601(prod_prov['acquisition_start_time'])).total_seconds()/60.
             prod_prov['total_latency'] += prod_prov['ground_system_latency']
-            prod_prov['access_latency'] = ( 
+            prod_prov['access_latency'] = (
                 tx_t2 - parse_iso8601(prod_prov['source_production_time'])).total_seconds()/60.
             prod_prov['total_latency'] += prod_prov['access_latency']
-    # write product provenance of the last product; not writing to an array under the 
+    # write product provenance of the last product; not writing to an array under the
     # product because kibana table panel won't show them correctly:
     # https://github.com/elasticsearch/kibana/issues/998
     job['job_info']['metrics']['product_provenance'] = prod_prov
@@ -550,7 +613,8 @@ def publish_datasets(job, ctx):
     # if exit code of job command is non-zero, don't publish anything
     exit_code = job['job_info']['status']
     if exit_code != 0:
-        logger.info("Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
+        logger.info(
+            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code)
         return True
 
     # if job command never ran, don't publish anything
@@ -569,7 +633,8 @@ def publish_datasets(job, ctx):
         # skip if marked as localized input
         signal_file = os.path.join(prod_dir, '.localized')
         if os.path.exists(signal_file):
-            logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+            logger.info(
+                "Skipping publish of %s. Marked as localized input." % prod_dir)
             continue
 
         # publish
@@ -593,7 +658,8 @@ def triage(job, ctx):
     # if exit code of job command is zero, don't triage anything
     exit_code = job['job_info']['status']
     if exit_code == 0:
-        logger.info("Job exited with exit code %s. No need to triage." % exit_code)
+        logger.info(
+            "Job exited with exit code %s. No need to triage." % exit_code)
         return True
 
     # disable triage
@@ -640,7 +706,8 @@ def triage(job, ctx):
     for g in ctx.get('_triage_additional_globs', []):
         for f in glob(os.path.join(job_dir, g)):
             if os.path.isdir(f):
-                shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
+                shutil.copytree(f, os.path.join(
+                    triage_dir, os.path.basename(f)))
             else:
                 shutil.copy(f, triage_dir)
 

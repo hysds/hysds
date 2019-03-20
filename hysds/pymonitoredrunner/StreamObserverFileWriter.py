@@ -10,12 +10,21 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from builtins import open
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
+import os
 import logging
 logger = logging.getLogger()
 
-import os
 
-class StreamObserverFileWriter:
+class StreamObserverFileWriter(object):
     """
     writes stream to local file.
     """
@@ -28,14 +37,12 @@ class StreamObserverFileWriter:
         self._file = open(filepath, 'w')
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         self._file.close()
     # end def
-
 
     def __str__(self):
         """
@@ -46,19 +53,19 @@ class StreamObserverFileWriter:
         return 'filepath: "%s"' % (self._filepath)
     # end def
 
-
     def notifyLine(self, line):
         """
         Invoked after a new line of data is read from the stream.
         Note that lines include the line separator.
         """
         try:
-            self._file.write(line)
-            self._file.flush() # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
-        except IOError, e:
-            logger.warning('Unable to write output to "%s": %s' % (self._filepath, str(e)))
+            self._file.write(line.decode())
+            # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
+            self._file.flush()
+        except IOError as e:
+            logger.warning('Unable to write output to "%s": %s' %
+                           (self._filepath, str(e)))
     # end def
-
 
     def notifyEOF(self):
         """
@@ -68,4 +75,3 @@ class StreamObserverFileWriter:
     # end def
 
 # end class
-

@@ -10,12 +10,19 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from builtins import object
+from future import standard_library
+standard_library.install_aliases()
+import threading
 import logging
 logger = logging.getLogger()
 
-import threading
 
-class StreamObserverQueue:
+class StreamObserverQueue(object):
     """
     Stores stream to a thread queue.
     """
@@ -44,7 +51,6 @@ class StreamObserverQueue:
         return 'queue: "%s"' % (self._queue)
     # end def
 
-
     def notifyLine(self, line):
         """
         Invoked after a new line of data is read from the stream.
@@ -52,7 +58,6 @@ class StreamObserverQueue:
         """
         self._queue.put(line)
     # end def
-
 
     def notifyEOF(self):
         """
@@ -63,4 +68,3 @@ class StreamObserverQueue:
 
 
 # end class
-

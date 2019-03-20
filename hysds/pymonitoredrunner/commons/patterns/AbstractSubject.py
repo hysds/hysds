@@ -10,10 +10,18 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import with_statement
+
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
 import threading
 
-class AbstractSubject:
+
+class AbstractSubject(object):
     """
     An abstract class implementation of the Observer design pattern where this is
     the Subject. Observers can be registered with this class
@@ -30,14 +38,12 @@ class AbstractSubject:
         self._lock = threading.RLock()
     # end def
 
-
     def __del__(self):
         """
         Finalizer.
         """
         pass
     # end def
-
 
     def __str__(self):
         """
@@ -48,11 +54,9 @@ class AbstractSubject:
         return 'observers: %s' % (self._observers)
     # end def
 
-
     # -------------------------------------------------------------------------
     # Observer design pattern registration methods
     # -------------------------------------------------------------------------
-
 
     def getObservers(self):
         """
@@ -60,7 +64,6 @@ class AbstractSubject:
         """
         return self._observers
     # end def
-
 
     def addObserver(self, observer):
         """
@@ -70,7 +73,6 @@ class AbstractSubject:
             self._observers.append(observer)
         # end with
     # end def
-
 
     def removeObserver(self, observer):
         """
@@ -83,4 +85,3 @@ class AbstractSubject:
 
 
 # end class
-
