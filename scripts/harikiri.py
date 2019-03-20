@@ -224,8 +224,8 @@ def seppuku(logger=None):
     spot_fleet = None
 
     # check if instance part of an autoscale group
-    id = str(requests.get(
-        'http://169.254.169.254/latest/meta-data/instance-id').content)
+    id = requests.get(
+        'http://169.254.169.254/latest/meta-data/instance-id').content.decode()
     logging.info("Our instance id: %s" % id)
     c = boto3.client('autoscaling')
     for group in get_all_groups(c):
