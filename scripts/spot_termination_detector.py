@@ -52,7 +52,7 @@ def check_spot_termination():
         'http://169.254.169.254/latest/meta-data/spot/termination-time')
     #logging.info("got status code: %d" % r.status_code)
     if r.status_code == 200:
-        return str(r.content)
+        return r.content.decode()
     else:
         return None
 
