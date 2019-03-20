@@ -36,7 +36,7 @@ Core component for the Hybrid Science Data System
 
 4. Install hysds:
   ```
-  pip install third_party/celery-v3.1.25.pqueue/
+  pip install third_party/celery-v4.2.1/
   pip install -r requirements.txt
   git clone https://github.com/hysds/hysds.git
   cd hysds
