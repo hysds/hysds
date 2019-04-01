@@ -111,7 +111,7 @@ def clean(grq_es_url, force=False):
     slcs_in_redis = rd.smembers("granules-s1a_slc-pds")
     slcs_to_remove_in_redis = []
     for slc_id in slcs_in_redis:
-        if dataset_exists(grq_es_url, slc_id, es_index="grq"):
+        if dataset_exists(grq_es_url, os.path.splitext(slc_id)[0]+"-pds", es_index="grq"):
             logging.info("%s found in GRQ. Not removing in redis." % slc_id)
         else:
             logging.info("%s not found in GRQ. Adding to removal list in redis." % slc_id)
