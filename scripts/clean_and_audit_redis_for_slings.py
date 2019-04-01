@@ -114,8 +114,11 @@ def clean(grq_es_url, force=False):
         if dataset_exists(grq_es_url, os.path.splitext(slc_id)[0]+"-pds", es_index="grq"):
             logging.info("%s found in GRQ. Not removing in redis." % slc_id)
         else:
-            logging.info("%s not found in GRQ. Adding to removal list in redis." % slc_id)
-            slcs_to_remove_in_redis.append(slc_id)
+            if "IW_SLC" in slc_id:
+                logging.info("%s not found in GRQ. Adding to removal list in redis." % slc_id)
+                slcs_to_remove_in_redis.append(slc_id)
+            else:
+                logging.info("Dataset not an IW_SLC, we leave it there.")
 
     logging.info("Found %s entries in redis that are not in GRQ, removing for qquery to requeue and sling." % len(slcs_to_remove_in_redis))
 
