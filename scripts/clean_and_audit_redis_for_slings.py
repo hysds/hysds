@@ -107,8 +107,8 @@ def clean(grq_es_url, force=False):
     global POOL
     POOL = ConnectionPool(host='172.31.46.101', port=6379, db=0)
     rd = StrictRedis(connection_pool=POOL)
-    key = "granules-s1a_slc"
-    slcs_in_redis = rd.smembers("granules-s1a_slc-pds")
+    key = "granules-s1a_slc-pds"
+    slcs_in_redis = rd.smembers(key)
     slcs_to_remove_in_redis = []
     for slc_id in slcs_in_redis:
         if dataset_exists(grq_es_url, os.path.splitext(slc_id)[0]+"-pds", es_index="grq"):
