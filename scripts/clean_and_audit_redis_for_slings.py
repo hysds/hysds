@@ -99,7 +99,7 @@ def get_matching_s3_keys(client, bucket, prefix='', suffix=''):
         yield obj['Key']
 
 
-def clean(grq_es_url, force=False):
+def clean(grq_es_url, key, force=False):
     """Look for failed jobs with osaka no-clobber errors during dataset publishing
        and clean them out if dataset was not indexed."""
 
@@ -107,21 +107,22 @@ def clean(grq_es_url, force=False):
     global POOL
     POOL = ConnectionPool(host='172.31.46.101', port=6379, db=0)
     rd = StrictRedis(connection_pool=POOL)
-    key = "granules-s1a_slc-pds"
     slcs_in_redis = rd.smembers(key)
     slcs_to_remove_in_redis = []
     list_len = len(slcs_in_redis)
 
-    for ids, slc_id in enumerate(slcs_in_redis):
-        if dataset_exists(grq_es_url, os.path.splitext(slc_id)[0]+"-pds", es_index="grq"):
-            logging.info("%s of %s: %s found in GRQ. Not removing in redis." % (ids, list_len, slc_id))
+    for ind, slc_id in enumerate(slcs_in_redis):
+        if key == "granules-s1a_slc-pds":
+            slc_id = os.path.splitext(slc_id)[0]+"-pds"
+        if dataset_exists(grq_es_url, slc_id, es_index="grq"):
+            logging.info("%s of %s: %s found in GRQ. Not removing in redis." % (ind, list_len, slc_id))
         else:
             if "IW_SLC" in slc_id:
                 logging.info(
-                    "%s of %s: %s not found in GRQ. Adding to removal list in redis." % (ids, list_len, slc_id))
+                    "%s of %s: %s not found in GRQ. Adding to removal list in redis." % (ind, list_len, slc_id))
                 slcs_to_remove_in_redis.append(slc_id)
             else:
-                logging.info("%s of %s: %s not an IW_SLC, we leave it there." % (ids, list_len, slc_id))
+                logging.info("%s of %s: %s not an IW_SLC, we leave it there." % (ind, list_len, slc_id))
 
     logging.info("Found %s entries in redis that are not in GRQ, removing for qquery to requeue and sling." % len(slcs_to_remove_in_redis))
 
@@ -140,7 +141,10 @@ if __name__ == "__main__":
     grq_es_url = app.conf['GRQ_ES_URL']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-f', '--force', help="force deletion", action='store_true')
+    parser.add_argument("-k","--key", required=True, help="which redis key to clean, granules-s1a_slc-pds or granules-s1a_slc")
+
 
     args = parser.parse_args()
 
-    clean(grq_es_url, args.force)
+
+    clean(grq_es_url, args.key, args.force)
