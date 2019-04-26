@@ -737,3 +737,143 @@ def mark_localized_datasets(job, ctx):
 
     # signal run_job() to continue
     return True
+
+
+def hashlib_mapper(algo):
+    '''
+    :param algo: string
+    :return:  hashlib library for specified algorithm
+
+    algorithms available in python3 but not in python2:
+        sha3_224 sha3_256, sha3_384, blake2b, blake2s, sha3_512, shake_256, shake_128
+    '''
+    if algo == 'blake2b':
+        return hashlib.blake2b()
+    elif algo == 'blake2s':
+        return hashlib.blake2s()
+    elif algo == 'md5':
+        return hashlib.md5()
+    elif algo == 'sha1':
+        return hashlib.sha1()
+    elif algo == 'sha224':
+        return hashlib.sha224()
+    elif algo == 'sha256':
+        return hashlib.sha256()
+    elif algo == 'sha384':
+        return hashlib.sha384()
+    elif algo == 'sha3_224':
+        return hashlib.sha3_224()
+    elif algo == 'sha3_256':
+        return hashlib.sha3_256()
+    elif algo == 'sha3_384':
+        return hashlib.sha3_384()
+    elif algo == 'sha3_512':
+        return hashlib.sha3_512()
+    elif algo == 'sha512':
+        return hashlib.sha512()
+    elif algo == 'shake_128':
+        return hashlib.shake_128()
+    elif algo == 'shake_256':
+        return hashlib.shake_256()
+    else:
+        raise Exception("Unsupported hashing algorithm: %s" % algo)
+
+
+def calculate_checksum_from_localized_file(file_name, hash_algo):
+    '''
+    :param file_name: file path to the localized file after download
+    :param hash_algo: string, hashing algorithm (md5, sha256, etc.)
+    :return: string, ex. 8e15beebbbb3de0a7dbed50a39b6e41b ALL LOWER CASE
+    '''
+    hash_tool = hashlib_mapper(hash_algo)
+    with open(file_name, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_tool.update(chunk)
+    return hash_tool.hexdigest()
+
+
+def check_file_is_checksum(file_path):
+    '''
+    checks if the file has a .hash extension
+    hashlib.algorithms_guaranteed is a list of all checksum file extensions
+    return algorithm type (md5, sha256, etc) if it file has a .<algorithm> appended
+    '''
+    for algo in hashlib.algorithms_guaranteed:
+        checksum_file_extension = '.%s' % algo  # ex. S1W_SLC_843290304820.zip.md5
+        if file_path.endswith(checksum_file_extension):
+            return algo
+    return None
+
+
+def read_checksum_file(file_path):
+    with open(file_path, 'r') as f:
+        checksum = f.readline().rstrip('\n')  # checksum file is only 1 line, for some reason it adds \n at the end
+        return checksum
+
+
+def generate_list_checksum_files(job):
+    '''
+    :param job:
+    :param cxt:
+    :return: list of all checksum files, so we can compare one by one
+             ex. list of dictionaries: [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
+    '''
+    # reusing directory code from the localize_urls() function
+    job_dir = job['job_info']['job_dir']  # get job info
+
+    files_with_checksum = []
+    for i in job['localize_urls']:
+        url = i['url']
+        path = i.get('local_path', None)
+        cache = i.get('cache', True)
+        if path is None:
+            path = '%s/' % job_dir
+        else:
+            if path.startswith('/'):
+                pass
+            else:
+                path = os.path.join(job_dir, path)
+        if os.path.isdir(path) or path.endswith('/'):
+            path = os.path.join(path, os.path.basename(url))
+        dir_path = os.path.dirname(path)
+
+        if os.path.isdir(path):  # if path is a directory, loop through each file in directory
+            for file in os.listdir(path):
+                full_file_path = os.path.join(path, file)
+                hash_algo = check_file_is_checksum(full_file_path)
+                if hash_algo:
+                    files_with_checksum.append({'file_path': file, 'algo': hash_algo})
+        else:  # if path is a actually a file
+            hash_algo = check_file_is_checksum(path)
+            if hash_algo:
+                files_with_checksum.append({'file_path': path, 'algo': hash_algo})
+    return files_with_checksum
+
+
+def validate_checksum_files(job, cxt):
+    '''
+    :param job: _job.json
+    :param cxt: _context.json
+    :return: void, will raise exception if localized files have mismatched checksum values
+    '''
+    # list of dictionaries: ex. [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
+    files_to_validate = generate_list_checksum_files(job)
+
+    mismatched_checksums = []
+    exception_string = 'Files with mismatched checksum:\n'
+
+    for file_info in files_to_validate:
+        algo = file_info['algo']
+        file_path_checksum = file_info['file_path']
+        # this has the hash extension to the file, we need to remove it
+        file_path = file_path_checksum.replace('.' + algo, '')
+
+        calculated_checksum = calculate_checksum_from_localized_file(file_path, algo)
+        pre_computed_checksum = read_checksum_file(file_path_checksum)
+
+        if calculated_checksum.lower() != pre_computed_checksum.lower():
+            mismatched_checksums.append(file_path)
+            exception_string += ('%s: calculated checksum: %s, pre-computed checksum: %s\n' % (file_path, calculated_checksum, pre_computed_checksum))
+
+    if len(mismatched_checksums) > 0:
+        raise Exception(exception_string)
