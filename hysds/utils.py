@@ -876,6 +876,11 @@ def validate_checksum_files(job, cxt):
         # this has the hash extension to the file, we need to remove it
         file_path = file_path_checksum.replace('.' + algo, '')
 
+        if not os.path.isfile(file_path):
+            # if checksum file exists but original file does not exist, we should skip it
+            # ex. data_set_1.zip.md5 vs data_set_1.zip
+            continue
+
         calculated_checksum = calculate_checksum_from_localized_file(file_path, algo)
         pre_computed_checksum = read_checksum_file(file_path_checksum)
 
@@ -885,3 +890,4 @@ def validate_checksum_files(job, cxt):
 
     if len(mismatched_checksums) > 0:
         raise Exception(exception_string)
+    return True
