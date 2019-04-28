@@ -865,7 +865,6 @@ def validate_checksum_files(job, cxt):
     '''
     # list of dictionaries: ex. [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
     files_to_validate = generate_list_checksum_files(job)
-    print(files_to_validate)
 
     mismatched_checksums = []
     exception_string = 'Files with mismatched checksum:\n'
