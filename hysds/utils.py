@@ -747,6 +747,7 @@ def hashlib_mapper(algo):
     algorithms available in python3 but not in python2:
         sha3_224 sha3_256, sha3_384, blake2b, blake2s, sha3_512, shake_256, shake_128
     '''
+    algo = algo.lower()
     if algo == 'blake2b':
         return hashlib.blake2b()
     elif algo == 'blake2s':
@@ -784,12 +785,18 @@ def calculate_checksum_from_localized_file(file_name, hash_algo):
     :param file_name: file path to the localized file after download
     :param hash_algo: string, hashing algorithm (md5, sha256, etc.)
     :return: string, ex. 8e15beebbbb3de0a7dbed50a39b6e41b ALL LOWER CASE
+
+    ******** IF USING SHAKE_256 OR SHAKE_128, I DEFAULT THE HEXDIGEST LENGTH TO 255 ********
     '''
     hash_tool = hashlib_mapper(hash_algo)
     with open(file_name, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_tool.update(chunk)
-    return hash_tool.hexdigest()
+
+    if hash_tool.name in ('shake_256', 'shake_128'):
+        return hash_tool.hexdigest(255)
+    else:
+        return hash_tool.hexdigest()
 
 
 def check_file_is_checksum(file_path):
@@ -842,7 +849,7 @@ def generate_list_checksum_files(job):
                 full_file_path = os.path.join(path, file)
                 hash_algo = check_file_is_checksum(full_file_path)
                 if hash_algo:
-                    files_with_checksum.append({'file_path': file, 'algo': hash_algo})
+                    files_with_checksum.append({'file_path': full_file_path, 'algo': hash_algo})
         else:  # if path is a actually a file
             hash_algo = check_file_is_checksum(path)
             if hash_algo:
@@ -858,6 +865,7 @@ def validate_checksum_files(job, cxt):
     '''
     # list of dictionaries: ex. [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
     files_to_validate = generate_list_checksum_files(job)
+    print(files_to_validate)
 
     mismatched_checksums = []
     exception_string = 'Files with mismatched checksum:\n'
