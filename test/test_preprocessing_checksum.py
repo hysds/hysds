@@ -5,9 +5,9 @@ import shutil
 import hashlib
 import pytest
 
-# sys.path.insert(0, os.path.join(os.getcwd(), 'hysds'))
+sys.path.insert(0, os.path.join(os.getcwd(), 'hysds'))
 
-from test import hashlib_mapper, calculate_checksum_from_localized_file, read_checksum_file, \
+from utils import hashlib_mapper, calculate_checksum_from_localized_file, read_checksum_file, \
     generate_list_checksum_files, validate_checksum_files
 
 
