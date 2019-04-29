@@ -8,7 +8,7 @@ jobs:
       - run:
           name: Test
           command: |
-            cd hysds
+            source $HOME/verdi/bin/activate
             python setup.py test
 
 workflows:
