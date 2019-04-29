@@ -1,0 +1,34 @@
+version: 2.1
+jobs:
+  test:
+    docker:
+      - image: hysds/pge-base:latest
+    steps:
+      - checkout
+      - run:
+          name: Test
+          command: |
+            cd hysds
+            python setup.py test
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - test:
+          filters:
+            branches:
+              only: test-circleci
+  weekly:
+    triggers:
+      - schedule:
+          cron: "0 7 * * 0"
+          filters:
+            branches:
+              only:
+                - test-circleci
+    jobs:
+      - test:
+          filters:
+            branches:
+              only: test-circleci
