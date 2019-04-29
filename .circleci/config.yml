@@ -9,6 +9,7 @@ jobs:
           name: Test
           command: |
             source $HOME/verdi/bin/activate
+            cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             python setup.py test
 
 workflows:
