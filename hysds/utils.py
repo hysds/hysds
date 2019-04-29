@@ -748,11 +748,7 @@ def hashlib_mapper(algo):
         sha3_224 sha3_256, sha3_384, blake2b, blake2s, sha3_512, shake_256, shake_128
     '''
     algo = algo.lower()
-    if algo == 'blake2b':
-        return hashlib.blake2b()
-    elif algo == 'blake2s':
-        return hashlib.blake2s()
-    elif algo == 'md5':
+    if algo == 'md5':
         return hashlib.md5()
     elif algo == 'sha1':
         return hashlib.sha1()
@@ -772,6 +768,10 @@ def hashlib_mapper(algo):
         return hashlib.sha3_512()
     elif algo == 'sha512':
         return hashlib.sha512()
+    elif algo == 'blake2b':
+        return hashlib.blake2b()
+    elif algo == 'blake2s':
+        return hashlib.blake2s()
     elif algo == 'shake_128':
         return hashlib.shake_128()
     elif algo == 'shake_256':
