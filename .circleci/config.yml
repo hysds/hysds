@@ -18,7 +18,7 @@ workflows:
       - test:
           filters:
             branches:
-              only: test-circleci
+              only: develop
   weekly:
     triggers:
       - schedule:
@@ -26,9 +26,9 @@ workflows:
           filters:
             branches:
               only:
-                - test-circleci
+                - develop
     jobs:
       - test:
           filters:
             branches:
-              only: test-circleci
+              only: develop
