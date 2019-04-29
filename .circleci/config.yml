@@ -16,10 +16,7 @@ workflows:
   version: 2
   test:
     jobs:
-      - test:
-          filters:
-            branches:
-              only: develop
+      - test
   weekly:
     triggers:
       - schedule:
