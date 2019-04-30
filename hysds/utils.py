@@ -864,11 +864,14 @@ def validate_checksum_files(job, cxt):
     :return: void, will raise exception if localized files have mismatched checksum values
     '''
     # list of dictionaries: ex. [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
+    logger.info("validating checksum files:")
     files_to_validate = generate_list_checksum_files(job)
+    logger.info(files_to_validate)
 
     mismatched_checksums = []
     exception_string = 'Files with mismatched checksum:\n'
 
+    logger.info(files_to_validate)
     for file_info in files_to_validate:
         algo = file_info['algo']
         file_path_checksum = file_info['file_path']
@@ -878,15 +881,20 @@ def validate_checksum_files(job, cxt):
         if not os.path.isfile(file_path):
             # if checksum file exists but original file does not exist, we should skip it
             # ex. data_set_1.zip.md5 vs data_set_1.zip
+            logger.info("%s does not exist, skipping" % file_path)
             continue
 
         calculated_checksum = calculate_checksum_from_localized_file(file_path, algo)
         pre_computed_checksum = read_checksum_file(file_path_checksum)
 
+        logger.info("calculated_checksum: %s pre_computed_checksum: %s" % (calculated_checksum, pre_computed_checksum))
         if calculated_checksum.lower() != pre_computed_checksum.lower():
             mismatched_checksums.append(file_path)
             exception_string += ('%s: calculated checksum: %s, pre-computed checksum: %s\n' % (file_path, calculated_checksum, pre_computed_checksum))
 
     if len(mismatched_checksums) > 0:
+        logger.info(exception_string)
         raise Exception(exception_string)
+    else:
+        logger.info("checksum preprocessing completed successfully")
     return True
