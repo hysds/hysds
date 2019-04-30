@@ -3,6 +3,7 @@ import os
 import sys
 import shutil
 import hashlib
+import copy
 import pytest
 
 sys.path.insert(0, os.path.join(os.getcwd(), 'hysds'))
@@ -142,3 +143,27 @@ class TestPreProcessingChecksum:
         self.create_test_directory_and_files()
         validate_checksum_files(self.test_job_json, {})
         self.clear_test_directory_and_files()
+
+    def test_validate_checksum_files_error(self):
+        self.constructor()
+        self.create_test_directory_and_files()
+
+        error_test_file = '/tmp/test_err.zip'
+        error_test_file_md5 = '/tmp/test_err.zip.md5'
+
+        with open(error_test_file, 'w') as f:
+            f.write('testing testing 123')
+
+        with open(error_test_file_md5, 'w') as f:
+            f.write('jfdslkfjdslkfdjsfljfdlsjfsjfl')
+
+        test_job_json = copy.deepcopy(self.test_job_json)
+        test_job_json['localize_urls'].append({'url': error_test_file})
+        test_job_json['localize_urls'].append({'url': error_test_file_md5})
+
+        with pytest.raises(Exception):
+            self.validate_checksum_files(test_job_json)
+
+        self.clear_test_directory_and_files()
+        os.remove(error_test_file_md5)
+        os.remove(error_test_file)
