@@ -44,6 +44,7 @@ from hysds.user_rules_job import queue_finished_job
 PRE_PROCESSORS = (
     'hysds.utils.localize_urls',
     'hysds.utils.mark_localized_datasets',
+    'hysds.utils.validate_checksum_files'
 )
 
 # built-in post-processors

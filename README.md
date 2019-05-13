@@ -1,4 +1,7 @@
 # HySDS
+
+[![CircleCI](https://circleci.com/gh/hysds/hysds.svg?style=svg)](https://circleci.com/gh/hysds/hysds)
+
 Core component for the Hybrid Science Data System
 
 
