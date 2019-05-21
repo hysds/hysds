@@ -158,7 +158,7 @@ def get_facts():
             dig_cmd = ['dig', '@resolver1.opendns.com',
                        '+short', 'myip.opendns.com']
             try:
-                FACTS['hysds_public_ip'] = check_output(dig_cmd).strip()
+                FACTS['hysds_public_ip'] = check_output(dig_cmd).strip().decode()
             except:
                 FACTS['hysds_public_ip'] = ip
 
