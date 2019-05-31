@@ -41,6 +41,7 @@ command={{ OPS_HOME }}/mozart/ops/hysds/scripts/process_events.py
 process_name=%(program_name)s
 priority=1
 numprocs=1
+autorestart=true
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s.log
