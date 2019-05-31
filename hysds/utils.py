@@ -655,11 +655,12 @@ def publish_datasets(job, ctx):
 def triage(job, ctx):
     """Triage failed job's context and job json as well as _run.sh."""
 
+    default_triage_id_format = "triaged_job-{job[job_info][id]}"
+
     # if exit code of job command is zero, don't triage anything
     exit_code = job['job_info']['status']
     if exit_code == 0:
-        logger.info(
-            "Job exited with exit code %s. No need to triage." % exit_code)
+        logger.info("Job exited with exit code %s. No need to triage." % exit_code)
         return True
 
     # disable triage
@@ -667,12 +668,24 @@ def triage(job, ctx):
         logger.info("Flag _triage_disabled set to True. Not performing triage.")
         return True
 
+    # Check if custom triage id format was provided
+    if '_triage_id_format' in ctx:
+        triage_id_format = ctx['_triage_id_format']
+    else:
+        triage_id_format = default_triage_id_format
+
     # get job info
     job_dir = job['job_info']['job_dir']
     job_id = job['job_info']['id']
 
     # create triage dataset
-    triage_id = "triaged_job-{}".format(job_id)
+    # Attempt to first use triage id format from user, but if there is any problem use the default id format instead
+    try:
+        triage_id = triage_id_format.format(job=job, job_context=ctx)
+    except Exception as e:
+        logger.warning("Failed to apply custom triage id format because of {}: {}. Falling back to default triage id"
+                       .format(e.__class__.__name__, e))
+        triage_id = default_triage_id_format.format(job=job, job_context=ctx)
     triage_dir = os.path.join(job_dir, triage_id)
     makedirs(triage_dir)
 
@@ -706,8 +719,7 @@ def triage(job, ctx):
     for g in ctx.get('_triage_additional_globs', []):
         for f in glob(os.path.join(job_dir, g)):
             if os.path.isdir(f):
-                shutil.copytree(f, os.path.join(
-                    triage_dir, os.path.basename(f)))
+                shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
             else:
                 shutil.copy(f, triage_dir)
 
