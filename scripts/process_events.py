@@ -192,8 +192,9 @@ def event_monitor(app):
         global POOL
         rd = StrictRedis(connection_pool=POOL)
         state.event(event)
-        if ORCH_HOST_RE.search(event['hostname']): return
-        rd.delete([WORKER_STATUS_KEY_TMPL % event['hostname']])
+        if ORCH_HOST_RE.search(event['hostname']):
+            return
+        rd.delete(WORKER_STATUS_KEY_TMPL % event['hostname'])
         time_end = datetime.utcnow().isoformat() + 'Z'
         query = {
             "query" : {
