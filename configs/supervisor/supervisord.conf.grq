@@ -63,3 +63,19 @@ stdout_logfile=%(here)s/../log/%(program_name)s.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
+
+[program:pele]
+directory={{ OPS_HOME }}/sciflo/ops/pele
+command=gunicorn -w4 -b 127.0.0.1:8877 -k gevent --timeout=3600
+        --graceful-timeout=3600 --log-level=debug
+        --limit-request-line=0
+        'pele:create_app("pele.settings.ProductionConfig")'
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
