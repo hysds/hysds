@@ -39,6 +39,7 @@ ORCH_NAME_RE = re.compile(r'^hysds.orchestrator.submit_job')
 TASK_FAILED_RE = re.compile(r'^(WorkerLostError|TimeLimitExceeded)')
 
 # regex for extracting type and hostname from worker
+TYPE_RE = re.compile(r"'type': '(.+?)',")
 HOSTNAME_RE = re.compile(r'^celery@(.+?)\..+$')
 
 
@@ -61,14 +62,13 @@ def parse_job_type(event):
 
     # parse job type from orchestrator task events
     job_type = "unknown"
-    try:
-        payload = eval(event['args'])[0]
-        job_type = payload['type']
-    except Exception as e:
+    args = event.get('args', "")
+    match = TYPE_RE.search(args)
+    if not match:
         logging.error("Got exception trying to parse job type for %s: %s\n%s\n%s"
                       % (hostname, str(e), json.dumps(event, indent=2),
                          traceback.format_exc()))
-    return job_type
+    return match.group(1)
 
 
 def log_task_event(event_type, event, uuid=[]):
