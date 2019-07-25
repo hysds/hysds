@@ -61,14 +61,16 @@ def parse_job_type(event):
         return match.group(1)
 
     # parse job type from orchestrator task events
-    job_type = "unknown"
     args = event.get('args', "")
     match = TYPE_RE.search(args)
-    if not match:
+    if match:
+        job_type = match.group(1)
+    else:
+        job_type = "unknown"
         logging.error("Got exception trying to parse job type for %s: %s\n%s\n%s"
                       % (hostname, str(e), json.dumps(event, indent=2),
                          traceback.format_exc()))
-    return match.group(1)
+    return job_type
 
 
 def log_task_event(event_type, event, uuid=[]):
