@@ -135,6 +135,23 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
 
     # check if image is in local docker repo
     try:
+        registry = app.conf.get("CONTAINER_REGISTRY", None)
+        # Custom edit to load image from registry
+        try:
+            if registry is not None:
+                logger.info(
+                    "Trying to load docker image {} from registry '{}'".format(
+                        image_name, registry))
+                registry_url = os.path.join(registry, image_name)
+                logger.info("docker pull {}".format(registry_url))
+                check_output(['docker', 'pull', registry_url])
+                logger.info("docker tag {} {}".format(registry_url, image_name))
+                check_output(['docker', 'tag', registry_url, image_name])
+        except Exception as e:
+            logger.warn(
+                "Unable to load docker image from registry '{}': {}".format(
+                    registry, e))
+
         image_info = check_output(['docker', 'inspect', image_name])
         logger.info("Docker image %s cached in repo" % image_name)
     except:
