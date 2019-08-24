@@ -176,8 +176,8 @@ stdout_logfile_backups=10
 startsecs=10
 
 # target tracking metrics
-{% for queue in QUEUES.split() %}
-{% set queue = queue | trim -%}
+{% for q in QUEUES %}
+{% set queue = q['QUEUE_NAME'] | trim -%}
 [program:sync_ec2_target_tracking_metric-{{ queue }}]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 command={{ OPS_HOME }}/mozart/ops/hysds/scripts/sync_ec2_target_tracking_metric.py --interval 60 -u {{ MOZART_RABBIT_USER }} -p {{ MOZART_RABBIT_PASSWORD }} {{ queue }} {{ VENUE }}-{{ queue }}
