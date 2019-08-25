@@ -8,7 +8,7 @@ jobs:
       - run:
           name: Test
           command: |
-            source $HOME/verdi/bin/activate
+            source $HOME/.bash_profile
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             python setup.py test
 
