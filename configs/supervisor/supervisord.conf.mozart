@@ -49,6 +49,19 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
+[program:process_events_tasks]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q process_events_tasks -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+process_name=%(program_name)s-%(process_num)02d
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
 [program:orchestrator_datasets]
 directory={{ OPS_HOME }}/mozart/ops/hysds
 environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_datasets.json",

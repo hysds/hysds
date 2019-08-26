@@ -3,15 +3,7 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
-from hysds.log_utils import (
-    log_job_status,
-    backoff_max_tries,
-    backoff_max_value,
-    JOB_STATUS_KEY_TMPL,
-    WORKER_STATUS_KEY_TMPL,
-)
-from hysds.celery import app
-import hysds
+
 from redis import ConnectionPool, StrictRedis
 from datetime import datetime
 from pprint import pformat
@@ -24,6 +16,17 @@ import requests
 import json
 from builtins import str
 from future import standard_library
+
+import hysds
+from hysds.celery import app
+from hysds.log_utils import (
+    log_job_status,
+    backoff_max_tries,
+    backoff_max_value,
+    JOB_STATUS_KEY_TMPL,
+    WORKER_STATUS_KEY_TMPL,
+)
+from hysds.event_processors import queue_fail_job
 
 standard_library.install_aliases()
 
@@ -186,27 +189,7 @@ def event_monitor(app):
             match = TASK_FAILED_RE.search(exc)
             if match:
                 short_error = match.group(1)
-                es_url = "%s/job_status-current/job/%s" % (
-                    app.conf["JOBS_ES_URL"],
-                    uuid,
-                )
-                r = requests.get(es_url)
-                if r.status_code != 200:
-                    logging.error(
-                        "Failed to query for task UUID %s: %s" % (uuid, r.content)
-                    )
-                    return
-                res = r.json()
-                job_status = res["_source"]
-                job_status["status"] = "job-failed"
-                job_status["error"] = exc
-                job_status["short_error"] = short_error
-                job_status["traceback"] = event.get("traceback", "")
-                time_end = datetime.utcnow().isoformat() + "Z"
-                job_status.setdefault("job", {}).setdefault("job_info", {})[
-                    "time_end"
-                ] = time_end
-                log_job_status(job_status)
+                queue_fail_job(event, uuid, exc, short_error)
         log_task_event("task-failed", event, uuid=event["uuid"])
 
     def task_retried(event):
