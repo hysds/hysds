@@ -257,6 +257,7 @@ def event_monitor(app):
             "%s/job_status-current/_search?search_type=scan&scroll=60m&size=100"
             % app.conf["JOBS_ES_URL"]
         )
+        uuids = []
         try:
             r = requests.post(es_url, data=json.dumps(query))
             r.raise_for_status()
@@ -274,7 +275,6 @@ def event_monitor(app):
                 for hit in res["hits"]["hits"]:
                     job_status_jsons.append(hit["_source"])
             # logging.error("job_status_jsons:\n%s" % job_status_jsons)
-            uuids = []
             for job_status_json in job_status_jsons:
                 # continue if real-time job status is still job-started
                 if (
@@ -292,13 +292,13 @@ def event_monitor(app):
                 ] = time_end
                 log_job_status(job_status_json)
                 uuids.append(job_status_json["uuid"])
-            log_worker_event("worker-offline", event, uuid=uuids)
         except Exception as e:
-            logging.error(
+            logging.warn(
                 "Got exception trying to update task events for "
                 + "offline worker %s: %s\n%s"
                 % (event["hostname"], str(e), traceback.format_exc())
             )
+        log_worker_event("worker-offline", event, uuid=uuids)
 
     def worker_heartbeat(event):
         state.event(event)
