@@ -178,7 +178,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                           stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
                 if p.returncode != 0:
-                    raise RuntimeError("Failed to load image {} ({}): {}".format(image_file, image_name, stderr))
+                    raise RuntimeError("Failed to load image {} ({}): {}".format(image_file, image_name, stderr.decode()))
                 logger.info("Loaded image %s (%s)" % (image_file, image_name))
                 try:
                     os.unlink(image_file)
