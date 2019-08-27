@@ -12,7 +12,6 @@ import re
 import msgpack
 import traceback
 import logging
-import requests
 import json
 from builtins import str
 from future import standard_library
@@ -23,10 +22,9 @@ from hysds.log_utils import (
     log_job_status,
     backoff_max_tries,
     backoff_max_value,
-    JOB_STATUS_KEY_TMPL,
     WORKER_STATUS_KEY_TMPL,
 )
-from hysds.event_processors import queue_fail_job
+from hysds.event_processors import queue_fail_job, queue_offline_jobs
 
 standard_library.install_aliases()
 
@@ -219,69 +217,8 @@ def event_monitor(app):
         if ORCH_HOST_RE.search(event["hostname"]):
             return
         rd.delete(WORKER_STATUS_KEY_TMPL % event["hostname"])
-        time_end = datetime.utcnow().isoformat() + "Z"
-        query = {
-            "query": {
-                "filtered": {
-                    "query": {
-                        "bool": {
-                            "must": [
-                                {"term": {"celery_hostname": event["hostname"]}},
-                                # { "term": { "status": 'job-started' } }
-                            ]
-                        }
-                    }
-                }
-            }
-        }
-        job_status_jsons = []
-        # logging.error("query:\n%s" % json.dumps(query, indent=2))
-        es_url = (
-            "%s/job_status-current/_search?search_type=scan&scroll=60m&size=100"
-            % app.conf["JOBS_ES_URL"]
-        )
-        uuids = []
-        try:
-            r = requests.post(es_url, data=json.dumps(query))
-            r.raise_for_status()
-            scan_result = r.json()
-            scroll_id = scan_result["_scroll_id"]
-            while True:
-                r = requests.post(
-                    "%s/_search/scroll?scroll=60m" % app.conf["JOBS_ES_URL"],
-                    data=scroll_id,
-                )
-                res = r.json()
-                scroll_id = res["_scroll_id"]
-                if len(res["hits"]["hits"]) == 0:
-                    break
-                for hit in res["hits"]["hits"]:
-                    job_status_jsons.append(hit["_source"])
-            # logging.error("job_status_jsons:\n%s" % job_status_jsons)
-            for job_status_json in job_status_jsons:
-                # continue if real-time job status is still job-started
-                if (
-                    rd.get(JOB_STATUS_KEY_TMPL % job_status_json["uuid"])
-                    != "job-started"
-                ):
-                    continue
-                job_status_json["status"] = "job-offline"
-                job_status_json[
-                    "error"
-                ] = "Received worker-offline event during job execution."
-                job_status_json["short_error"] = "worker-offline"
-                job_status_json.setdefault("job", {}).setdefault("job_info", {})[
-                    "time_end"
-                ] = time_end
-                log_job_status(job_status_json)
-                uuids.append(job_status_json["uuid"])
-        except Exception as e:
-            logging.warn(
-                "Got exception trying to update task events for "
-                + "offline worker %s: %s\n%s"
-                % (event["hostname"], str(e), traceback.format_exc())
-            )
-        log_worker_event("worker-offline", event, uuid=uuids)
+        queue_offline_jobs(event)
+        log_worker_event("worker-offline", event)
 
     def worker_heartbeat(event):
         state.event(event)

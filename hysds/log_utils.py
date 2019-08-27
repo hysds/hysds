@@ -41,6 +41,9 @@ EVENT_STATUS_POOL = None
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
 
+# job worker key template
+JOB_WORKER_KEY_TMPL = "hysds-job-worker-%s"
+
 # worker status key template
 WORKER_STATUS_KEY_TMPL = "hysds-worker-status-%s"
 
@@ -168,7 +171,7 @@ def get_job_status(task_id):
 
     # retrieve job status
     r = StrictRedis(connection_pool=JOB_STATUS_POOL)
-    return r.get(JOB_STATUS_KEY_TMPL % task_id)
+    return r.get(JOB_STATUS_KEY_TMPL % task_id).decode()
 
 
 @backoff.on_exception(backoff.expo,
@@ -195,7 +198,10 @@ def log_job_status(job):
     r = StrictRedis(connection_pool=JOB_STATUS_POOL)
     r.setex(JOB_STATUS_KEY_TMPL % job['uuid'],
             app.conf.HYSDS_JOB_STATUS_EXPIRES,
-            job['status'])  # for dedup
+            job['status'])
+    r.setex(JOB_WORKER_KEY_TMPL % job['uuid'],
+            app.conf.HYSDS_JOB_STATUS_EXPIRES,
+            job.get('celery_hostname', ''))
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
     logger.info("job_status_json:%s" % json.dumps(job))
 
