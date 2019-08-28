@@ -14,7 +14,8 @@ log_task_worker, get_task_worker, get_worker_status, log_custom_event)
 
 from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func,
 get_short_error, query_dedup_job, makedirs, find_dataset_json, find_cache_dir)
-from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
+### from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
+from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd, get_singularity_cmd, get_singularity_params
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
 
@@ -361,6 +362,8 @@ def fail_job(job_status_json, jd_file):
 def run_job(job, queue_when_finished=True):
     """Function to execute a job."""
 
+    logger.info("XXXXXXXXXXXX in run_job() XXXXXXXXXXXX")
+
     # get payload id
     payload_id = job['job_info']['job_payload']['payload_task_id']
 
@@ -379,6 +382,7 @@ def run_job(job, queue_when_finished=True):
 
     # get context
     context = job.get('context', {})
+    logger.info("context: %s" % context)
 
     # hysds signal handler
     def handler(signum, frame):
@@ -419,6 +423,8 @@ def run_job(job, queue_when_finished=True):
                  'status': 'job-deduped',
                  'celery_hostname': run_job.request.hostname }
 
+    logger.info("XXXXXXXXXXXX in run_job() 1 XXXXXXXXXXXX")
+
     # set task worker
     log_task_worker(job['task_id'], run_job.request.hostname)
 
@@ -437,6 +443,8 @@ def run_job(job, queue_when_finished=True):
     # get workers dir
     workers_dir = "workers"
     workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
+    logger.info("workers_dir_abs: %s" % workers_dir_abs)
+
     try: makedirs(workers_dir_abs)
     except Exception, e:
         error = str(e)
@@ -454,6 +462,8 @@ def run_job(job, queue_when_finished=True):
                             'celery_hostname': run_job.request.hostname }
         log_job_status(job_status_json)
         raise(WorkerExecutionError(error, job_status_json))
+
+    logger.info("XXXXXXXXXXXX in run_job() 2 XXXXXXXXXXXX")
 
     # set job drain detector file
     jd_file = os.path.join(workers_dir_abs, '%s.failures.json' % run_job.request.hostname)
@@ -478,6 +488,7 @@ def run_job(job, queue_when_finished=True):
         fail_job(job_status_json, jd_file)
 
     # extract worker config or build it if command payload was sent
+    logger.info("XXXXXXXXX in run_job() XXXXXXXXXXXX")
     logger.info("HYSDS_WORKER_CFG:%s" % worker_cfg_file)
     if worker_cfg_file is not None:
         if not os.path.exists(worker_cfg_file):
@@ -540,6 +551,8 @@ def run_job(job, queue_when_finished=True):
         if du_payload is not None:
             worker_cfg['configs'][0]['disk_usage'] = du_payload
         
+    logger.info("XXXXXXXXXXXX in run_job() 3 XXXXXXXXXXXX")
+
     # get datasets config
     datasets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG', None)
     if datasets_cfg_file is None:
@@ -580,6 +593,8 @@ def run_job(job, queue_when_finished=True):
     for cfg in worker_cfg['configs']:
         work_cfgs[cfg['type']] = cfg
 
+    logger.info("XXXXXXXXXXXX in run_job() 4 XXXXXXXXXXXX")
+
     # other settings
     if run_job.request.delivery_info is None: job_queue = None
     else: job_queue = run_job.request.delivery_info['routing_key'] 
@@ -616,6 +631,10 @@ def run_job(job, queue_when_finished=True):
     command = work_cfgs[job['type']]['command']
     job['command'] = command
 
+    logger.info("XXXXXXXXXXXX in run_job() 5 XXXXXXXXXXXX")
+
+    # other settings
+    if run_job.request.delivery_info is None: job_queue = None
     # get job id
     job_id = job['job_id']
 
@@ -678,6 +697,8 @@ def run_job(job, queue_when_finished=True):
                             'celery_hostname': run_job.request.hostname }
         fail_job(job_status_json, jd_file)
 
+    logger.info("XXXXXXXXXXXX in run_job() 6 XXXXXXXXXXXX")
+
     # write job's running file to reserve space for job's done file later
     job_running_file = os.path.join(job_dir, '.running')
     try:
@@ -711,6 +732,8 @@ def run_job(job, queue_when_finished=True):
             'job_dir_size': 0
         }
     })
+
+    logger.info("XXXXXXXXXXXX in run_job() 7 XXXXXXXXXXXX")
 
     # get worker instance facts
     try: facts = get_facts()
@@ -752,6 +775,8 @@ def run_job(job, queue_when_finished=True):
                                               "%02d" % mo, "%02d" % dy, "%02d" % hr,
                                               "%02d" % mi, job_id)
 
+    logger.info("XXXXXXXXXXXX in run_job() 8 XXXXXXXXXXXX")
+
     # set or overwrite container image name, url and mappings if defined in work config
     container_image_name = work_cfgs[job['type']].get('container_image_name', None)
     container_image_url = work_cfgs[job['type']].get('container_image_url', None)
@@ -772,6 +797,8 @@ def run_job(job, queue_when_finished=True):
         logger.info("Setting dependency_images from worker configuration: %s"
                     % json.dumps(job['dependency_images'], indent=2))
 
+    logger.info("XXXXXXXXXXXX in run_job() 9 XXXXXXXXXXXX")
+
     # write empty context to file
     try:
         if len(context) > 0: context = { 'context': context }
@@ -782,6 +809,7 @@ def run_job(job, queue_when_finished=True):
         context['container_mappings'] = job.get('container_mappings', {})
         context['_prov'] = { 'wasGeneratedBy': "task_id:{}".format(job['task_id']) }
         context_file = os.path.join(job_dir, '_context.json')
+        logger.info("context_file: %s" % context_file)
         with open(context_file, 'w') as f:
             json.dump(context, f, indent=2, sort_keys=True)
         job['job_info']['context_file'] = context_file
@@ -801,7 +829,7 @@ def run_job(job, queue_when_finished=True):
                             'traceback': traceback.format_exc(),
                             'celery_hostname': run_job.request.hostname }
         fail_job(job_status_json, jd_file)
-    #logger.info(" Wrote context json file: %s" % context_file)
+    logger.info(" Wrote context json file: %s" % context_file)
 
     # write job to file
     try:
@@ -853,19 +881,25 @@ def run_job(job, queue_when_finished=True):
 
         # check if containers need to be loaded
         image_name = job.get('container_image_name', None)
+        logger.info("XXX image_name: %s" % image_name)
         image_url = job.get('container_image_url', None)
+        logger.info("XXX image_url: %s" % image_url)
         image_mappings = job.get('container_mappings', {})
         if image_name is not None:
             image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            logger.info("image_info: %s" % image_info)
             job['container_image_id'] = image_info['Id']
             context['container_image_id'] = job['container_image_id']
+        """
         for i, dep_img in enumerate(job.get('dependency_images', [])):
             dep_image_info = ensure_image_loaded(dep_img['container_image_name'], 
                                                  dep_img['container_image_url'],
                                                  cache_dir_abs)
+            logger.info("dep_image_info: %s" % dep_image_info)
             dep_img['container_image_id'] = dep_image_info['Id']
             ctx_dep_img = context['job_specification']['dependency_images'][i]
             ctx_dep_img['container_image_id'] = dep_img['container_image_id']
+        """
 
         # update context file with image ids
         with open(context_file, 'w') as f:
@@ -894,28 +928,40 @@ def run_job(job, queue_when_finished=True):
         execEnv = dict(os.environ)
         for env in job['command']['env']:
             execEnv[env['key']] = env['value']
-        logger.info(" cmdLineList: %s" % cmdLineList)
+        logger.info(" before get_singularity_cmd(), cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
         docker_params = {}
+        singularity_params = {}
+
+        logger.info("XXXXX image_name: %s XXXXX"%image_name)
         if image_name is not None:
             # get docker params
             docker_params[image_name] = get_docker_params(image_name, image_url, 
                                                           image_mappings, root_work_dir, 
                                                           job_dir)
 
+            singularity_params[image_name] = get_singularity_params(image_name, image_url, 
+                                                          image_mappings, root_work_dir, 
+                                                          job_dir)
+
             # get command-line list
-            cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
-            logger.info(" docker cmdLineList: %s" % cmdLineList)
+            ### cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
+            ### logger.info(" docker cmdLineList: %s" % cmdLineList)
+            cmdLineList = get_singularity_cmd(singularity_params[image_name], cmdLineList)
+            logger.info(" after get_singularity_cmd(),  cmdLineList: %s" % cmdLineList)
 
         # build docker params for dependency containers
+        ### logger.info("XXXXXXXXXXXX before the loop over dep_img XXXXXXXXXXXX")
         for dep_img in job.get('dependency_images', []):
+            ### logger.info("XXXXXXXXXXXX dep_img[container_image_name]: %s XXXXXXXXXXXX"%dep_img['container_image_name'])
             docker_params[dep_img['container_image_name']] = \
                 get_docker_params(dep_img['container_image_name'],
                                   dep_img['container_image_url'],
                                   dep_img['container_mappings'],
                                   root_work_dir, job_dir)
 
+        ### logger.info("XXXXXXXXXXXX after the loop over dep_img XXXXXXXXXXXX")
         # dump docker params to file
         try:
             docker_params_file = os.path.join(job_dir, '_docker_params.json')
@@ -933,6 +979,7 @@ def run_job(job, queue_when_finished=True):
 
         # dump run script for rerun
         run_script = os.path.join(job_dir, "_run.sh")
+        logger.info(" run_script: %s" % run_script)
         with open(run_script, 'w') as f:
             f.write("#!/bin/bash\n\n")
             # dump entire env for info
@@ -948,7 +995,9 @@ def run_job(job, queue_when_finished=True):
 
         # command execution start time
         cmd_start = datetime.utcnow()
+        logger.info(" cmd_start: %s" % cmd_start)
         cmd_start_iso = cmd_start.isoformat() + 'Z'
+        logger.info(" cmd_start_iso: %s" % cmd_start_iso)
         job['job_info']['cmd_start'] = cmd_start_iso
 
         # if all pre-processors signaled True, run command
@@ -956,6 +1005,11 @@ def run_job(job, queue_when_finished=True):
             logger.info("Pre-processing steps all signaled continuation.")
 
             # use pymonitoredrunner by default
+            logger.info(" cmdLineList: %s" % cmdLineList)
+            logger.info(" job_dir: %s" % job_dir)
+            logger.info(" execEnv: %s" % execEnv)
+            logger.info(" app.conf.PYMONITOREDRUNNER_CFG: %s" % app.conf.PYMONITOREDRUNNER_CFG)
+            logger.info(" job_id: %s" % job_id)
             monitoredRunner = MonitoredRunner(cmdLineList, job_dir, execEnv,
                                               app.conf.PYMONITOREDRUNNER_CFG, job_id)
             monitoredRunner.start()
@@ -963,6 +1017,7 @@ def run_job(job, queue_when_finished=True):
             # wait for completion
             monitoredRunner.join()
             status = monitoredRunner.getExitCode()
+            logger.info(" exit code status: %s" % str(status))
             pid = monitoredRunner.getPid()
         else:
             no_cont = list(compress(pre_processors, [not i for i in pre_processor_sigs]))
@@ -988,7 +1043,7 @@ def run_job(job, queue_when_finished=True):
         # update context
         with open(context_file) as f:
             context.update(json.load(f))
-        #logger.info(" Updated context from json file: %s" % context_file)
+        logger.info(" Updated context from json file: %s" % context_file)
 
         # write job to file
         with open(job_file, 'w') as f:
@@ -1093,7 +1148,7 @@ def run_job(job, queue_when_finished=True):
         # update context
         with open(context_file) as f:
             context.update(json.load(f))
-        #logger.info(" Updated context from json file: %s" % context_file)
+        logger.info(" Updated context from json file: %s" % context_file)
 
         # overwrite error if _alt_error.txt was dumped
         alt_error_file = os.path.join(job_dir, '_alt_error.txt')
@@ -1133,6 +1188,8 @@ def run_job(job, queue_when_finished=True):
             job_status_json['error'] = error
             job_status_json['short_error'] = get_short_error(error)
             job_status_json['traceback'] = tb
+
+    logger.info("XXXXXXXXXXXX in run_job() 10 XXXXXXXXXXXX")
 
     # run post-processing steps
     try:
