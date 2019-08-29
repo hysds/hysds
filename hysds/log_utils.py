@@ -37,12 +37,10 @@ JOB_STATUS_POOL = None
 JOB_INFO_POOL = None
 WORKER_STATUS_POOL = None
 EVENT_STATUS_POOL = None
+SOCKET_POOL = None
 
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
-
-# job worker key template
-JOB_WORKER_KEY_TMPL = "hysds-job-worker-%s"
 
 # worker status key template
 WORKER_STATUS_KEY_TMPL = "hysds-worker-status-%s"
@@ -112,6 +110,31 @@ def set_redis_event_status_pool():
             app.conf.REDIS_JOB_STATUS_URL)
 
 
+def set_redis_socket_pool():
+    """Set redis connection pool via Unix socket file."""
+
+    global SOCKET_POOL
+    if SOCKET_POOL is None:
+        SOCKET_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_UNIX_DOMAIN_SOCKET)
+
+
+@backoff.on_exception(backoff.expo,
+                      RedisError,
+                      max_tries=backoff_max_tries,
+                      max_value=backoff_max_value)
+def get_val_via_socket(key):
+    """Retrieve value of key from redis over Unix socket file."""
+
+    set_redis_socket_pool()
+    global SOCKET_POOL
+
+    # retrieve value
+    r = StrictRedis(connection_pool=SOCKET_POOL)
+    res = r.get(key)
+    return res.decode() if hasattr(res, 'decode') else res
+
+
 @backoff.on_exception(backoff.expo,
                       RedisError,
                       max_tries=backoff_max_tries,
@@ -141,7 +164,8 @@ def get_task_worker(task_id):
 
     # retrieve task worker
     r = StrictRedis(connection_pool=WORKER_STATUS_POOL)
-    return r.get(TASK_WORKER_KEY_TMPL % task_id)
+    res = r.get(TASK_WORKER_KEY_TMPL % task_id)
+    return res.decode() if hasattr(res, 'decode') else res
 
 
 @backoff.on_exception(backoff.expo,
@@ -156,7 +180,8 @@ def get_worker_status(worker):
 
     # retrieve worker status
     r = StrictRedis(connection_pool=WORKER_STATUS_POOL)
-    return r.get(WORKER_STATUS_KEY_TMPL % worker)
+    res = r.get(WORKER_STATUS_KEY_TMPL % worker)
+    return res.decode() if hasattr(res, 'decode') else res
 
 
 @backoff.on_exception(backoff.expo,
@@ -171,7 +196,8 @@ def get_job_status(task_id):
 
     # retrieve job status
     r = StrictRedis(connection_pool=JOB_STATUS_POOL)
-    return r.get(JOB_STATUS_KEY_TMPL % task_id).decode()
+    res = r.get(JOB_STATUS_KEY_TMPL % task_id)
+    return res.decode() if hasattr(res, 'decode') else res
 
 
 @backoff.on_exception(backoff.expo,
@@ -199,9 +225,6 @@ def log_job_status(job):
     r.setex(JOB_STATUS_KEY_TMPL % job['uuid'],
             app.conf.HYSDS_JOB_STATUS_EXPIRES,
             job['status'])
-    r.setex(JOB_WORKER_KEY_TMPL % job['uuid'],
-            app.conf.HYSDS_JOB_STATUS_EXPIRES,
-            job.get('celery_hostname', ''))
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
     logger.info("job_status_json:%s" % json.dumps(job))
 

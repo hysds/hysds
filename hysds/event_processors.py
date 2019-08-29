@@ -16,30 +16,18 @@ import backoff
 import socket
 import traceback
 from datetime import datetime
-from redis import ConnectionPool, StrictRedis
 
 from hysds.task_worker import run_task
 from hysds.celery import app
 from hysds.log_utils import (
     logger,
     log_job_status,
+    get_val_via_socket,
     backoff_max_tries,
     backoff_max_value,
+    TASK_WORKER_KEY_TMPL,
     JOB_STATUS_KEY_TMPL,
-    JOB_WORKER_KEY_TMPL,
 )
-
-
-# redis connection pool
-POOL = None
-
-
-def set_redis_pool():
-    """Set redis connection pool for status updates."""
-
-    global POOL
-    if POOL is None:
-        POOL = ConnectionPool.from_url(app.conf.REDIS_UNIX_DOMAIN_SOCKET)
 
 
 @backoff.on_exception(
@@ -76,9 +64,6 @@ def fail_job(event, uuid, exc, short_error):
 def offline_jobs(event):
     """Set job status to job-offline."""
 
-    set_redis_pool()
-    global POOL
-    rd = StrictRedis(connection_pool=POOL)
     time_end = datetime.utcnow().isoformat() + "Z"
     query = {
         "query": {
@@ -121,8 +106,8 @@ def offline_jobs(event):
         for job_status_json in job_status_jsons:
             uuid = job_status_json["uuid"]
             # offline the job only if it hasn't been picked up by another worker
-            cur_job_status = rd.get(JOB_STATUS_KEY_TMPL % uuid).decode()
-            cur_job_worker = rd.get(JOB_WORKER_KEY_TMPL % uuid).decode()
+            cur_job_status = get_val_via_socket(JOB_STATUS_KEY_TMPL % uuid)
+            cur_job_worker = get_val_via_socket(TASK_WORKER_KEY_TMPL % uuid)
             logger.info("cur_job_status: {}".format(cur_job_status))
             logger.info("cur_job_worker: {}".format(cur_job_worker))
             if cur_job_status == "job-started" and cur_job_worker == event["hostname"]:
