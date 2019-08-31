@@ -69,7 +69,7 @@ environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_datas
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q dataset_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=1
+numprocs=4
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
@@ -84,7 +84,7 @@ environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_jobs.
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q jobs_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=1
+numprocs=4
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
