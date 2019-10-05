@@ -46,7 +46,7 @@ def tag_timedout_jobs(url, timeout):
                 ]
             }
         },
-        "_source": ["status", "tags", "uuid"]
+        "_source": ["status", "tags", "uuid", "celery_hostname"]
     }
 
     # query
@@ -81,8 +81,11 @@ def tag_timedout_jobs(url, timeout):
         status = src['status']
         tags = src.get('tags', [])
         task_id = src['uuid']
+        celery_hostname = src['celery_hostname']
+        logging.info("job_info: {}".format(json.dumps(src)))
 
         if status == "job-started":
+            # get task info
             task_query = {
                 "query": {
                     "term": {
@@ -98,22 +101,55 @@ def tag_timedout_jobs(url, timeout):
                               (r.status_code, json.dumps(task_query, indent=2)))
                 continue
             task_res = r.json()
+            logging.info("task_res:{}".format(json.dumps(task_res)))
+
+            # get worker info
+            worker_query = {
+                "query": {
+                    "term": {
+                        "_id": celery_hostname
+                    }
+                },
+                "_source": ["status", "tags"]
+            }
+            r = requests.post('%s/worker_status-current/task/_search' % url,
+                              data=json.dumps(worker_query))
+            if r.status_code != 200:
+                logging.error("Failed to query ES. Got status code %d:\n%s" %
+                              (r.status_code, json.dumps(worker_query, indent=2)))
+                continue
+            worker_res = r.json()
+            logging.info("worker_res:{}".format(json.dumps(worker_res)))
+
+            # determine new status
+            new_status = status
+            if worker_res['hits']['total'] == 0 or \
+                "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
+                worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline':
+                new_status = 'job-offline'
             if task_res['hits']['total'] > 0:
                 task_info = task_res['hits']['hits'][0]
                 if task_info['_source']['status'] == 'task-failed':
-                    new_doc = {
-                        "doc": {"status": 'job-failed'},
-                        "doc_as_upsert": True
-                    }
-                    r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
-                                      data=json.dumps(new_doc))
-                    result = r.json()
-                    if r.status_code != 200:
-                        logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
-                                      (id, r.status_code, json.dumps(result, indent=2)))
-                    r.raise_for_status()
-                    logging.info("Set job %s to job-failed." % id)
-            continue
+                    new_status = 'job-failed'
+
+            # update status
+            if status != new_status:
+                if 'timedout' not in tags:
+                    tags.append('timedout')
+                new_doc = {
+                    "doc": {"status": new_status,
+                            "tags": tags },
+                    "doc_as_upsert": True
+                }
+                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
+                                  data=json.dumps(new_doc))
+                result = r.json()
+                if r.status_code != 200:
+                    logging.error("Failed to update status for %s. Got status code %d:\n%s" %
+                                  (id, r.status_code, json.dumps(result, indent=2)))
+                r.raise_for_status()
+                logging.info("Set job {} to {} and tagged as timedout.".format(id, new_status))
+                continue
 
         if 'timedout' not in tags:
             tags.append('timedout')
