@@ -160,7 +160,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--interval', type=int, default=3600,
                         help="wake-up time interval in seconds")
     parser.add_argument('-u', '--url', default=host, help="ElasticSearch URL")
-    parser.add_argument('-t', '--timeout', default=86400,
+    parser.add_argument('-t', '--timeout', type=int, default=86400,
                         help="timeout threshold")
     args = parser.parse_args()
     daemon(args.interval, args.url, args.timeout)
