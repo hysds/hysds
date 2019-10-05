@@ -52,6 +52,7 @@ class TestTriage(unittest.TestCase):
 
         # Test case data
         job = {
+            'task_id': "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
             'job_info': {
                 'id': "boogaloo",
                 'status': 1,
@@ -74,8 +75,8 @@ class TestTriage(unittest.TestCase):
         self.publish_dataset_mock.return_value = {}
 
         # Expectations
-        expected_triage_dataset_filename = '/test/triaged_job-boogaloo/triaged_job-boogaloo.dataset.json'
-        expected_triage_met_filename = '/test/triaged_job-boogaloo/triaged_job-boogaloo.met.json'
+        expected_triage_dataset_filename = '/test/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json'
+        expected_triage_met_filename = '/test/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json'
         expected_triage_json_filename = '/test/_triaged.json'
 
         # Test execution
@@ -93,6 +94,7 @@ class TestTriage(unittest.TestCase):
 
         # Test case data
         job = {
+            'task_id': "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
             'job_info': {
                 'id': "boogaloo",
                 'status': 1,
@@ -116,8 +118,8 @@ class TestTriage(unittest.TestCase):
         self.publish_dataset_mock.return_value = {}
 
         # Expectations
-        expected_triage_dataset_filename = '/test/triaged_job-boogaloo/triaged_job-boogaloo.dataset.json'
-        expected_triage_met_filename = '/test/triaged_job-boogaloo/triaged_job-boogaloo.met.json'
+        expected_triage_dataset_filename = '/test/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json'
+        expected_triage_met_filename = '/test/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json'
         expected_triage_json_filename = '/test/_triaged.json'
 
         # Test execution
@@ -135,6 +137,7 @@ class TestTriage(unittest.TestCase):
 
         # Test case data
         job = {
+            'task_id': "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
             'job_info': {
                 'id': "boogaloo",
                 'status': 1,
