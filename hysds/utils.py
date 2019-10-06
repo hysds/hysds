@@ -655,7 +655,7 @@ def publish_datasets(job, ctx):
 def triage(job, ctx):
     """Triage failed job's context and job json as well as _run.sh."""
 
-    default_triage_id_format = "triaged_job-{job[job_info][id]}"
+    default_triage_id_format = "triaged_job-{job[job_info][id]}-{job[task_id]}"
 
     # if exit code of job command is zero, don't triage anything
     exit_code = job['job_info']['status']
