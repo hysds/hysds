@@ -16,7 +16,9 @@ import argparse
 import random
 import boto3
 import requests
+from datetime import datetime
 
+from hysds.utils import parse_iso8601
 from hysds.celery import app
 
 
@@ -46,7 +48,10 @@ def tag_timedout_jobs(url, timeout):
                 ]
             }
         },
-        "_source": ["status", "tags", "uuid", "celery_hostname"]
+        "_source": [
+            "status", "tags", "uuid", "celery_hostname",
+            "job.job_info.time_start", "job.job_info.time_limit"
+        ]
     }
 
     # query
@@ -84,6 +89,16 @@ def tag_timedout_jobs(url, timeout):
         celery_hostname = src['celery_hostname']
         logging.info("job_info: {}".format(json.dumps(src)))
 
+        # get job duration
+        time_limit = src['job']['job_info']['time_limit']
+        logging.info("time_limit: {}".format(time_limit))
+        time_start = parse_iso8601(src['job']['job_info']['time_start'])
+        logging.info("time_start: {}".format(time_start))
+        time_now = datetime.utcnow()
+        logging.info("time_now: {}".format(time_now))
+        duration = (time_now - time_start).seconds
+        logging.info("duration: {}".format(duration))
+
         if status == "job-started":
             # get task info
             task_query = {
@@ -101,7 +116,7 @@ def tag_timedout_jobs(url, timeout):
                               (r.status_code, json.dumps(task_query, indent=2)))
                 continue
             task_res = r.json()
-            logging.info("task_res:{}".format(json.dumps(task_res)))
+            logging.info("task_res: {}".format(json.dumps(task_res)))
 
             # get worker info
             worker_query = {
@@ -119,13 +134,15 @@ def tag_timedout_jobs(url, timeout):
                               (r.status_code, json.dumps(worker_query, indent=2)))
                 continue
             worker_res = r.json()
-            logging.info("worker_res:{}".format(json.dumps(worker_res)))
+            logging.info("worker_res: {}".format(json.dumps(worker_res)))
 
             # determine new status
             new_status = status
-            if worker_res['hits']['total'] == 0 or \
+            if worker_res['hits']['total'] == 0 and duration > time_limit:
+                new_status = 'job-offline'
+            if worker_res['hits']['total'] > 0 and (
                 "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
-                worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline':
+                worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
                 new_status = 'job-offline'
             if task_res['hits']['total'] > 0:
                 task_info = task_res['hits']['hits'][0]
@@ -134,7 +151,8 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                if 'timedout' not in tags:
+                logger.info("updating status from {} to {}".format(status, new_status))
+                if duration > time_limit and 'timedout' not in tags:
                     tags.append('timedout')
                 new_doc = {
                     "doc": {"status": new_status,
@@ -151,22 +169,23 @@ def tag_timedout_jobs(url, timeout):
                 logging.info("Set job {} to {} and tagged as timedout.".format(id, new_status))
                 continue
 
-        if 'timedout' not in tags:
-            tags.append('timedout')
-            new_doc = {
-                "doc": {"tags": tags},
-                "doc_as_upsert": True
-            }
-            r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
-                              data=json.dumps(new_doc))
-            result = r.json()
-            if r.status_code != 200:
-                logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
-                              (id, r.status_code, json.dumps(result, indent=2)))
-            r.raise_for_status()
-            logging.info("Tagged %s as timedout." % id)
-        else:
+        if 'timedout' in tags:
             logging.info("%s already tagged as timedout." % id)
+        else:
+            if duration > time_limit:
+                tags.append('timedout')
+                new_doc = {
+                    "doc": {"tags": tags},
+                    "doc_as_upsert": True
+                }
+                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
+                                  data=json.dumps(new_doc))
+                result = r.json()
+                if r.status_code != 200:
+                    logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
+                                  (id, r.status_code, json.dumps(result, indent=2)))
+                r.raise_for_status()
+                logging.info("Tagged %s as timedout." % id)
 
 
 def daemon(interval, url, timeout):
