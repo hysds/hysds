@@ -655,6 +655,11 @@ def publish_datasets(job, ctx):
 def triage(job, ctx):
     """Triage failed job's context and job json as well as _run.sh."""
 
+    # set time_start if not defined (job failed prior to setting it)
+    if 'time_start' not in job['job_info']:
+        job['job_info']['time_start'] = "{}Z".format(datetime.utcnow().isoformat('T'))
+
+    # default triage id
     default_triage_id_format = "triaged_job-{job[job_info][id]}-{job[task_id]}"
 
     # if exit code of job command is zero, don't triage anything

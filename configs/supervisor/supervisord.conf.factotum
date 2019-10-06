@@ -40,7 +40,7 @@ directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=32
+numprocs=4
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
@@ -53,7 +53,7 @@ directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=32
+numprocs=4
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
@@ -66,7 +66,7 @@ directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=32
+numprocs=128
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
@@ -79,7 +79,7 @@ directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=32
+numprocs=128
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
@@ -92,7 +92,7 @@ directory={{ OPS_HOME }}/verdi/ops/hysds
 command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_trigger -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
-numprocs=4
+numprocs=32
 numprocs_start=0
 redirect_stderr=true
 stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
