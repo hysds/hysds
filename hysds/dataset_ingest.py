@@ -358,8 +358,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     # get level
     level = r.getLevel()
 
-    # get type
-    dtype = r.getType()
+    # get type (not needed since ES7+ uses only _doc type)
+    # dtype = r.getType()
 
     # set product metrics
     prod_metrics = {
@@ -604,7 +604,8 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
         'ipath': ipath,
         'system_version': version,
         'dataset_level': level,
-        'dataset_type': dtype,
+        # 'dataset_type': dtype,
+        'dataset_type': '_doc',
         'urls': pub_urls,
         'browse_urls': browse_urls,
         'images': imgs_metadata,
