@@ -61,8 +61,10 @@ def verify_dataset(dataset):
 def index_dataset(grq_update_url, update_json):
     """Index dataset into GRQ ES."""
 
-    r = requests.post(grq_update_url, verify=False,
-                      data={'dataset_info': json.dumps(update_json)})
+    es_doc = {
+        'dataset_info': json.dumps(update_json)
+    }
+    r = requests.post(grq_update_url, data=es_doc, verify=False)
     r.raise_for_status()
     return r.json()
 
