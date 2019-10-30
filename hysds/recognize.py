@@ -136,6 +136,14 @@ class Recognizer(object):
         else:
             return self.recognized['level'].format(**self.group_dict)
 
+    def getType(self):
+        """Get the type."""
+
+        if self.recognized is None:
+            return None
+        else:
+            return self.recognized['type'].format(**self.group_dict)
+
     def publishConfigured(self):
         """Return True if dataset publish is configured. False otherwise."""
 

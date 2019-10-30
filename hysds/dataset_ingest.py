@@ -360,6 +360,9 @@ def ingest(objectid, dsets_file, grq_update_url, dataset_processed_queue,
     # get level
     level = r.getLevel()
 
+    # get type (not needed since ES7+ uses only _doc type)
+    # dtype = r.getType()
+
     # set product metrics
     prod_metrics = {
         'ipath': ipath,
