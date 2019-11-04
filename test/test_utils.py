@@ -10,6 +10,7 @@ import unittest
 import logging
 import tempfile
 import shutil
+import glob
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
@@ -290,3 +291,76 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(result)
         self.assertTrue(os.path.exists(expected_triage_dataset_filename))
         self.assertTrue(os.path.exists(expected_triage_met_filename))
+        self.assertTrue(os.path.exists(expected_triage_json_filename))
+
+    def test_triage_overlap(self):
+        import hysds.utils
+
+        # Test case data
+        job = {
+            'task_id': "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
+            'job_info': {
+                'id': "boogaloo",
+                'status': 1,
+                'job_dir': self.job_dir,
+                'time_start': "0001-01-01T00:00:00.000Z",
+                'context_file': "electric",
+                'datasets_cfg_file': "more/configuration",
+                'metrics': {
+                    'product_provenance': dict(),
+                    'products_staged': list()
+                }
+            }
+        }
+
+        job_context = {
+            '_triage_disabled': False,
+            '_triage_additional_globs': ["sub_dir/", "sub_dir2/*.log"]
+        }
+
+        # create job and context json
+        with open(os.path.join(self.job_dir, '_job.json'), 'w') as f:
+            json.dump(job, f)
+        with open(os.path.join(self.job_dir, '_context.json'), 'w') as f:
+            json.dump(job_context, f)
+
+        # create log file
+        log_file = os.path.join(self.job_dir, "test.log")
+        with open(log_file, 'w') as f:
+            f.write("this is a log line")
+
+        # create subdirectory with same log file name
+        sub_dir = os.path.join(self.job_dir, "sub_dir")
+        os.makedirs(sub_dir)
+        with open(os.path.join(sub_dir, 'test.log'), 'w') as f:
+            f.write("this is a sub_dir log line")
+
+        # create another subdirectory with same log file name
+        sub_dir2 = os.path.join(self.job_dir, "sub_dir2")
+        os.makedirs(sub_dir2)
+        with open(os.path.join(sub_dir2, 'test.log'), 'w') as f:
+            f.write("this is a sub_dir2 log line")
+
+        # Mocked data
+        publish_dataset_mock = umock.patch('hysds.utils.publish_dataset').start()
+        publish_dataset_mock.return_value = {}
+
+        # Expectations
+        expected_triage_dataset = self.job_dir + '/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972'
+        expected_triage_dataset_filename = expected_triage_dataset + '/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json'
+        expected_triage_met_filename = expected_triage_dataset + '/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json'
+        expected_triage_json_filename = self.job_dir + '/_triaged.json'
+        expected_triage_log_file1 = expected_triage_dataset + '/test.log'
+        expected_triage_log_file2 = expected_triage_dataset + '/sub_dir/test.log'
+
+        # Test execution
+        result = hysds.utils.triage(job, job_context)
+
+        # Assertions
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(expected_triage_dataset_filename))
+        self.assertTrue(os.path.exists(expected_triage_met_filename))
+        self.assertTrue(os.path.exists(expected_triage_json_filename))
+        self.assertTrue(os.path.exists(expected_triage_log_file1))
+        self.assertTrue(os.path.exists(expected_triage_log_file2))
+        self.assertTrue(len(glob.glob("{}/test.log*".format(expected_triage_dataset))) == 2)
