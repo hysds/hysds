@@ -729,10 +729,14 @@ def triage(job, ctx):
     # triage additional globs
     for g in ctx.get('_triage_additional_globs', []):
         for f in glob(os.path.join(job_dir, g)):
+            f = os.path.normpath(f)
+            dst = os.path.join(triage_dir, os.path.basename(f))
+            if os.path.exists(dst):
+                dst = "{}.{}Z".format(dst, datetime.utcnow().isoformat('T'))
             if os.path.isdir(f):
-                shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
+                shutil.copytree(f, dst)
             else:
-                shutil.copy(f, triage_dir)
+                shutil.copy(f, dst)
 
     # publish
     prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
