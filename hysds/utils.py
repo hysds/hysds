@@ -714,11 +714,17 @@ def triage(job, ctx):
 
     # triage job-related files
     for f in glob(os.path.join(job_dir, '_*')):
-        shutil.copy(f, triage_dir)
+        if os.path.isdir(f):
+            shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
+        else:
+            shutil.copy(f, triage_dir)
 
     # triage log files
     for f in glob(os.path.join(job_dir, '*.log')):
-        shutil.copy(f, triage_dir)
+        if os.path.isdir(f):
+            shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
+        else:
+            shutil.copy(f, triage_dir)
 
     # triage additional globs
     for g in ctx.get('_triage_additional_globs', []):
