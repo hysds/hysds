@@ -1,8 +1,17 @@
-from __future__ import absolute_import
+from __future__ import unicode_literals
 from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
 
-import os, sys, json, backoff, shutil
-import unicodedata
+from builtins import int
+from builtins import str
+from future import standard_library
+standard_library.install_aliases()
+import os
+import sys
+import json
+import backoff
+import shutil
 from datetime import datetime
 from subprocess import check_output, Popen, PIPE
 from atomicwrites import atomic_write
@@ -107,17 +116,19 @@ IMAGE_INFO_ = """
 def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 
-    if m == "/": raise(RuntimeError("Cannot mount host root directory"))
+    if m == "/":
+        raise RuntimeError("Cannot mount host root directory")
     for k in blacklist:
         if m.startswith(k):
-            raise(RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k)))
+            raise RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k))
     return True
 
 
 def copy_mount(path, mnt_dir):
     """Copy path to a directory to be used for mounting into container. Return this path."""
 
-    if not os.path.exists(mnt_dir): os.makedirs(mnt_dir, 0777)
+    if not os.path.exists(mnt_dir):
+        os.makedirs(mnt_dir, 0o777)
     mnt_path = os.path.join(mnt_dir, os.path.basename(path))
     if os.path.isdir(path): shutil.copytree(path, mnt_path)
     else: shutil.copy(path, mnt_path)
@@ -210,7 +221,8 @@ def get_singularity_params(image_name, image_url, image_mappings, root_work_dir,
     image_file_basename = os.path.basename(image_url)
     logger.info("image_file_basename: %s"%image_file_basename)
 
-    sandbox_basename = image_file_basename.replace('.tar.gz', '').encode('ascii', 'ignore')
+    ### sandbox_basename = image_file_basename.replace('.tar.gz', '').encode('ascii', 'ignore')
+    sandbox_basename = image_file_basename.replace('.tar.gz', '')
     logger.info("sandbox_basename: %s"%sandbox_basename)
     sandbox_dir = os.path.join(root_cache_dir, sandbox_basename)
     logger.info("sandbox_dir: %s"%sandbox_dir)
@@ -226,14 +238,71 @@ def get_singularity_params(image_name, image_url, image_mappings, root_work_dir,
         "gid": os.getgid(),
         "working_dir": job_dir,
         "sandbox_dir": sandbox_dir,
-        ### "mount_dir": '/'+sandbox_basename,
+        "mount_dir": '/'+sandbox_basename,
         "volumes": [
-            ( sandbox_dir, '/'+sandbox_basename ),
             ( root_jobs_dir, root_jobs_dir ),
             ( root_tasks_dir, root_tasks_dir ),
-            ( root_workers_dir, root_workers_dir )
+            ( root_workers_dir, root_workers_dir ),
+            ( root_cache_dir, "{}:ro".format(root_cache_dir) )
         ]
     }
+
+    # add default image mappings
+    """
+    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
+                                     os.path.join(os.path.dirname(app.conf.__file__),
+                                                  "celeryconfig.py"))
+    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in image_mappings.values():
+        image_mappings[celery_cfg_file] = "celeryconfig.py"
+    """
+    dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
+                                    os.path.normpath(os.path.join(os.path.dirname(sys.executable),
+                                                                  '..', 'etc', 'datasets.json')))
+    if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
+        image_mappings[dsets_cfg_file] = "datasets.json"
+
+    # if running on k8s add hosts and resolv.conf; create mount directory
+    blacklist = app.conf.WORKER_MOUNT_BLACKLIST
+    mnt_dir = None
+    on_k8s = int(app.conf.get('K8S', 0))
+    if on_k8s:
+        for f in ("/etc/hosts", "/etc/resolv.conf"):
+            if f not in image_mappings and f not in image_mappings.values():
+                image_mappings[f] = f
+        blacklist = [i for i in blacklist if i != "/etc"]
+        mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
+
+    # add user-defined image mappings
+    logger.info("XXXXXX image_mappings: %s XXXXX" % json.dumps(image_mappings))
+    ### for k, v in image_mappings.iteritems():
+    for k, v in image_mappings.items():
+        k = os.path.expandvars(k)
+        verify_docker_mount(k, blacklist)
+        mode = "ro"
+        if isinstance(v, list):
+            if len(v) > 1: v, mode = v[0:2]
+            elif len(v) == 1: v = v[0]
+            else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
+
+        # kluge: this will be done correctly in PGE job spec
+        if '/home/ops/verdi/etc/settings.conf' in k:
+          k = '/home1/lpan/verdi/etc/settings.conf'
+        if '/home/ops/.aws' in k:
+          k = '/home1/lpan/.aws'
+        if '/home/ops/.netrc' in k:
+          k = '/home1/lpan/.netrc'
+
+        if v.startswith('/'): mnt = v
+        else: # copy to job_dir
+          mnt = '/'+v
+          shutil.copyfile(k, os.path.join(job_dir, v))
+        ### else: mnt = os.path.join(job_dir, v)
+
+        if mnt_dir is not None: k = copy_mount(k, mnt_dir)
+
+        params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
+        ### params['volumes'].append((k, mnt))
+
     return params
 
 
@@ -252,8 +321,8 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
 
     # check if image is in local docker repo
     try:
-        image_info = check_output(['docker', 'inspect', image_name])
-        ### raise ValueError('XXXXXX test pulling image from url XXXX')
+        ### image_info = check_output(['docker', 'inspect', image_name])
+        raise ValueError('XXXXXX test pulling image from url XXXX')
         logger.info("Docker image %s cached in repo" % image_name)
     except:
         logger.info("Failed to inspect docker image %s" % image_name)
@@ -263,18 +332,18 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             image_file_basename = os.path.basename(image_url)
             image_file = os.path.join(cache_dir, os.path.basename(image_url))
             if not os.path.exists(image_file):
-                logger.info("Downloading image %s (%s) from %s" % 
+                logger.info("Downloading image %s (%s) from %s" %
                             (image_file, image_name, image_url))
                 logger.info("image basename: %s" % image_file_basename)
                 try: osaka.main.get(image_url, image_file)
-                except Exception, e:
-                    raise(RuntimeError("Failed to download image %s:\n%s" % 
+                except Exception as e:
+                    raise(RuntimeError("Failed to download image %s:\n%s" %
                                        (image_url, str(e))))
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
 
             # for testing singularity, do not run docker load
-            """ 
+            """
             load_lock = "{}.load.lock".format(image_file)
             try:
                 with atomic_write(load_lock) as f:
@@ -299,8 +368,11 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             # if singularity, unzip the tar ball into the cache dir
             is_singularity = True
             if is_singularity:
-                p = Popen(['tar', '-xvf', image_file], cwd=cache_dir, stderr=PIPE, stdout=PIPE)
+                logger.info("is_singularity: True, image_file: %s" % image_file)
+                p = Popen(['tar', '--force-local', '-xvf', image_file], cwd=cache_dir, stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
+                logger.info("stdout: %s" % stdout)
+                logger.info("stderr: %s" % stderr)
                 if p.returncode != 0:
                     raise(RuntimeError("Failed to unzip image tar %s (%s): %s" % (image_file, image_name, stderr)))
                 logger.info("Unzipped image tar %s (%s)" % (image_file, image_name))
@@ -323,7 +395,7 @@ def get_base_docker_cmd(params):
     """Parse docker params and build base docker command line list."""
 
     # build command
-    docker_cmd_base = [ "docker", "run", "--init", "--rm", "-u", 
+    docker_cmd_base = [ "docker", "run", "--init", "--rm", "-u",
                         "%s:%s" % (params['uid'], params['gid']) ]
 
     # add volumes
@@ -337,7 +409,7 @@ def get_base_docker_cmd(params):
 
 
 def get_docker_cmd(params, cmd_line_list):
-    """Pull docker image into local repo and add call to docker in the 
+    """Pull docker image into local repo and add call to docker in the
        command line list."""
 
     # build command
@@ -357,7 +429,7 @@ def get_base_singularity_cmd(params):
     """Parse singularity params and build base singularity command line list."""
 
     # build command
-    singularity_cmd_base = [ "/nasa/singularity/3.2.0/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    singularity_cmd_base = [ "/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops" ]
 
     # add volumes
     for k, v in params['volumes']:
@@ -366,6 +438,7 @@ def get_base_singularity_cmd(params):
     # set work directory and image
     ### docker_cmd_base.extend(["-w", params['working_dir'], params['image_name']])
     ### singularity_cmd_base.extend(["--pwd", params['mount_dir'], params['sandbox_dir']])
+
     singularity_cmd_base.extend(["--pwd", params['working_dir'], params['sandbox_dir']])
 
     return singularity_cmd_base
@@ -377,7 +450,7 @@ def get_singularity_cmd(params, cmd_line_list):
     singularity_cmd = ["/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops", "--bind", "/nobackupp14/lpan/work/cache/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg:/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg", "--pwd", "/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg", "/nobackupp14/lpan/work/cache/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg", "/home/ops/verdi/ops/hello_world/run_hello_world.sh"]
     """
 
-    """Pull docker image into local repo and add call to docker in the 
+    """Pull docker image into local repo and add call to docker in the
        command line list."""
 
     # build command
@@ -394,6 +467,3 @@ def get_singularity_cmd(params, cmd_line_list):
     ### singularity exec --no-home --home /home/ops --bind /nobackupp14/lpan/work/cache/container-hello_world_master-2019-07-24-b269614f8b4e.simg:/container-hello_world_master-2019-07-24-b269614f8b4e.simg --pwd /container-hello_world_master-2019-07-24-b269614f8b4e.simg /nobackupp14/lpan/work/cache/container-hello_world_master-2019-07-24-b269614f8b4e.simg /home/ops/verdi/ops/hello_world/run_hello_world.sh
 
     return singularity_cmd
-
-
-
