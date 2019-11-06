@@ -50,9 +50,9 @@ class TestContainerUtils(unittest.TestCase):
                 "options": [],
                 "arguments": [
                     "/home/ops/verdi/ops/scihub_acquisition_scraper/ipf_version.py",
-                    "datasets.json"
+                    "datasets.json",
                 ],
-                "env": []
+                "env": [],
             },
             "dependency_images": [
                 {
@@ -62,9 +62,9 @@ class TestContainerUtils(unittest.TestCase):
                         "$HOME/.netrc": ["/home/ops/.netrc"],
                         "$HOME/.aws": ["/home/ops/.aws", "ro"],
                     },
-                    "runtime_options": {"gpus": "2"}
+                    "runtime_options": {"gpus": "2"},
                 }
-            ]
+            ],
         }
 
         # mock app.conf.get()
@@ -85,7 +85,9 @@ class TestContainerUtils(unittest.TestCase):
         umock.patch.stopall()
         shutil.rmtree(self.job_dir)
 
-    def get_docker_params_gpus(self, image_name, image_url, image_mappings, runtime_options, gpu_flag=None):
+    def get_docker_params_gpus(
+        self, image_name, image_url, image_mappings, runtime_options, gpu_flag=None
+    ):
         import hysds.container_utils
 
         # mock data
@@ -96,7 +98,7 @@ class TestContainerUtils(unittest.TestCase):
         # get context
         if gpu_flag is not None:
             # mocked GPU set in os.environ
-            cm = umock.patch.dict('os.environ', {'GPU': gpu_flag})
+            cm = umock.patch.dict("os.environ", {"GPU": gpu_flag})
         else:
             # no GPU set in os.environ
             cm = nullcontext()
@@ -105,8 +107,12 @@ class TestContainerUtils(unittest.TestCase):
         docker_params = {}
         with cm:
             docker_params[image_name] = hysds.container_utils.get_docker_params(
-                image_name, image_url, image_mappings, self.root_work_dir, self.job_dir,
-                runtime_options
+                image_name,
+                image_url,
+                image_mappings,
+                self.root_work_dir,
+                self.job_dir,
+                runtime_options,
             )
         logging.info(
             "docker_params: {}".format(
@@ -119,13 +125,13 @@ class TestContainerUtils(unittest.TestCase):
     def get_docker_cmd(self, job, params):
         import hysds.container_utils
 
-        cmdLineList = [job['command']['path']]
-        for opt in job['command']['options']:
+        cmdLineList = [job["command"]["path"]]
+        for opt in job["command"]["options"]:
             cmdLineList.append(opt)
-        for arg in job['command']['arguments']:
-            matchArg = re.search(r'^\$(\w+)$', arg)
+        for arg in job["command"]["arguments"]:
+            matchArg = re.search(r"^\$(\w+)$", arg)
             if matchArg:
-                arg = job['params'][matchArg.group(1)]
+                arg = job["params"][matchArg.group(1)]
             if isinstance(arg, (list, tuple)):
                 cmdLineList.extend(arg)
             else:
@@ -133,9 +139,7 @@ class TestContainerUtils(unittest.TestCase):
         cmdLineList = hysds.container_utils.get_docker_cmd(params, cmdLineList)
         cmdLineList = [str(i) for i in cmdLineList]
         cmdLine = " ".join(cmdLineList)
-        logging.info(
-            "cmdLine: {}".format(cmdLine)
-        )
+        logging.info("cmdLine: {}".format(cmdLine))
 
         return cmdLine
 
@@ -150,11 +154,13 @@ class TestContainerUtils(unittest.TestCase):
         gpu_flag = "1"
 
         # run test
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag)
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options, gpu_flag
+        )
         cmd_line = self.get_docker_cmd(self.job_gpu, docker_params[image_name])
 
         # assertions
-        self.assertTrue(docker_params[image_name]['runtime_options']['gpus'] == "all")
+        self.assertTrue(docker_params[image_name]["runtime_options"]["gpus"] == "all")
         self.assertTrue("--gpus all" in cmd_line)
 
     def test_get_docker_params_nogpus(self):
@@ -167,54 +173,64 @@ class TestContainerUtils(unittest.TestCase):
         runtime_options = self.job_gpu.get("runtime_options")
 
         # run test with GPU environment variable not defined
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options)
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options
+        )
         cmd_line = self.get_docker_cmd(self.job_gpu, docker_params[image_name])
 
         # assertions
-        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
+        self.assertTrue("gpus" not in docker_params[image_name]["runtime_options"])
         self.assertTrue("--gpus all" not in cmd_line)
 
         # run test with GPU environment variable defined as "0"
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag="0")
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options, gpu_flag="0"
+        )
         cmd_line = self.get_docker_cmd(self.job_gpu, docker_params[image_name])
 
         # assertions
-        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
+        self.assertTrue("gpus" not in docker_params[image_name]["runtime_options"])
         self.assertTrue("--gpus all" not in cmd_line)
 
     def test_dep_image_get_docker_params_gpus(self):
         "Test dependency image docker params on GPU instance."
 
         # get params for get_docker_params()
-        image_name = self.job_gpu['dependency_images'][0].get("container_image_name")
-        image_url = self.job_gpu['dependency_images'][0].get("container_image_url")
-        image_mappings = self.job_gpu['dependency_images'][0].get("container_mappings")
-        runtime_options = self.job_gpu['dependency_images'][0].get("runtime_options")
+        image_name = self.job_gpu["dependency_images"][0].get("container_image_name")
+        image_url = self.job_gpu["dependency_images"][0].get("container_image_url")
+        image_mappings = self.job_gpu["dependency_images"][0].get("container_mappings")
+        runtime_options = self.job_gpu["dependency_images"][0].get("runtime_options")
         gpu_flag = "1"
 
         # run test
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag)
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options, gpu_flag
+        )
 
         # assertions
-        self.assertTrue(docker_params[image_name]['runtime_options']['gpus'] == "2")
+        self.assertTrue(docker_params[image_name]["runtime_options"]["gpus"] == "2")
 
     def test_dep_image_get_docker_params_nogpus(self):
         "Test  dependency image docker params on non-GPU instance."
 
         # get params for get_docker_params()
-        image_name = self.job_gpu['dependency_images'][0].get("container_image_name")
-        image_url = self.job_gpu['dependency_images'][0].get("container_image_url")
-        image_mappings = self.job_gpu['dependency_images'][0].get("container_mappings")
-        runtime_options = self.job_gpu['dependency_images'][0].get("runtime_options")
+        image_name = self.job_gpu["dependency_images"][0].get("container_image_name")
+        image_url = self.job_gpu["dependency_images"][0].get("container_image_url")
+        image_mappings = self.job_gpu["dependency_images"][0].get("container_mappings")
+        runtime_options = self.job_gpu["dependency_images"][0].get("runtime_options")
 
         # run test with GPU environment variable not defined
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options)
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options
+        )
 
         # assertions
-        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
+        self.assertTrue("gpus" not in docker_params[image_name]["runtime_options"])
 
         # run test with GPU environment variable defined as "0"
-        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag="0")
+        docker_params = self.get_docker_params_gpus(
+            image_name, image_url, image_mappings, runtime_options, gpu_flag="0"
+        )
 
         # assertions
-        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
+        self.assertTrue("gpus" not in docker_params[image_name]["runtime_options"])
