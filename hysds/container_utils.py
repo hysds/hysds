@@ -53,7 +53,7 @@ def copy_mount(path, mnt_dir):
     return os.path.join(mnt_dir, os.path.basename(path))
 
 
-def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir):
+def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir, runtime_options=None):
     """Build docker params."""
 
     # get dirs to mount
@@ -80,9 +80,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     }
 
     # add default image mappings
-    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
-                                     os.path.join(os.path.dirname(app.conf.__file__),
-                                                  "celeryconfig.py"))
+    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG', app.conf.__file__)
     if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(image_mappings.values()):
         image_mappings[celery_cfg_file] = "celeryconfig.py"
     dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
@@ -121,6 +119,17 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         if mnt_dir is not None:
             k = copy_mount(k, mnt_dir)
         params['volumes'].append((k, "%s:%s" % (mnt, mode)))
+
+    # add runtime resources
+    params['runtime_options'] = dict()
+    if runtime_options is None:
+        runtime_options = dict()
+    for k, v in list(runtime_options.items()):
+        # validate we have GPUs
+        if k == "gpus" and int(os.environ.get("GPU", 0)) == 0:
+            logger.warning("Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option.")
+            continue
+        params['runtime_options'][k] = v
 
     return params
 
@@ -211,6 +220,10 @@ def get_base_docker_cmd(params):
     # build command
     docker_cmd_base = ["docker", "run", "--init", "--rm", "-u",
                        "%s:%s" % (params['uid'], params['gid'])]
+
+    # add runtime options
+    for k, v in params['runtime_options'].items():
+        docker_cmd_base.extend(["--{}".format(k), v])
 
     # add volumes
     for k, v in params['volumes']:
