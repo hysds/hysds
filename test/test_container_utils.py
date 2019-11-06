@@ -98,7 +98,7 @@ class TestContainerUtils(unittest.TestCase):
         # get context
         if gpu_flag is not None:
             # mocked GPU set in os.environ
-            cm = umock.patch.dict("os.environ", {"GPU": gpu_flag})
+            cm = umock.patch.dict("os.environ", {"HYSDS_GPU_AVAILABLE": gpu_flag})
         else:
             # no GPU set in os.environ
             cm = nullcontext()

@@ -126,7 +126,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         runtime_options = dict()
     for k, v in list(runtime_options.items()):
         # validate we have GPUs
-        if k == "gpus" and int(os.environ.get("GPU", 0)) == 0:
+        if k == "gpus" and int(os.environ.get("HYSDS_GPU_AVAILABLE", 0)) == 0:
             logger.warning("Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option.")
             continue
         params['runtime_options'][k] = v
