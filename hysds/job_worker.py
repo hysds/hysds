@@ -941,6 +941,7 @@ def run_job(job, queue_when_finished=True):
         image_name = job.get('container_image_name', None)
         image_url = job.get('container_image_url', None)
         image_mappings = job.get('container_mappings', {})
+        runtime_options = job.get('runtime_options', {})
         if image_name is not None:
             image_info = ensure_image_loaded(
                 image_name, image_url, cache_dir_abs)
@@ -993,7 +994,8 @@ def run_job(job, queue_when_finished=True):
             # get docker params
             docker_params[image_name] = get_docker_params(image_name, image_url,
                                                           image_mappings, root_work_dir,
-                                                          job_dir)
+                                                          job_dir,
+                                                          runtime_options=runtime_options)
 
             # get command-line list
             cmdLineList = get_docker_cmd(
@@ -1006,7 +1008,8 @@ def run_job(job, queue_when_finished=True):
                 get_docker_params(dep_img['container_image_name'],
                                   dep_img['container_image_url'],
                                   dep_img['container_mappings'],
-                                  root_work_dir, job_dir)
+                                  root_work_dir, job_dir,
+                                  runtime_options=dep_img.get('runtime_options', {}))
 
         # dump docker params to file
         try:
