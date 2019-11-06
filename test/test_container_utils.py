@@ -53,7 +53,18 @@ class TestContainerUtils(unittest.TestCase):
                     "datasets.json"
                 ],
                 "env": []
-            }
+            },
+            "dependency_images": [
+                {
+                    "container_image_name": "dep_gpu_pge",
+                    "container_image_url": "s3://bucket/object_dep",
+                    "container_mappings": {
+                        "$HOME/.netrc": ["/home/ops/.netrc"],
+                        "$HOME/.aws": ["/home/ops/.aws", "ro"],
+                    },
+                    "runtime_options": {"gpus": "2"}
+                }
+            ]
         }
 
         # mock app.conf.get()
@@ -170,3 +181,40 @@ class TestContainerUtils(unittest.TestCase):
         # assertions
         self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
         self.assertTrue("--gpus all" not in cmd_line)
+
+    def test_dep_image_get_docker_params_gpus(self):
+        "Test dependency image docker params on GPU instance."
+
+        # get params for get_docker_params()
+        image_name = self.job_gpu['dependency_images'][0].get("container_image_name")
+        image_url = self.job_gpu['dependency_images'][0].get("container_image_url")
+        image_mappings = self.job_gpu['dependency_images'][0].get("container_mappings")
+        runtime_options = self.job_gpu['dependency_images'][0].get("runtime_options")
+        gpu_flag = "1"
+
+        # run test
+        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag)
+
+        # assertions
+        self.assertTrue(docker_params[image_name]['runtime_options']['gpus'] == "2")
+
+    def test_dep_image_get_docker_params_nogpus(self):
+        "Test  dependency image docker params on non-GPU instance."
+
+        # get params for get_docker_params()
+        image_name = self.job_gpu['dependency_images'][0].get("container_image_name")
+        image_url = self.job_gpu['dependency_images'][0].get("container_image_url")
+        image_mappings = self.job_gpu['dependency_images'][0].get("container_mappings")
+        runtime_options = self.job_gpu['dependency_images'][0].get("runtime_options")
+
+        # run test with GPU environment variable not defined
+        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options)
+
+        # assertions
+        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])
+
+        # run test with GPU environment variable defined as "0"
+        docker_params = self.get_docker_params_gpus(image_name, image_url, image_mappings, runtime_options, gpu_flag="0")
+
+        # assertions
+        self.assertTrue('gpus' not in docker_params[image_name]['runtime_options'])

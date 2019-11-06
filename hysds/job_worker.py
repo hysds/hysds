@@ -1008,7 +1008,8 @@ def run_job(job, queue_when_finished=True):
                 get_docker_params(dep_img['container_image_name'],
                                   dep_img['container_image_url'],
                                   dep_img['container_mappings'],
-                                  root_work_dir, job_dir)
+                                  root_work_dir, job_dir,
+                                  runtime_options=dep_img.get('runtime_options', {}))
 
         # dump docker params to file
         try:
