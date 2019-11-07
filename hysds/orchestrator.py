@@ -112,6 +112,9 @@ def submit_job(j):
     image_url = j.get('container_image_url', None)
     image_mapping = j.get('container_mappings', None)
 
+    # get container runtime options
+    runtime_options = j.get('runtime_options', None)
+
     # get hard/soft time limits
     time_limit = j.get('time_limit', None)
     soft_time_limit = j.get('soft_time_limit', None)
@@ -336,13 +339,15 @@ def submit_job(j):
                 job_json['job_id'] = get_job_id(jc['job_name'])
                 job_json['name'] = job_json['job_id']
 
-            # set container image name and url
+            # set container image name, url, mappings, and runtime options
             if image_name is not None:
                 job_json['container_image_name'] = image_name
             if image_url is not None:
                 job_json['container_image_url'] = image_url
             if image_mapping is not None:
                 job_json['container_mappings'] = image_mapping
+            if runtime_options is not None:
+                job_json['runtime_options'] = runtime_options
 
             # set priority
             job_json['priority'] = priority
