@@ -839,14 +839,18 @@ def run_job(job, queue_when_finished=True):
     container_image_url = work_cfgs[job['type']].get(
         'container_image_url', None)
     container_mappings = work_cfgs[job['type']].get('container_mappings', {})
+    runtime_options = work_cfgs[job['type']].get('runtime_options', {})
     if container_image_name is not None and container_image_url is not None:
         job['container_image_name'] = container_image_name
         job['container_image_url'] = container_image_url
         job['container_mappings'] = container_mappings
+        job['runtime_options'] = runtime_options
         logger.info("Setting image %s (%s) from worker configuration"
                     % (job['container_image_name'], job['container_image_url']))
         logger.info("Using container mappings: %s"
                     % json.dumps(job['container_mappings'], indent=2))
+        logger.info("Using runtime options: %s"
+                    % json.dumps(job['runtime_options'], indent=2))
 
     # set or overwrite dependency images
     dep_imgs = work_cfgs[job['type']].get('dependency_images', [])
@@ -864,6 +868,7 @@ def run_job(job, queue_when_finished=True):
         context['container_image_name'] = job.get('container_image_name', None)
         context['container_image_url'] = job.get('container_image_url', None)
         context['container_mappings'] = job.get('container_mappings', {})
+        context['runtime_options'] = job.get('runtime_options', {})
         context['_prov'] = {
             'wasGeneratedBy': "task_id:{}".format(job['task_id'])}
         context_file = os.path.join(job_dir, '_context.json')
