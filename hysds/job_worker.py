@@ -177,6 +177,18 @@ def find_pge_metrics(work_dir):
                 yield os.path.join(root, file)
 
 
+def find_usage_stats(work_dir):
+    """Search for _docker_stats.json files."""
+
+    stats_re = re.compile(r'_docker_stats\.json$')
+    for root, dirs, files in os.walk(work_dir, followlinks=True):
+        files.sort()
+        dirs.sort()
+        for file in files:
+            if stats_re.search(file):
+                yield os.path.join(root, file)
+
+
 def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.):
     """If free disk space is below percent threshold, start cleaning out old job
        and task directories and cached products."""
@@ -786,7 +798,8 @@ def run_job(job, queue_when_finished=True):
         'metrics': {
             'inputs_localized': [],
             'products_staged': [],
-            'job_dir_size': 0
+            'job_dir_size': 0,
+            'usage_stats': []
         }
     })
 
@@ -1280,6 +1293,19 @@ def run_job(job, queue_when_finished=True):
                            'short_error': get_short_error(error),
                            'traceback': traceback.format_exc(),
                            'celery_hostname': run_job.request.hostname}
+
+    # store usage stats
+    for usage_stats_file in find_usage_stats(job_dir):
+        usage_stats = {}
+        with open(usage_stats_file) as f:
+            try:
+                usage_stats = json.load(f)
+            except Exception as e:
+                tb = traceback.format_exc()
+                err = "Failed to load usage stats from %s: %s\n%s" % (
+                    usage_stats_file, str(e), tb)
+                raise RuntimeError(err)
+        job['job_info']['metrics']['usage_stats'].append(usage_stats)
 
     # close up job execution
     try:
