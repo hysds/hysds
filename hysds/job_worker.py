@@ -1305,7 +1305,8 @@ def run_job(job, queue_when_finished=True):
                 err = "Failed to load usage stats from %s: %s\n%s" % (
                     usage_stats_file, str(e), tb)
                 raise RuntimeError(err)
-        job['job_info']['metrics']['usage_stats'].append(usage_stats)
+        if len(usage_stats) > 0:
+            job['job_info']['metrics']['usage_stats'].append(usage_stats)
 
     # close up job execution
     try:
