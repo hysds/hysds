@@ -1,0 +1,148 @@
+{
+  "wall_time": 27292159803,
+  "user_cpu_time": 1040000000,
+  "sys_cpu_time": 110000000,
+  "cgroups": {
+    "cpu_stats": {
+      "cpu_usage": {
+        "total_usage": 1733692666,
+        "percpu_usage": [
+          66075804,
+          40672473,
+          237701950,
+          102206240,
+          57594810,
+          767519585,
+          461950259
+        ],
+        "usage_in_kernelmode": 240000000,
+        "usage_in_usermode": 1460000000
+      },
+      "throttling_data": {}
+    },
+    "memory_stats": {
+      "cache": 450560,
+      "usage": {
+        "usage": 12918784,
+        "max_usage": 51441664,
+        "failcnt": 0,
+        "limit": 9223372036854771712
+      },
+      "swap_usage": {
+        "usage": 12918784,
+        "max_usage": 51441664,
+        "failcnt": 0,
+        "limit": 9223372036854771712
+      },
+      "kernel_usage": {
+        "usage": 7131136,
+        "max_usage": 9216000,
+        "failcnt": 0,
+        "limit": 9223372036854771712
+      },
+      "kernel_tcp_usage": {
+        "failcnt": 0,
+        "limit": 9223372036854771712
+      },
+      "stats": {
+        "active_anon": 4689920,
+        "active_file": 28672,
+        "cache": 450560,
+        "dirty": 0,
+        "hierarchical_memory_limit": 9223372036854771712,
+        "hierarchical_memsw_limit": 9223372036854771712,
+        "inactive_anon": 208896,
+        "inactive_file": 212992,
+        "mapped_file": 208896,
+        "pgfault": 60518,
+        "pgmajfault": 0,
+        "pgpgin": 32750,
+        "pgpgout": 31471,
+        "rss": 4788224,
+        "rss_huge": 0,
+        "swap": 0,
+        "total_active_anon": 4689920,
+        "total_active_file": 28672,
+        "total_cache": 450560,
+        "total_dirty": 0,
+        "total_inactive_anon": 208896,
+        "total_inactive_file": 212992,
+        "total_mapped_file": 208896,
+        "total_pgfault": 60518,
+        "total_pgmajfault": 0,
+        "total_pgpgin": 32750,
+        "total_pgpgout": 31471,
+        "total_rss": 4788224,
+        "total_rss_huge": 0,
+        "total_swap": 0,
+        "total_unevictable": 0,
+        "total_writeback": 0,
+        "unevictable": 0,
+        "writeback": 0
+      }
+    },
+    "pids_stats": {
+      "current": 16
+    },
+    "blkio_stats": {
+      "io_service_bytes_recursive": [
+        {
+          "major": 8,
+          "op": "Read"
+        },
+        {
+          "major": 8,
+          "op": "Write",
+          "value": 65536
+        },
+        {
+          "major": 8,
+          "op": "Sync",
+          "value": 65536
+        },
+        {
+          "major": 8,
+          "op": "Async"
+        },
+        {
+          "major": 8,
+          "op": "Total",
+          "value": 65536
+        }
+      ],
+      "io_serviced_recursive": [
+        {
+          "major": 8,
+          "op": "Read"
+        },
+        {
+          "major": 8,
+          "op": "Write",
+          "value": 16
+        },
+        {
+          "major": 8,
+          "op": "Sync",
+          "value": 16
+        },
+        {
+          "major": 8,
+          "op": "Async"
+        },
+        {
+          "major": 8,
+          "op": "Total",
+          "value": 16
+        }
+      ]
+    },
+    "hugetlb_stats": {
+      "1GB": {
+        "failcnt": 0
+      },
+      "2MB": {
+        "failcnt": 0
+      }
+    }
+  }
+}
