@@ -70,7 +70,6 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
         "gid": os.getgid(),
         "working_dir": job_dir,
         "volumes": [
-            #("/sys/fs/cgroup", "/sys/fs/cgroup:ro"), # remove to enable docker stats
             ("/var/run/docker.sock", "/var/run/docker.sock"),
             (root_jobs_dir, root_jobs_dir),
             (root_tasks_dir, root_tasks_dir),
