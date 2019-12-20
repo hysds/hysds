@@ -20,6 +20,14 @@ import traceback
 import hysds
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
+from elasticsearch import Elasticsearch, ElasticsearchException
+
+from hysds_commons.elasticsearch_utils import get_es_scrolled_data
+
+GRQ_ES_URL = app.conf.GRQ_ES_URL
+DATASET_ALIAS = app.conf.DATASET_ALIAS
+USER_RULES_DATASET_INDEX = app.conf.USER_RULES_DATASET_INDEX
+JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE
 
 
 @backoff.on_exception(backoff.expo,
@@ -28,46 +36,45 @@ from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
                       max_value=backoff_max_value)
 def ensure_dataset_indexed(objectid, system_version, es_url, alias):
     """Ensure dataset is indexed."""
+    es = Elasticsearch([es_url])
 
     query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {'term': {'_id': objectid}},
-                    {'term': {'system_version.raw': system_version}}
-                ]
-            }
-        },
-        "fields": [],
+      "query": {
+        "bool": {
+          "must": [
+            {'term': {'_id': objectid}},
+            {'term': {'system_version.keyword': system_version}}
+          ]
+        }
+      }
     }
-    logger.info("ensure_dataset_indexed query: %s" %
-                json.dumps(query, indent=2))
-    if es_url.endswith('/'):
-        search_url = '%s%s/_search' % (es_url, alias)
-    else:
-        search_url = '%s/%s/_search' % (es_url, alias)
-    logger.info("ensure_dataset_indexed url: %s" % search_url)
-    r = requests.post(search_url, data=json.dumps(query))
-    logger.info("ensure_dataset_indexed status: %s" % r.status_code)
-    r.raise_for_status()
-    result = r.json()
-    logger.info("ensure_dataset_indexed result: %s" %
-                json.dumps(result, indent=2))
-    total = result['hits']['total']
-    if total == 0:
-        raise RuntimeError("Failed to find indexed dataset: {} ({})".format(
-            objectid, system_version))
+    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query, indent=2))
+
+    try:
+        data = es.count(index=alias, body=query)
+        count = data['count']
+
+        if count == 0:
+            error_message = "Failed to find indexed dataset: %s (%s)" % (objectid, system_version)
+            logger.error(error_message)
+            raise RuntimeError(error_message)
+        logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
+
+    except ElasticsearchException as e:
+        logger.error("Unable to execute query")
+        logger.error(e)
 
 
 def update_query(objectid, system_version, rule):
     """Update final query."""
+    # TODO: need to refactor this function because "filtered" has been changed in ES 7+
 
     # build query
     query = rule['query']
 
     # filters
     filts = [
-        {'term': {'system_version.raw': system_version}}
+        {'term': {'system_version.keyword': system_version}}
     ]
 
     # query all?
@@ -99,11 +106,9 @@ def update_query(objectid, system_version, rule):
     rule['query_string'] = json.dumps(final_query)
 
 
-def evaluate_user_rules_dataset(objectid, system_version,
-                                es_url=app.conf.GRQ_ES_URL,
-                                alias=app.conf.DATASET_ALIAS,
-                                user_rules_idx=app.conf.USER_RULES_DATASET_INDEX,
-                                job_queue=app.conf.JOBS_PROCESSED_QUEUE):
+def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, alias=DATASET_ALIAS,
+                                user_rules_idx=USER_RULES_DATASET_INDEX,
+                                job_queue=JOBS_PROCESSED_QUEUE):
     """Process all user rules in ES database and check if this objectid matches.
        If so, submit jobs. Otherwise do nothing."""
 
@@ -114,26 +119,17 @@ def evaluate_user_rules_dataset(objectid, system_version,
     ensure_dataset_indexed(objectid, system_version, es_url, alias)
 
     # get all enabled user rules
-    query = {"query": {"term": {"enabled": True}}}
-    r = requests.post('%s/%s/.percolator/_search?search_type=scan&scroll=10m&size=100' %
-                      (es_url, user_rules_idx), data=json.dumps(query))
-    r.raise_for_status()
-    scan_result = r.json()
-    count = scan_result['hits']['total']
-    scroll_id = scan_result['_scroll_id']
-    rules = []
-    while True:
-        r = requests.post('%s/_search/scroll?scroll=10m' %
-                          es_url, data=scroll_id)
-        res = r.json()
-        scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0:
-            break
-        for hit in res['hits']['hits']:
-            rules.append(hit['_source'])
-    logger.info("Got %d enabled rules to check." % len(rules))
+    query = {
+      "query": {
+        "term": {
+          "enabled": True
+        }
+      }
+    }
+    rules = get_es_scrolled_data(es_url, user_rules_idx, query)
 
     # process rules
+    es = Elasticsearch([es_url])  # ES connection
     for rule in rules:
         # sleep between queries
         time.sleep(1)
@@ -141,23 +137,19 @@ def evaluate_user_rules_dataset(objectid, system_version,
         # check for matching rules
         update_query(objectid, system_version, rule)
         final_qs = rule['query_string']
+        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
+
         try:
-            r = requests.post('%s/%s/_search' % (es_url, alias), data=final_qs)
-            r.raise_for_status()
-        except:
-            logger.error("Failed to query ES. Got status code %d:\n%s" %
-                         (r.status_code, traceback.format_exc()))
-            continue
-        result = r.json()
-        if result['hits']['total'] == 0:
-            logger.info("Rule '%s' didn't match for %s (%s)" %
-                        (rule['rule_name'], objectid, system_version))
-            continue
-        else:
+            result = es.search(index=alias, body=final_qs)
+            if result['hits']['total']['value'] == 0:
+                logger.info("Rule '%s' didn't match for %s (%s)" % (rule['rule_name'], objectid, system_version))
+                continue
             doc_res = result['hits']['hits'][0]
-        logger.info("Rule '%s' successfully matched for %s (%s)" %
-                    (rule['rule_name'], objectid, system_version))
-        #logger.info("doc_res: %s" % json.dumps(doc_res, indent=2))
+            logger.info("Rule '%s' successfully matched for %s (%s)" % (rule['rule_name'], objectid, system_version))
+        except ElasticsearchException as e:
+            logger.error("Failed to query ES")
+            logger.error(e)
+            continue
 
         # set clean descriptive job name
         job_type = rule['job_type']
@@ -169,7 +161,6 @@ def evaluate_user_rules_dataset(objectid, system_version,
         queue_dataset_trigger(doc_res, rule, es_url, job_name)
         logger.info("Trigger task submitted for %s (%s): %s" %
                     (objectid, system_version, rule['job_type']))
-
     return True
 
 
