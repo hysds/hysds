@@ -131,8 +131,7 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
     # process rules
     es = Elasticsearch([es_url])  # ES connection
     for rule in rules:
-        # sleep between queries
-        time.sleep(1)
+        time.sleep(1)  # sleep between queries
 
         # check for matching rules
         update_query(objectid, system_version, rule)
