@@ -67,43 +67,29 @@ def ensure_dataset_indexed(objectid, system_version, es_url, alias):
 
 def update_query(objectid, system_version, rule):
     """Update final query."""
-    # TODO: need to refactor this function because "filtered" has been changed in ES 7+
 
     # build query
-    query = rule['query']
+    updated_query = copy.deepcopy(rule['query'])
 
     # filters
     filts = [
         {'term': {'system_version.keyword': system_version}}
     ]
 
-    # query all?
+    # query all? (will add _id if False)
     if rule.get('query_all', False) is False:
-        filts.append({'ids':  {'values': [objectid]}})
+        filts.append({
+            "term": {
+                "_id": objectid
+            }
+        })
 
-    # build final query
-    if 'filtered' in query:
-        final_query = copy.deepcopy(query)
-        if 'and' in query['filtered']['filter']:
-            final_query['filtered']['filter']['and'].extend(filts)
-        else:
-            filts.append(final_query['filtered']['filter'])
-            final_query['filtered']['filter'] = {
-                'and': filts,
-            }
-    else:
-        final_query = {
-            'filtered': {
-                'query': query,
-                'filter': {
-                    'and': filts,
-                }
-            }
-        }
-    final_query = {"query": final_query}
-    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
-    rule['query'] = final_query
-    rule['query_string'] = json.dumps(final_query)
+    updated_query['bool']['filter'] = filts
+
+    updated_query = {"query": updated_query}
+    logger.info("Final query: %s" % json.dumps(updated_query, indent=2))
+    rule['query'] = updated_query
+    rule['query_string'] = json.dumps(updated_query)
 
 
 def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, alias=DATASET_ALIAS,
@@ -130,8 +116,11 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
 
     # process rules
     es = Elasticsearch([es_url])  # ES connection
-    for rule in rules:
+    for document in rules:
         time.sleep(1)  # sleep between queries
+
+        rule = document['_source']
+        logger.info("rule: %s" % json.dumps(rule, indent=2))
 
         # check for matching rules
         update_query(objectid, system_version, rule)
