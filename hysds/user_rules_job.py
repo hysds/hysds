@@ -14,6 +14,7 @@ import time
 import backoff
 import socket
 import traceback
+import copy
 
 import hysds
 from hysds.celery import app
@@ -201,7 +202,7 @@ def queue_job_trigger(doc_res, rule, es_url):
         'type': 'user_rules_trigger',
         'function': 'hysds_commons.job_utils.submit_mozart_job',
         'args': [doc_res, rule],
-        'kwargs': {'es_hysdsio_url': es_url},
+        'kwargs': {'es_hysdsio_url': es_url, 'hysdsio': '_doc'},
     }
     hysds.task_worker.run_task.apply_async((payload,),
                                            queue=app.conf.USER_RULES_TRIGGER_QUEUE)

@@ -66,7 +66,10 @@ def ensure_dataset_indexed(objectid, system_version, es_url, alias):
 
 
 def update_query(objectid, system_version, rule):
-    """Update final query."""
+    """
+    Update final query.
+    TLDR: takes the rule's query and adds system version and dataset's id to "filter" in "bool"
+    """
 
     # build query
     updated_query = copy.deepcopy(rule['query'])
