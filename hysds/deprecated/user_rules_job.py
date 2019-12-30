@@ -14,7 +14,6 @@ import time
 import backoff
 import socket
 import traceback
-import copy
 
 import hysds
 from hysds.celery import app

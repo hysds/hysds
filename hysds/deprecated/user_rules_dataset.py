@@ -10,11 +10,12 @@ import os
 import sys
 import json
 import requests
+import copy
 import time
+import types
 import backoff
 import socket
 import traceback
-import copy
 
 import hysds
 from hysds.celery import app
@@ -25,62 +26,53 @@ from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
                       Exception,
                       max_tries=backoff_max_tries,
                       max_value=backoff_max_value)
-def ensure_job_indexed(job_id, es_url, alias):
-    """Ensure job is indexed."""
+def ensure_dataset_indexed(objectid, system_version, es_url, alias):
+    """Ensure dataset is indexed."""
 
     query = {
         "query": {
             "bool": {
                 "must": [
-                    {'term': {'_id': job_id}}
+                    {'term': {'_id': objectid}},
+                    {'term': {'system_version.raw': system_version}}
                 ]
             }
         },
         "fields": [],
     }
-    logger.info("ensure_job_indexed query: %s" % json.dumps(query, indent=2))
+    logger.info("ensure_dataset_indexed query: %s" %
+                json.dumps(query, indent=2))
     if es_url.endswith('/'):
         search_url = '%s%s/_search' % (es_url, alias)
     else:
         search_url = '%s/%s/_search' % (es_url, alias)
-    logger.info("ensure_job_indexed url: %s" % search_url)
+    logger.info("ensure_dataset_indexed url: %s" % search_url)
     r = requests.post(search_url, data=json.dumps(query))
-    logger.info("ensure_job_indexed status: %s" % r.status_code)
+    logger.info("ensure_dataset_indexed status: %s" % r.status_code)
     r.raise_for_status()
     result = r.json()
-    logger.info("ensure_job_indexed result: %s" % json.dumps(result, indent=2))
+    logger.info("ensure_dataset_indexed result: %s" %
+                json.dumps(result, indent=2))
     total = result['hits']['total']
     if total == 0:
-        raise RuntimeError("Failed to find indexed job: {}".format(job_id))
+        raise RuntimeError("Failed to find indexed dataset: {} ({})".format(
+            objectid, system_version))
 
 
-def get_job(job_id, rule, result):
-    """Return generic json job configuration."""
-
-    priority = rule.get('priority', 0)
-    return {
-        "job_type": "job:%s" % rule['job_type'],
-        "priority": priority,
-        "payload": {
-            "job_id": job_id,
-            "rule": rule,
-            "rule_hit": result,
-        }
-    }
-
-
-def update_query(job_id, rule):
+def update_query(objectid, system_version, rule):
     """Update final query."""
 
     # build query
     query = rule['query']
 
     # filters
-    filts = []
+    filts = [
+        {'term': {'system_version.raw': system_version}}
+    ]
 
     # query all?
     if rule.get('query_all', False) is False:
-        filts.append({'ids':  {'values': [job_id]}})
+        filts.append({'ids':  {'values': [objectid]}})
 
     # build final query
     if 'filtered' in query:
@@ -107,18 +99,19 @@ def update_query(job_id, rule):
     rule['query_string'] = json.dumps(final_query)
 
 
-def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
-                            alias=app.conf.STATUS_ALIAS,
-                            user_rules_idx=app.conf.USER_RULES_JOB_INDEX,
-                            job_queue=app.conf.JOBS_PROCESSED_QUEUE):
-    """Process all user rules in ES database and check if this job ID matches.
+def evaluate_user_rules_dataset(objectid, system_version,
+                                es_url=app.conf.GRQ_ES_URL,
+                                alias=app.conf.DATASET_ALIAS,
+                                user_rules_idx=app.conf.USER_RULES_DATASET_INDEX,
+                                job_queue=app.conf.JOBS_PROCESSED_QUEUE):
+    """Process all user rules in ES database and check if this objectid matches.
        If so, submit jobs. Otherwise do nothing."""
 
-    # sleep 10 seconds to allow ES documents to be indexed
+    # sleep for 10 seconds; let any documents finish indexing in ES
     time.sleep(10)
 
-    # ensure job is indexed
-    ensure_job_indexed(job_id, es_url, alias)
+    # ensure dataset is indexed
+    ensure_dataset_indexed(objectid, system_version, es_url, alias)
 
     # get all enabled user rules
     query = {"query": {"term": {"enabled": True}}}
@@ -146,11 +139,10 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
         time.sleep(1)
 
         # check for matching rules
-        update_query(job_id, rule)
+        update_query(objectid, system_version, rule)
         final_qs = rule['query_string']
         try:
-            r = requests.post('%s/job_status-current/job/_search' %
-                              es_url, data=final_qs)
+            r = requests.post('%s/%s/_search' % (es_url, alias), data=final_qs)
             r.raise_for_status()
         except:
             logger.error("Failed to query ES. Got status code %d:\n%s" %
@@ -158,19 +150,25 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
             continue
         result = r.json()
         if result['hits']['total'] == 0:
-            logger.info("Rule '%s' didn't match for %s" %
-                        (rule['rule_name'], job_id))
+            logger.info("Rule '%s' didn't match for %s (%s)" %
+                        (rule['rule_name'], objectid, system_version))
             continue
         else:
             doc_res = result['hits']['hits'][0]
-        logger.info("Rule '%s' successfully matched for %s" %
-                    (rule['rule_name'], job_id))
+        logger.info("Rule '%s' successfully matched for %s (%s)" %
+                    (rule['rule_name'], objectid, system_version))
         #logger.info("doc_res: %s" % json.dumps(doc_res, indent=2))
 
+        # set clean descriptive job name
+        job_type = rule['job_type']
+        if job_type.startswith('hysds-io-'):
+            job_type = job_type.replace('hysds-io-', '', 1)
+        job_name = "%s-%s" % (job_type, objectid)
+
         # submit trigger task
-        queue_job_trigger(doc_res, rule, es_url)
-        logger.info("Trigger task submitted for %s: %s" %
-                    (job_id, rule['job_type']))
+        queue_dataset_trigger(doc_res, rule, es_url, job_name)
+        logger.info("Trigger task submitted for %s (%s): %s" %
+                    (objectid, system_version, rule['job_type']))
 
     return True
 
@@ -179,30 +177,30 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
                       socket.error,
                       max_tries=backoff_max_tries,
                       max_value=backoff_max_value)
-def queue_finished_job(id):
-    """Queue job id for user_rules_job evaluation."""
+def queue_dataset_evaluation(info):
+    """Queue dataset id for user_rules_dataset evaluation."""
 
     payload = {
-        'type': 'user_rules_job',
-        'function': 'hysds.user_rules_job.evaluate_user_rules_job',
-        'args': [id],
+        'type': 'user_rules_dataset',
+        'function': 'hysds.user_rules_dataset.evaluate_user_rules_dataset',
+        'args': [info['id'], info['system_version']],
     }
     hysds.task_worker.run_task.apply_async((payload,),
-                                           queue=app.conf.USER_RULES_JOB_QUEUE)
+                                           queue=app.conf.USER_RULES_DATASET_QUEUE)
 
 
 @backoff.on_exception(backoff.expo,
                       socket.error,
                       max_tries=backoff_max_tries,
                       max_value=backoff_max_value)
-def queue_job_trigger(doc_res, rule, es_url):
-    """Trigger job rule execution."""
+def queue_dataset_trigger(doc_res, rule, es_url, job_name):
+    """Trigger dataset rule execution."""
 
     payload = {
         'type': 'user_rules_trigger',
         'function': 'hysds_commons.job_utils.submit_mozart_job',
         'args': [doc_res, rule],
-        'kwargs': {'es_hysdsio_url': es_url},
+        'kwargs': {'es_hysdsio_url': es_url, 'job_name': job_name},
     }
     hysds.task_worker.run_task.apply_async((payload,),
                                            queue=app.conf.USER_RULES_TRIGGER_QUEUE)
