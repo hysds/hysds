@@ -14,7 +14,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'redis>=3.2.1', 'celery>=4.4.0rc3', 'requests>=2.20.0',
+        'redis>=3.2.1', 'celery>=4.4.0', 'requests>=2.20.0',
         'flower>=0.8.2', 'eventlet>=0.17.2', 'easywebdav>=1.2.0',
         'lxml>=3.4.0', 'httplib2>=0.9', 'gevent>=1.0.1', 
         'psutil>=2.1.3', 'filechunkio>=1.6.0', 'boto>=2.38.0',
