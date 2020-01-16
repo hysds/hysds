@@ -22,7 +22,7 @@ output {
       cluster => "{{ cluster_jobs }}"
       index => "job_status-current"
       document_id => "%{payload_id}"
-      document_type => "%{resource}"
+      document_type => "_doc"
       template => "{{ OPS_HOME }}/mozart/etc/job_status.template"
       template_name => "job_status"
       flush_size => 1
@@ -34,7 +34,7 @@ output {
       cluster => "{{ cluster_jobs }}"
       index => "worker_status-current"
       document_id => "%{celery_hostname}"
-      document_type => "%{resource}"
+      document_type => "_doc"
       template => "{{ OPS_HOME }}/mozart/etc/worker_status.template"
       template_name => "worker_status"
       flush_size => 1
@@ -46,7 +46,7 @@ output {
       cluster => "{{ cluster_jobs }}"
       index => "task_status-current"
       document_id => "%{uuid}"
-      document_type => "%{resource}"
+      document_type => "_doc"
       template => "{{ OPS_HOME }}/mozart/etc/task_status.template"
       template_name => "task_status"
       flush_size => 1
@@ -58,7 +58,7 @@ output {
       cluster => "{{ cluster_jobs }}"
       index => "event_status-current"
       document_id => "%{uuid}"
-      document_type => "%{resource}"
+      document_type => "_doc"
       template => "{{ OPS_HOME }}/mozart/etc/event_status.template"
       template_name => "event_status"
       flush_size => 1
