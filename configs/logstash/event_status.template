@@ -3,18 +3,21 @@
     "properties": {
       "resource": {
         "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
       },
       "type": {
         "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
       },
       "status": {
         "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
@@ -24,12 +27,14 @@
       },
       "hostname": {
         "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
       },
       "uuid": {
         "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
