@@ -60,7 +60,6 @@
       }
     }
   },
-  "template": "event_status*",
   "settings": {
     "index.refresh_interval": "5s",
     "analysis": {

@@ -106,7 +106,6 @@
       }
     }
   },
-  "template": "task_status*",
   "settings": {
     "analysis": {
       "analyzer": {
