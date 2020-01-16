@@ -641,15 +641,13 @@
         ]
       },
       "text_fields": {
-        "type": "text",
-        "copy_to": [
-          "text_fields"
-        ]
+        "type": "text"
       }
     }
   },
   "template": "job_status*",
   "settings": {
+    "index.refresh_interval": "5s",
     "analysis": {
       "analyzer": {
         "default": {
