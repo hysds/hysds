@@ -12,6 +12,30 @@ input {
   }
 }
 
+filter {
+  if [resource] in ["worker", "task"] {
+    mutate {
+      convert => {
+        "[event][timestamp]" => "string"
+        "[event][local_received]" => "string"
+      }
+
+      split => ["[event][timestamp]", "."]
+      split => ["[event][local_received]", "."]
+
+      add_field => [ "[event][timestamp_new]" , "%{[event][timestamp][0]}" ]
+      add_field => [ "[event][local_received_new]" , "%{[event][local_received][0]}" ]
+
+      remove_field => ["[event][timestamp]", "[event][local_received]"]
+    }
+
+    mutate {
+      rename => { "[event][timestamp_new]" => "timestamp" }
+      rename => { "[event][local_received_new]" => "local_received" }
+    }
+  }
+}
+
 output {
   #stdout { codec => rubydebug }
 
@@ -47,6 +71,5 @@ output {
       template => "{{ OPS_HOME }}/mozart/etc/event_status.template"
       template_name => "event_status"
     }
-  } else {
-  }
+  } else {}
 }
