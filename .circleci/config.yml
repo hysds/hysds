@@ -9,6 +9,7 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
+            pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             python setup.py test
 

@@ -654,8 +654,7 @@
             "lowercase",
             "word_delimiter"
           ],
-          "tokenizer": "keyword",
-          "ignore_above": 256
+          "tokenizer": "keyword"
         }
       }
     }
