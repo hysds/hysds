@@ -106,6 +106,9 @@
       }
     }
   },
+  "index_patterns": [
+    "worker_status*"
+  ],
   "settings": {
     "analysis": {
       "analyzer": {
