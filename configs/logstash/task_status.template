@@ -2,19 +2,22 @@
   "mappings": {
     "properties": {
       "resource": {
-        "type": "text",
+        "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
       },
       "type": {
-        "type": "text",
+        "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
       },
       "status": {
-        "type": "text",
+        "type": "keyword",
+        "ignore_above": 256,
         "copy_to": [
           "text_fields"
         ]
