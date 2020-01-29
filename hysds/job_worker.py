@@ -510,6 +510,7 @@ def run_job(job, queue_when_finished=True):
     workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
     try:
         makedirs(workers_dir_abs)
+        logger.info("****** made dir workers_dir_abs: %s" % workers_dir_abs)
     except Exception as e:
         error = str(e)
         job_status_json = {'uuid': job['task_id'],
@@ -699,6 +700,7 @@ def run_job(job, queue_when_finished=True):
     cache_dir_abs = os.path.join(root_work_dir, cache_dir)
     try:
         makedirs(cache_dir_abs)
+        logger.info("****** made dir cache_dir_abs:%s" % cache_dir_abs)
     except Exception as e:
         error = str(e)
         job_status_json = {'uuid': job['task_id'],
