@@ -1,61 +1,83 @@
 {
   "mappings": {
-    "event": {
-      "properties": {
-        "resource": {
-          "index": "not_analyzed", 
-          "type": "string"
-        }, 
-        "type": {
-          "index": "not_analyzed", 
-          "type": "string"
-        }, 
-        "status": {
-          "index": "not_analyzed", 
-          "type": "string"
-        }, 
-        "timestamp": {
-          "type": "date", 
-          "format": "YYYY-MM-dd HH:mm:ss,SSS"
-        }, 
-        "hostname": {
-          "index": "not_analyzed", 
-          "type": "string"
-        }, 
-        "uuid": {
-          "index": "not_analyzed", 
-          "type": "string"
-        }, 
-        "tags": {
-          "type": "multi_field",
-          "fields": {
-            "tags": { "type": "string", "index": "analyzed" },
-            "untouched": { "type": "string", "index": "not_analyzed" }
+    "properties": {
+      "resource": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "type": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "status": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "timestamp": {
+        "type": "date"
+      },
+      "hostname": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "uuid": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "tags": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
           }
         },
-        "event" : {
-          "type" : "object",
-          "enabled" : false
-        }
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "event": {
+        "type": "object",
+        "enabled": false
+      },
+      "text_fields": {
+        "type": "text"
       }
     }
-  }, 
-  "template": "event_status*",
+  },
+  "index_patterns": [
+    "event_status*"
+  ],
   "settings": {
+    "index.refresh_interval": "5s",
     "analysis": {
       "analyzer": {
         "default": {
           "filter": [
-            "standard", 
-            "lowercase", 
+            "lowercase",
             "word_delimiter"
-          ], 
+          ],
           "tokenizer": "keyword"
         }
       }
     }
   },
-  "aliases" : {
-    "job_status" : {}
+  "aliases": {
+    "job_status": {}
   }
 }
