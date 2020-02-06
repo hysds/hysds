@@ -359,11 +359,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
                         "bool": {
                             "should": [{
                                 "terms": {
-                                    "status": [
-                                        "job-queued",
-                                        "job-started",
-                                        "job-completed"
-                                    ]
+                                    "status": states  # should be an list
                                 }
                             }]
                         }
@@ -372,7 +368,6 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
             }
         }
     }
-    logger.info("constructed query: %s" % json.dumps(query, indent=2))
 
     if filter_id is not None:
         query['query']['bool']['must_not'] = {
@@ -381,6 +376,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
             }
         }
 
+    logger.info("constructed query: %s" % json.dumps(query, indent=2))
     es_url = "%s/job_status-current/_search" % app.conf['JOBS_ES_URL']
 
     headers = {'Content-Type': 'application/json'}
