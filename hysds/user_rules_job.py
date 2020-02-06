@@ -6,19 +6,24 @@ from __future__ import absolute_import
 
 from future import standard_library
 standard_library.install_aliases()
-import os
-import sys
 import json
-import requests
 import time
 import backoff
 import socket
-import traceback
-import copy
 
 import hysds
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
+
+from elasticsearch import ElasticsearchException
+from hysds_commons.elasticsearch_utils import ElasticsearchUtility
+
+JOBS_ES_URL = app.conf.JOBS_ES_URL
+STATUS_ALIAS = app.conf.STATUS_ALIAS
+USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
+JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE
+USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
+USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
 
 
 @backoff.on_exception(backoff.expo,
@@ -27,6 +32,7 @@ from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
                       max_value=backoff_max_value)
 def ensure_job_indexed(job_id, es_url, alias):
     """Ensure job is indexed."""
+    es = ElasticsearchUtility(es_url, logger)
 
     query = {
         "query": {
@@ -35,22 +41,13 @@ def ensure_job_indexed(job_id, es_url, alias):
                     {'term': {'_id': job_id}}
                 ]
             }
-        },
-        "fields": [],
+        }
     }
     logger.info("ensure_job_indexed query: %s" % json.dumps(query, indent=2))
-    if es_url.endswith('/'):
-        search_url = '%s%s/_search' % (es_url, alias)
-    else:
-        search_url = '%s/%s/_search' % (es_url, alias)
-    logger.info("ensure_job_indexed url: %s" % search_url)
-    r = requests.post(search_url, data=json.dumps(query))
-    logger.info("ensure_job_indexed status: %s" % r.status_code)
-    r.raise_for_status()
-    result = r.json()
-    logger.info("ensure_job_indexed result: %s" % json.dumps(result, indent=2))
-    total = result['hits']['total']
+
+    total = es.get_count(alias, query)
     if total == 0:
+        # TODO: should we use sys.exit(1) instead?
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
@@ -70,47 +67,32 @@ def get_job(job_id, rule, result):
 
 
 def update_query(job_id, rule):
-    """Update final query."""
+    """
+    Update final query.
+    TLDR: takes the rule's query and adds system version and job's id to "filter" in "bool"
+    """
+    query = rule['query']  # build query
 
-    # build query
-    query = rule['query']
-
-    # filters
-    filts = []
+    filts = []  # filters
 
     # query all?
     if rule.get('query_all', False) is False:
-        filts.append({'ids':  {'values': [job_id]}})
-
-    # build final query
-    if 'filtered' in query:
-        final_query = copy.deepcopy(query)
-        if 'and' in query['filtered']['filter']:
-            final_query['filtered']['filter']['and'].extend(filts)
-        else:
-            filts.append(final_query['filtered']['filter'])
-            final_query['filtered']['filter'] = {
-                'and': filts,
+        filts.append({
+            "term": {
+                "_id": job_id
             }
-    else:
-        final_query = {
-            'filtered': {
-                'query': query,
-                'filter': {
-                    'and': filts,
-                }
-            }
-        }
-    final_query = {"query": final_query}
-    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
-    rule['query'] = final_query
-    rule['query_string'] = json.dumps(final_query)
+        })
+
+    query['bool']['filter'] = filts
+    query = {"query": query}
+
+    logger.info("Final query: %s" % json.dumps(query, indent=2))
+    rule['query'] = query
+    rule['query_string'] = json.dumps(query)
 
 
-def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
-                            alias=app.conf.STATUS_ALIAS,
-                            user_rules_idx=app.conf.USER_RULES_JOB_INDEX,
-                            job_queue=app.conf.JOBS_PROCESSED_QUEUE):
+def evaluate_user_rules_job(job_id, es_url=JOBS_ES_URL, alias=STATUS_ALIAS, user_rules_idx=USER_RULES_JOB_INDEX,
+                            job_queue=JOBS_PROCESSED_QUEUE):
     """Process all user rules in ES database and check if this job ID matches.
        If so, submit jobs. Otherwise do nothing."""
 
@@ -120,58 +102,45 @@ def evaluate_user_rules_job(job_id, es_url=app.conf.JOBS_ES_URL,
     # ensure job is indexed
     ensure_job_indexed(job_id, es_url, alias)
 
+    es_util = ElasticsearchUtility(es_url, logger)
+
     # get all enabled user rules
-    query = {"query": {"term": {"enabled": True}}}
-    r = requests.post('%s/%s/.percolator/_search?search_type=scan&scroll=10m&size=100' %
-                      (es_url, user_rules_idx), data=json.dumps(query))
-    r.raise_for_status()
-    scan_result = r.json()
-    count = scan_result['hits']['total']
-    scroll_id = scan_result['_scroll_id']
-    rules = []
-    while True:
-        r = requests.post('%s/_search/scroll?scroll=10m' %
-                          es_url, data=scroll_id)
-        res = r.json()
-        scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0:
-            break
-        for hit in res['hits']['hits']:
-            rules.append(hit['_source'])
-    logger.info("Got %d enabled rules to check." % len(rules))
+    query = {
+        "query": {
+            "term": {"enabled": True}
+        }
+    }
+
+    rules = es_util.query(user_rules_idx, query)
+    logger.info("Total %d enabled rules to check." % len(rules))
 
     # process rules
     for rule in rules:
-        # sleep between queries
-        time.sleep(1)
+        logger.info('rule: %s' % json.dumps(rule, indent=2))
+        rule = rule['_source']  # extracting _source from the rule itself
+
+        time.sleep(1)  # sleep between queries
 
         # check for matching rules
         update_query(job_id, rule)
         final_qs = rule['query_string']
+
         try:
-            r = requests.post('%s/job_status-current/job/_search' %
-                              es_url, data=final_qs)
-            r.raise_for_status()
-        except:
-            logger.error("Failed to query ES. Got status code %d:\n%s" %
-                         (r.status_code, traceback.format_exc()))
+            result = es_util.es.search(index=alias, body=final_qs)
+            if result['hits']['total']['value'] == 0:
+                logger.info("Rule '%s' didn't match for %s" % (rule['rule_name'], job_id))
+                continue
+        except ElasticsearchException as e:
+            logger.error("Failed to query ES")
+            logger.error(e)
             continue
-        result = r.json()
-        if result['hits']['total'] == 0:
-            logger.info("Rule '%s' didn't match for %s" %
-                        (rule['rule_name'], job_id))
-            continue
-        else:
-            doc_res = result['hits']['hits'][0]
-        logger.info("Rule '%s' successfully matched for %s" %
-                    (rule['rule_name'], job_id))
-        #logger.info("doc_res: %s" % json.dumps(doc_res, indent=2))
+
+        doc_res = result['hits']['hits'][0]
+        logger.info("Rule '%s' successfully matched for %s" % (rule['rule_name'], job_id))
 
         # submit trigger task
         queue_job_trigger(doc_res, rule, es_url)
-        logger.info("Trigger task submitted for %s: %s" %
-                    (job_id, rule['job_type']))
-
+        logger.info("Trigger task submitted for %s: %s" % (job_id, rule['job_type']))
     return True
 
 
@@ -187,8 +156,7 @@ def queue_finished_job(id):
         'function': 'hysds.user_rules_job.evaluate_user_rules_job',
         'args': [id],
     }
-    hysds.task_worker.run_task.apply_async((payload,),
-                                           queue=app.conf.USER_RULES_JOB_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 
 
 @backoff.on_exception(backoff.expo,
@@ -204,5 +172,4 @@ def queue_job_trigger(doc_res, rule, es_url):
         'args': [doc_res, rule],
         'kwargs': {'es_hysdsio_url': es_url},
     }
-    hysds.task_worker.run_task.apply_async((payload,),
-                                           queue=app.conf.USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
