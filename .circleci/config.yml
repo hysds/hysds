@@ -10,7 +10,11 @@ jobs:
           command: |
             source $HOME/.bash_profile
             pip install -e .
-            if [ "{{ .Branch }}" == develop-es7 ]; then
+
+            echo $(pwd)
+            ls -l
+
+            if [ "{{ .Branch }}" == "develop-es7" ]; then
               git clone --single-branch -b develop-es7 https://github.com/hysds/hysds_commons.git
               cd hysds_commons
               pip install -e .
