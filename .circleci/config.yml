@@ -15,7 +15,6 @@ jobs:
               pip install -e .
               cd ..
             fi
-            cd $HOME
             pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest test
