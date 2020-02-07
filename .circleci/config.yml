@@ -11,8 +11,12 @@ jobs:
             source $HOME/.bash_profile
             pip install -e .
 
+            echo ""
             echo $(pwd)
             echo $(ls)
+            echo "${{ .Branch }}"
+            echo ""
+
 
             if [ "{{ .Branch }}" == "develop-es7" ]; then
               echo "branch is develop-es7, modifying hysds_commons!!!"
