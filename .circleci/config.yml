@@ -14,7 +14,7 @@ jobs:
             echo ""
             echo $(pwd)
             echo $(ls)
-            echo "${{ .Branch }}"
+            echo {{ .Branch }}
             echo ""
 
 
