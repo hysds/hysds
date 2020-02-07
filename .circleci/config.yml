@@ -9,9 +9,8 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
-            echo "{{ .Branch }}"
             pip install -e .
-            if [ "{{ .Branch }}" == "develop-es7" ]; then
+            if [ "{{ .Branch }}" == develop-es7 ]; then
               git clone --single-branch -b develop-es7 https://github.com/hysds/hysds_commons.git
               cd hysds_commons
               pip install -e .
