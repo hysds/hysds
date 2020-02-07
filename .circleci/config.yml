@@ -18,7 +18,7 @@ jobs:
             echo ""
 
 
-            if [ "{{ .Branch }}" == "HC-159_user-rules" ]; then
+            if [ "${CIRCLE_BRANCH}" == "HC-159_user-rules" ]; then
               echo "branch is develop-es7, modifying hysds_commons!!!"
               cd /home/ops/verdi/ops/hysds_commons-0.2.4
               git checkout develop-es7
