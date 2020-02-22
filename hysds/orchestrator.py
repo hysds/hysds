@@ -402,6 +402,7 @@ def submit_job(j):
     return results
 
 
+# TODO: need to refactor all code here to use consolidated hysds_ios indices in mozart ES
 @backoff.on_exception(backoff.expo,
                       socket.error,
                       max_tries=backoff_max_tries,

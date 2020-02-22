@@ -130,6 +130,9 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
             job_type = job_type.replace('hysds-io-', '', 1)
         job_name = "%s-%s" % (job_type, objectid)
 
+        # TODO: remove es_url from queue_dataset_trigger?
+        # TODO: need to look at this since both hysds_ios indices are in Mozart now
+        # TODO: maybe pass the component name (mozart vs. grq)?
         # submit trigger task
         queue_dataset_trigger(doc_res, rule, es_url, job_name)
         logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
