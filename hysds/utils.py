@@ -335,8 +335,7 @@ def get_payload_hash(payload):
                                   ensure_ascii=True).encode()).hexdigest()
 
 
-@backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
-                      max_tries=8, max_value=32)
+@backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32)
 def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
     Return job IDs with matching dedup key defined in states
@@ -351,51 +350,53 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     query = {
         "sort": [{"job.job_info.time_queued": {"order": "asc"}}],
         "size": 1,
-        "fields": ["_id", "status"],
+        "_source": ["_id", "status"],
         "query": {
-            "filtered": {
-                "filter": {
-                    "bool": {
-                        "must": {
-                            "term": {
-                                "payload_hash": dedup_key
-                            }
+            "bool": {
+                "must": [
+                    {"term": {"payload_hash": dedup_key}},
+                    {
+                        "bool": {
+                            "should": [{
+                                "terms": {
+                                    "status": states  # should be an list
+                                }
+                            }]
                         }
                     }
-                }
+                ]
             }
         }
     }
-    for state in states:
-        query['query']['filtered']['filter']['bool'].setdefault('should', []).append({
-            "term": {
-                "status": state
-            }
-        })
+
     if filter_id is not None:
-        query['query']['filtered']['filter']['bool']['must_not'] = {
+        query['query']['bool']['must_not'] = {
             "term": {
                 "uuid": filter_id
             }
         }
+
+    logger.info("constructed query: %s" % json.dumps(query, indent=2))
     es_url = "%s/job_status-current/_search" % app.conf['JOBS_ES_URL']
-    r = requests.post(es_url, data=json.dumps(query))
+
+    headers = {'Content-Type': 'application/json'}
+    r = requests.post(es_url, data=json.dumps(query), headers=headers)
     if r.status_code != 200:
         if r.status_code == 404:
             pass
         else:
             r.raise_for_status()
-    hits = []
     j = r.json()
-    if j.get('hits', {}).get('total', 0) == 0:
+    if j['hits']['total']['value'] == 0:
         return None
     else:
         hit = j['hits']['hits'][0]
-        logger.info("Found duplicate job: %s" %
-                    json.dumps(hit, indent=2, sort_keys=True))
-        return {'_id': hit['_id'],
-                'status': hit['fields']['status'][0],
-                'query_timestamp': datetime.utcnow().isoformat()}
+        logger.info("Found duplicate job: %s" % json.dumps(hit, indent=2, sort_keys=True))
+        return {
+            '_id': hit['_id'],
+            'status': hit['_source']['status'][0],
+            'query_timestamp': datetime.utcnow().isoformat()
+        }
 
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException,

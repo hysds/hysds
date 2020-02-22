@@ -70,9 +70,7 @@ def update_query(objectid, system_version, rule):
     Update final query.
     TLDR: takes the rule's query and adds system version and dataset's id to "filter" in "bool"
     """
-
-    # build query
-    updated_query = copy.deepcopy(rule['query'])
+    updated_query = copy.deepcopy(rule['query'])  # build query
 
     # filters
     filts = [
@@ -88,16 +86,15 @@ def update_query(objectid, system_version, rule):
         })
 
     updated_query['bool']['filter'] = filts
-
     updated_query = {"query": updated_query}
+
     logger.info("Final query: %s" % json.dumps(updated_query, indent=2))
     rule['query'] = updated_query
     rule['query_string'] = json.dumps(updated_query)
 
 
 def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, alias=DATASET_ALIAS,
-                                user_rules_idx=USER_RULES_DATASET_INDEX,
-                                job_queue=JOBS_PROCESSED_QUEUE):
+                                user_rules_idx=USER_RULES_DATASET_INDEX, job_queue=JOBS_PROCESSED_QUEUE):
     """Process all user rules in ES database and check if this objectid matches.
        If so, submit jobs. Otherwise do nothing."""
 
@@ -150,8 +147,7 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
 
         # submit trigger task
         queue_dataset_trigger(doc_res, rule, es_url, job_name)
-        logger.info("Trigger task submitted for %s (%s): %s" %
-                    (objectid, system_version, rule['job_type']))
+        logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, rule['job_type']))
     return True
 
 
