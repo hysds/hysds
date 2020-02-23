@@ -42,7 +42,7 @@ def ensure_dataset_indexed(objectid, system_version, alias):
     logger.info("ensure_dataset_indexed query: %s" % json.dumps(query, indent=2))
 
     try:
-        count = mozart_es.get_count(alias, query)
+        count = grq_es.get_count(alias, query)
         if count == 0:
             error_message = "Failed to find indexed dataset: %s (%s)" % (objectid, system_version)
             logger.error(error_message)
@@ -82,10 +82,11 @@ def update_query(objectid, system_version, rule):
     rule['query_string'] = json.dumps(updated_query)
 
 
-def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, alias=DATASET_ALIAS,
-                                job_queue=JOBS_PROCESSED_QUEUE):
-    """Process all user rules in ES database and check if this objectid matches.
-       If so, submit jobs. Otherwise do nothing."""
+def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, job_queue=JOBS_PROCESSED_QUEUE):
+    """
+    Process all user rules in ES database and check if this objectid matches.
+    If so, submit jobs. Otherwise do nothing.
+    """
 
     time.sleep(10)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
@@ -107,11 +108,11 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
         logger.info("rule: %s" % json.dumps(rule, indent=2))
 
         update_query(objectid, system_version, rule)
-        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
-        final_qs = rule['query_string']
         rule_name = rule['rule_name']
         job_type = rule['job_type']  # set clean descriptive job name
+        final_qs = rule['query_string']
+        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
         # check for matching rules
         try:
@@ -130,11 +131,7 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
             job_type = job_type.replace('hysds-io-', '', 1)
         job_name = "%s-%s" % (job_type, objectid)
 
-        # TODO: remove es_url from queue_dataset_trigger?
-        # TODO: need to look at this since both hysds_ios indices are in Mozart now
-        # TODO: maybe pass the component name (mozart vs. grq)?
-        # submit trigger task
-        queue_dataset_trigger(doc_res, rule, es_url, job_name)
+        queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
         logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
     return True
 
@@ -142,7 +139,6 @@ def evaluate_user_rules_dataset(objectid, system_version, es_url=GRQ_ES_URL, ali
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
 def queue_dataset_evaluation(info):
     """Queue dataset id for user_rules_dataset evaluation."""
-
     payload = {
         'type': 'user_rules_dataset',
         'function': 'hysds.user_rules_dataset.evaluate_user_rules_dataset',
@@ -152,13 +148,12 @@ def queue_dataset_evaluation(info):
 
 
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
-def queue_dataset_trigger(doc_res, rule, es_url, job_name):
+def queue_dataset_trigger(doc_res, rule, job_name):
     """Trigger dataset rule execution."""
-
     payload = {
         'type': 'user_rules_trigger',
         'function': 'hysds_commons.job_utils.submit_mozart_job',
         'args': [doc_res, rule],
-        'kwargs': {'es_hysdsio_url': es_url, 'job_name': job_name},
+        'kwargs': {'job_name': job_name, 'component': 'grq'},
     }
     task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)

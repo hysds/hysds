@@ -39,7 +39,6 @@ def ensure_job_indexed(job_id, alias):
 
     total = mozart_es.get_count(alias, query)
     if total == 0:
-        # TODO: should we use sys.exit(1) instead?
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
@@ -81,7 +80,7 @@ def update_query(job_id, rule):
     rule['query_string'] = json.dumps(query)
 
 
-def evaluate_user_rules_job(job_id, es_url=JOBS_ES_URL, alias=STATUS_ALIAS, user_rules_idx=USER_RULES_JOB_INDEX):
+def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     """Process all user rules in ES database and check if this job ID matches.
        If so, submit jobs. Otherwise do nothing."""
 
@@ -95,7 +94,7 @@ def evaluate_user_rules_job(job_id, es_url=JOBS_ES_URL, alias=STATUS_ALIAS, user
         }
     }
 
-    rules = mozart_es.query(user_rules_idx, query)
+    rules = mozart_es.query(USER_RULES_JOB_INDEX, query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for rule in rules:
@@ -121,7 +120,7 @@ def evaluate_user_rules_job(job_id, es_url=JOBS_ES_URL, alias=STATUS_ALIAS, user
         logger.info("Rule '%s' successfully matched for %s" % (rule['rule_name'], job_id))
 
         # submit trigger task
-        queue_job_trigger(doc_res, rule, es_url)
+        queue_job_trigger(doc_res, rule)
         logger.info("Trigger task submitted for %s: %s" % (job_id, rule['job_type']))
     return True
 
@@ -129,7 +128,6 @@ def evaluate_user_rules_job(job_id, es_url=JOBS_ES_URL, alias=STATUS_ALIAS, user
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
 def queue_finished_job(id):
     """Queue job id for user_rules_job evaluation."""
-
     payload = {
         'type': 'user_rules_job',
         'function': 'hysds.user_rules_job.evaluate_user_rules_job',
@@ -139,13 +137,12 @@ def queue_finished_job(id):
 
 
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
-def queue_job_trigger(doc_res, rule, es_url):
+def queue_job_trigger(doc_res, rule):
     """Trigger job rule execution."""
-
     payload = {
         'type': 'user_rules_trigger',
         'function': 'hysds_commons.job_utils.submit_mozart_job',
         'args': [doc_res, rule],
-        'kwargs': {'es_hysdsio_url': es_url},
+        'kwargs': {'component': 'mozart'},
     }
     task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
