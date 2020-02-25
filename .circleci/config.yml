@@ -8,6 +8,8 @@ jobs:
       - run:
           name: Test
           command: |
+            source $HOME/.bash_profile
+            
             echo ""
             echo $(pwd)
             echo $(ls)
@@ -22,7 +24,6 @@ jobs:
               cd ..
             fi
 
-            source $HOME/.bash_profile
             pip install -e .
 
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
