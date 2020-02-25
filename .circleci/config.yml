@@ -8,15 +8,11 @@ jobs:
       - run:
           name: Test
           command: |
-            source $HOME/.bash_profile
-            pip install -e .
-
             echo ""
             echo $(pwd)
             echo $(ls)
             echo ${CIRCLE_BRANCH}
             echo ""
-
 
             if [ "${CIRCLE_BRANCH}" == "HC-163_container_builder" ]; then
               echo "branch is ${CIRCLE_BRANCH}, modifying hysds_commons!!!"
@@ -25,6 +21,10 @@ jobs:
               pip install -e .
               cd ..
             fi
+
+            source $HOME/.bash_profile
+            pip install -e .
+
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest test
 
