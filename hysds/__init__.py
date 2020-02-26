@@ -6,7 +6,10 @@ from __future__ import absolute_import
 from hysds.celery import app
 from hysds.log_utils import logger
 
-from hysds_commons.elasticsearch_utils import ElasticsearchUtility
+try:
+    from hysds_commons.elasticsearch_utils import ElasticsearchUtility
+except ImportError:
+    raise ImportError('Cannot import hysds_commons.elasticsearch_utils')
 
 __version__ = "0.4.0"
 __url__ = "https://github.com/hysds/hysds"
