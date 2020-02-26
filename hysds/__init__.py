@@ -9,7 +9,7 @@ from hysds.log_utils import logger
 try:
     from hysds_commons.elasticsearch_utils import ElasticsearchUtility
 except (ImportError, ModuleNotFoundError):
-    logger('Cannot import hysds_commons.elasticsearch_utils')
+    logger.error('Cannot import hysds_commons.elasticsearch_utils')
 
 __version__ = "0.4.0"
 __url__ = "https://github.com/hysds/hysds"
