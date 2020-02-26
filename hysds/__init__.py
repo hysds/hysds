@@ -12,5 +12,19 @@ __version__ = "0.4.0"
 __url__ = "https://github.com/hysds/hysds"
 __description__ = "HySDS (Hybrid Cloud Science Data System)"
 
-mozart_es = ElasticsearchUtility(app.conf.JOBS_ES_URL, logger)
-grq_es = ElasticsearchUtility(app.conf.GRQ_ES_URL, logger)
+MOZART_ES = None
+GRQ_ES = None
+
+
+def get_mozart_es():
+    global MOZART_ES
+    if MOZART_ES is None:
+        MOZART_ES = ElasticsearchUtility(app.conf.JOBS_ES_URL, logger)
+    return MOZART_ES
+
+
+def get_grq_es():
+    global GRQ_ES
+    if GRQ_ES is None:
+        GRQ_ES = ElasticsearchUtility(app.conf.JOBS_ES_URL, logger)
+    return GRQ_ES

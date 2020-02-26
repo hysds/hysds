@@ -12,7 +12,7 @@ import socket
 
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-from hysds import mozart_es, task_worker
+from hysds import get_mozart_es, task_worker
 
 from elasticsearch import ElasticsearchException
 
@@ -23,6 +23,8 @@ USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
 JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
 USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
+
+mozart_es = get_mozart_es()
 
 
 @backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
