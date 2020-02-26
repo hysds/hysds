@@ -25,5 +25,5 @@ def get_mozart_es():
 def get_grq_es():
     global GRQ_ES
     if GRQ_ES is None:
-        GRQ_ES = ElasticsearchUtility(app.conf.JOBS_ES_URL, logger)
+        GRQ_ES = ElasticsearchUtility(app.conf.GRQ_ES_URL, logger)
     return GRQ_ES
