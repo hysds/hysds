@@ -12,7 +12,8 @@ import socket
 
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-from hysds import get_mozart_es, task_worker
+from hysds import task_worker
+from hysds.es_util import get_mozart_es
 
 from elasticsearch import ElasticsearchException
 
