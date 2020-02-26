@@ -13,7 +13,7 @@ import socket
 
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-from hysds import task_worker
+import hysds
 from hysds.es_util import get_mozart_es, get_grq_es
 
 from elasticsearch import ElasticsearchException
@@ -148,7 +148,7 @@ def queue_dataset_evaluation(info):
         'function': 'hysds.user_rules_dataset.evaluate_user_rules_dataset',
         'args': [info['id'], info['system_version']],
     }
-    task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)
 
 
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
@@ -160,4 +160,4 @@ def queue_dataset_trigger(doc_res, rule, job_name):
         'args': [doc_res, rule],
         'kwargs': {'job_name': job_name, 'component': 'grq'},
     }
-    task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)

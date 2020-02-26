@@ -12,7 +12,7 @@ import socket
 
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-from hysds import task_worker
+import hysds
 from hysds.es_util import get_mozart_es
 
 from elasticsearch import ElasticsearchException
@@ -136,7 +136,7 @@ def queue_finished_job(id):
         'function': 'hysds.user_rules_job.evaluate_user_rules_job',
         'args': [id],
     }
-    task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 
 
 @backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
@@ -148,4 +148,4 @@ def queue_job_trigger(doc_res, rule):
         'args': [doc_res, rule],
         'kwargs': {'component': 'mozart'},
     }
-    task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
