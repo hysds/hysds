@@ -2,12 +2,11 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
-
-
 from builtins import open
 from builtins import super
 from future import standard_library
 standard_library.install_aliases()
+
 import os
 import sys
 import re
@@ -26,11 +25,9 @@ from inspect import getargspec
 from celery import uuid
 
 from hysds.celery import app
-from hysds.log_utils import (logger, log_job_status, backoff_max_tries,
-                             backoff_max_value, ensure_hard_time_limit_gap)
+from hysds.log_utils import (logger, log_job_status, backoff_max_tries, backoff_max_value, ensure_hard_time_limit_gap)
 from hysds.job_worker import run_job
-from hysds.utils import (error_handler, get_short_error, get_payload_hash,
-                         query_dedup_job)
+from hysds.utils import (error_handler, get_short_error, get_payload_hash, query_dedup_job)
 from hysds.user_rules_dataset import queue_dataset_evaluation
 
 
@@ -402,10 +399,7 @@ def submit_job(j):
     return results
 
 
-@backoff.on_exception(backoff.expo,
-                      socket.error,
-                      max_tries=backoff_max_tries,
-                      max_value=backoff_max_value)
+@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
 def do_submit_job(job_json, job_queue):
     """Submit job wrapper with exponential backoff and full jitter."""
 
