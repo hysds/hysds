@@ -10,9 +10,9 @@ import time
 import backoff
 import socket
 
+import hysds
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-import hysds
 from hysds.es_util import get_mozart_es
 
 from elasticsearch import ElasticsearchException
