@@ -432,7 +432,8 @@ def check_dataset(id, es_index="grq"):
         search_url = '%s%s/_search' % (es_url, es_index)
     else:
         search_url = '%s/%s/_search' % (es_url, es_index)
-    r = requests.post(search_url, data=json.dumps(query))
+    headers = {'Content-Type': 'application/json'}
+    r = requests.post(search_url, data=json.dumps(query), headers=headers)
     if r.status_code == 200:
         result = r.json()
         total = result['hits']['total']
