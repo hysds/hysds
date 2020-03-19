@@ -387,6 +387,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
         else:
             r.raise_for_status()
     j = r.json()
+    logger.info("result: %s" % r.text)
     if j['hits']['total']['value'] == 0:
         return None
     else:
