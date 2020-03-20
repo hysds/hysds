@@ -413,8 +413,7 @@ def get_job_status(id):
     return result['fields']['status'][0] if result['found'] else None
 
 
-@backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
-                      max_tries=8, max_value=32)
+@backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32)
 def check_dataset(id, es_index="grq"):
     """Query for dataset with specified input ID."""
 
@@ -425,28 +424,27 @@ def check_dataset(id, es_index="grq"):
                     {"term": {"_id": id}},
                 ]
             }
-        },
-        "fields": [],
+        }
     }
     es_url = app.conf['GRQ_ES_URL']
     if es_url.endswith('/'):
-        search_url = '%s%s/_search' % (es_url, es_index)
+        search_url = '%s%s/_count' % (es_url, es_index)
     else:
-        search_url = '%s/%s/_search' % (es_url, es_index)
+        search_url = '%s/%s/_count' % (es_url, es_index)
+
     headers = {'Content-Type': 'application/json'}
     r = requests.post(search_url, data=json.dumps(query), headers=headers)
     if r.status_code == 200:
         result = r.json()
-        total = result['hits']['total']
+        return result['count']
     else:
         logger.warn("Failed to query %s:\n%s" % (es_url, r.text))
         logger.warn("query: %s" % json.dumps(query, indent=2))
         logger.warn("returned: %s" % r.text)
         if r.status_code == 404:
-            total = 0
+            return 0
         else:
             r.raise_for_status()
-    return total
 
 
 def dataset_exists(id, es_index="grq"):
