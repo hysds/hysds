@@ -383,7 +383,8 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     r = requests.post(es_url, data=json.dumps(query), headers=headers)
     if r.status_code != 200:
         if r.status_code == 404:
-            pass
+            logger.info("status_code 404, job_status-current index probably does not exist, returning None")
+            return None
         else:
             r.raise_for_status()
     j = r.json()
