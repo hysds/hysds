@@ -9,22 +9,6 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
-            pip install -e .
-
-            echo ""
-            echo $(pwd)
-            echo $(ls)
-            echo ${CIRCLE_BRANCH}
-            echo ""
-
-            if [ "${CIRCLE_BRANCH}" == "develop-es7" ]; then
-              echo "branch is ${CIRCLE_BRANCH}, modifying hysds_commons!!!"
-              git clone --single-branch -b develop-es7 https://github.com/hysds/hysds_commons.git
-              cd hysds_commons
-              pip install -e .
-              cd ..
-            fi
-
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest test
 
