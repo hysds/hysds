@@ -67,7 +67,7 @@ JOBS_ES_URL = "http://{{ MOZART_ES_PVT_IP }}:9200"
 JOBS_PROCESSED_QUEUE = "jobs_processed"
 USER_RULES_JOB_QUEUE = "user_rules_job"
 ON_DEMAND_JOB_QUEUE = "on_demand_job"
-USER_RULES_JOB_INDEX = "user_rules"
+USER_RULES_JOB_INDEX = "user_rules-mozart"
 STATUS_ALIAS = "job_status"
 
 TOSCA_URL = "https://{{ GRQ_PVT_IP }}/search/"
@@ -75,11 +75,15 @@ GRQ_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}"
 GRQ_REST_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.1"
 GRQ_UPDATE_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.1/grq/dataset/index"
 GRQ_ES_URL = "http://{{ GRQ_ES_PVT_IP }}:9200"
+
 DATASET_PROCESSED_QUEUE = "dataset_processed"
 USER_RULES_DATASET_QUEUE = "user_rules_dataset"
 ON_DEMAND_DATASET_QUEUE = "on_demand_dataset"
-USER_RULES_DATASET_INDEX = "user_rules"
+USER_RULES_DATASET_INDEX = "user_rules-grq"
 DATASET_ALIAS = "grq"
+
+HYSDS_IOS_MOZART = "hysds_ios-mozart"
+HYSDS_IOS_GRQ = "hysds_ios-grq"
 
 USER_RULES_TRIGGER_QUEUE = "user_rules_trigger"
 

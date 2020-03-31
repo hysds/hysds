@@ -108,7 +108,7 @@ startsecs=10
 [program:logstash_indexer]
 directory={{ OPS_HOME }}/logstash/bin
 environment=LS_HEAP_SIZE="2048m"
-command={{ OPS_HOME }}/logstash/bin/logstash agent -f {{ OPS_HOME }}/mozart/etc/indexer.conf
+command={{ OPS_HOME }}/logstash/bin/logstash -f {{ OPS_HOME }}/mozart/etc/indexer.conf
 process_name=%(program_name)s
 priority=1
 numprocs=1
