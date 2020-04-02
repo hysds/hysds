@@ -403,26 +403,28 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException,
                       max_tries=8, max_value=32)
-def get_job_status(id):
+def get_job_status(_id):
     """Get job status."""
 
-    es_url = "%s/job_status-current/job/%s" % (app.conf['JOBS_ES_URL'], id)
-    r = requests.get(es_url, params={'fields': 'status'})
+    es_url = "%s/job_status-current/_doc/%s" % (app.conf['JOBS_ES_URL'], _id)
+    r = requests.get(es_url, params={'_source': 'status'})
+
     logger.info("get_job_status status: %s" % r.status_code)
     result = r.json()
+
     logger.info("get_job_status result: %s" % json.dumps(result, indent=2))
-    return result['fields']['status'][0] if result['found'] else None
+    return result['_source']['status'] if result['found'] else None
 
 
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32)
-def check_dataset(id, es_index="grq"):
+def check_dataset(_id, es_index="grq"):
     """Query for dataset with specified input ID."""
 
     query = {
         "query": {
             "bool": {
                 "must": [
-                    {"term": {"_id": id}},
+                    {"term": {"_id": _id}},
                 ]
             }
         }
@@ -448,10 +450,10 @@ def check_dataset(id, es_index="grq"):
             r.raise_for_status()
 
 
-def dataset_exists(id, es_index="grq"):
+def dataset_exists(_id, es_index="grq"):
     """Return true if dataset id exists."""
 
-    return True if check_dataset(id, es_index) > 0 else False
+    return True if check_dataset(_id, es_index) > 0 else False
 
 
 def localize_urls(job, ctx):
