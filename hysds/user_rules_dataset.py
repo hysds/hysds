@@ -58,32 +58,38 @@ def ensure_dataset_indexed(objectid, system_version, alias):
         logger.error(e)
 
 
-def update_query(objectid, system_version, rule):
+def update_query(_id, system_version, rule):
     """
-    Update final query.
-    TLDR: takes the rule's query and adds system version and dataset's id to "filter" in "bool"
+    takes the rule's query and adds system version and dataset's id to "filter" in "bool"
+    :param _id: ES's _id
+    :param system_version: string/int, system_version field in ES document
+    :param rule: dict
+    :return: dict
     """
     updated_query = copy.deepcopy(rule['query'])  # build query
-
-    # filters
     filts = [
+        updated_query,
         {'term': {'system_version.keyword': system_version}}
     ]
 
-    # query all? (will add _id if False)
+    # will add _id if query all False
     if rule.get('query_all', False) is False:
         filts.append({
             "term": {
-                "_id": objectid
+                "_id": _id
             }
         })
 
-    updated_query['bool']['filter'] = filts
-    updated_query = {"query": updated_query}
+    final_query = {
+        "query": {
+            "bool": {
+                "must": filts
+            }
+        }
+    }
 
-    logger.info("Final query: %s" % json.dumps(updated_query, indent=2))
-    rule['query'] = updated_query
-    rule['query_string'] = json.dumps(updated_query)
+    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
+    return final_query
 
 
 def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, job_queue=JOBS_PROCESSED_QUEUE):
@@ -97,13 +103,14 @@ def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, j
 
     # get all enabled user rules
     query = {
-      "query": {
-        "term": {
-          "enabled": True
+        "query": {
+            "term": {
+                "enabled": True
+            }
         }
-      }
     }
     rules = mozart_es.query(USER_RULES_DATASET_INDEX, query)
+    logger.info("Total %d enabled rules to check." % len(rules))
 
     for document in rules:
         time.sleep(1)  # sleep between queries
@@ -111,7 +118,14 @@ def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, j
         rule = document['_source']
         logger.info("rule: %s" % json.dumps(rule, indent=2))
 
-        update_query(objectid, system_version, rule)
+        try:
+            updated_query = update_query(objectid, system_version, rule)
+            rule['query'] = updated_query
+            rule['query_string'] = json.dumps(updated_query)
+        except (RuntimeError, Exception) as e:
+            logger.error("unable to update user_rule's query, skipping")
+            logger.error(e)
+            continue
 
         rule_name = rule['rule_name']
         job_type = rule['job_type']  # set clean descriptive job name

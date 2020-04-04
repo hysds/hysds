@@ -6,6 +6,7 @@ from future import standard_library
 standard_library.install_aliases()
 
 import json
+import copy
 import time
 import backoff
 import socket
@@ -61,12 +62,13 @@ def get_job(job_id, rule, result):
 
 def update_query(job_id, rule):
     """
-    Update final query.
-    TLDR: takes the rule's query and adds system version and job's id to "filter" in "bool"
+    takes the rule's query and adds system version and job's id to "filter" in "bool"
+    :param job_id: ES's _id
+    :param rule: dict
+    :return: dict
     """
-    query = rule['query']  # build query
-
-    filts = []  # filters
+    updated_query = copy.deepcopy(rule['query'])  # build query
+    filts = [updated_query]
 
     if rule.get('query_all', False) is False:
         filts.append({
@@ -75,17 +77,23 @@ def update_query(job_id, rule):
             }
         })
 
-    query['bool']['filter'] = filts
-    query = {"query": query}
+    final_query = {
+        "query": {
+            "bool": {
+                "must": filts
+            }
+        }
+    }
 
-    logger.info("Final query: %s" % json.dumps(query, indent=2))
-    rule['query'] = query
-    rule['query_string'] = json.dumps(query)
+    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
+    return final_query
 
 
 def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
-    """Process all user rules in ES database and check if this job ID matches.
-       If so, submit jobs. Otherwise do nothing."""
+    """
+    Process all user rules in ES database and check if this job ID matches.
+    If so, submit jobs. Otherwise do nothing.
+    """
 
     time.sleep(10)  # sleep 10 seconds to allow ES documents to be indexed
     ensure_job_indexed(job_id, alias)  # ensure job is indexed
@@ -93,26 +101,38 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     # get all enabled user rules
     query = {
         "query": {
-            "term": {"enabled": True}
+            "term": {
+                "enabled": True
+            }
         }
     }
-
     rules = mozart_es.query(USER_RULES_JOB_INDEX, query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for rule in rules:
-        logger.info('rule: %s' % json.dumps(rule, indent=2))
-        rule = rule['_source']  # extracting _source from the rule itself
-
         time.sleep(1)  # sleep between queries
 
-        update_query(job_id, rule)  # check for matching rules
-        final_qs = rule['query_string']
+        rule = rule['_source']  # extracting _source from the rule itself
+        logger.info('rule: %s' % json.dumps(rule, indent=2))
 
+        try:
+            updated_query = update_query(job_id, rule)  # check for matching rules
+            rule['query'] = updated_query
+            rule['query_string'] = json.dumps(updated_query)
+        except (RuntimeError, Exception) as e:
+            logger.error("unable to update user_rule's query, skipping")
+            logger.error(e)
+            continue
+
+        rule_name = rule['rule_name']
+        final_qs = rule['query_string']
+        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
+
+        # check for matching rules
         try:
             result = mozart_es.es.search(index=alias, body=final_qs)
             if result['hits']['total']['value'] == 0:
-                logger.info("Rule '%s' didn't match for %s" % (rule['rule_name'], job_id))
+                logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
         except ElasticsearchException as e:
             logger.error("Failed to query ES")
@@ -120,7 +140,7 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
             continue
 
         doc_res = result['hits']['hits'][0]
-        logger.info("Rule '%s' successfully matched for %s" % (rule['rule_name'], job_id))
+        logger.info("Rule '%s' successfully matched for %s" % (rule_name, job_id))
 
         # submit trigger task
         queue_job_trigger(doc_res, rule)
