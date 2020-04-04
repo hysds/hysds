@@ -86,7 +86,7 @@ def update_query(job_id, rule):
     }
 
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
-    return final_query, json.dumps(final_query)
+    return final_query
 
 
 def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):

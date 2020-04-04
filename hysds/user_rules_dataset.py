@@ -89,7 +89,7 @@ def update_query(_id, system_version, rule):
     }
 
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
-    return final_query, json.dumps(final_query)
+    return final_query
 
 
 def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, job_queue=JOBS_PROCESSED_QUEUE):
