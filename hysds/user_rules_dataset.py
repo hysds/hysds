@@ -6,7 +6,6 @@ from future import standard_library
 standard_library.install_aliases()
 
 import json
-import copy
 import time
 import backoff
 import socket
@@ -60,13 +59,13 @@ def ensure_dataset_indexed(objectid, system_version, alias):
 
 def update_query(_id, system_version, rule):
     """
-    takes the rule's query and adds system version and dataset's id to "filter" in "bool"
+    takes the rule's query_string and adds system version and dataset's id to "filter" in "bool"
     :param _id: ES's _id
     :param system_version: string/int, system_version field in ES document
     :param rule: dict
     :return: dict
     """
-    updated_query = copy.deepcopy(rule['query'])  # build query
+    updated_query = json.loads(rule['query_string'])
     filts = [
         updated_query,
         {'term': {'system_version.keyword': system_version}}
