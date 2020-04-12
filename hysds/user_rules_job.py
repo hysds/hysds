@@ -6,7 +6,6 @@ from future import standard_library
 standard_library.install_aliases()
 
 import json
-import copy
 import time
 import backoff
 import socket
@@ -62,12 +61,12 @@ def get_job(job_id, rule, result):
 
 def update_query(job_id, rule):
     """
-    takes the rule's query and adds system version and job's id to "filter" in "bool"
+    takes the rule's query_string and adds system version and job's id to "filter" in "bool"
     :param job_id: ES's _id
     :param rule: dict
     :return: dict
     """
-    updated_query = copy.deepcopy(rule['query'])  # build query
+    updated_query = json.loads(rule['query_string'])
     filts = [updated_query]
 
     if rule.get('query_all', False) is False:
