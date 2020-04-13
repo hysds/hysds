@@ -77,7 +77,7 @@ def offline_jobs(event):
             }
         }
     }
-    logger.info("offline jobs query %s" % json.dumps(query))
+    logger.info("offline jobs query: %s" % json.dumps(query))
     uuids = []
 
     try:
