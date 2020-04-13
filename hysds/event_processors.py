@@ -69,18 +69,15 @@ def offline_jobs(event):
     time_end = datetime.utcnow().isoformat() + "Z"
     query = {
         "query": {
-            "filtered": {
-                "query": {
-                    "bool": {
-                        "must": [
-                            {"term": {"celery_hostname": event["hostname"]}},
-                            {"term": {"status": "job-started"}},
-                        ]
-                    }
-                }
+            "bool": {
+                "must": [
+                    {"term": {"celery_hostname": event["hostname"]}},
+                    {"term": {"status": "job-started"}},
+                ]
             }
         }
     }
+    logger.info("offline jobs query %s" % json.dumps(query))
     uuids = []
 
     try:
