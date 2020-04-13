@@ -28,7 +28,7 @@ setup(
         "boto>=2.38.0",
         # TODO: remove msgpack pin once logstash is updated to 7.1.1
         # https://hysds-core.atlassian.net/browse/HC-168
-        "msgpack==0.6.2",
+        "msgpack>=1.0.0",
         "awscli>=1.17.1",
         "boto3>=1.11.1",
         "backoff>=1.3.1",
