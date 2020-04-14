@@ -6,24 +6,25 @@ from __future__ import absolute_import
 from builtins import int
 from future import standard_library
 standard_library.install_aliases()
-import os
-import sys
+
 import json
 import time
 import traceback
 import logging
 import argparse
 import random
-import boto3
 import requests
 from datetime import datetime
 
 from hysds.utils import parse_iso8601
 from hysds.celery import app
+from hysds.es_util import get_mozart_es
 
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
+
+mozart_es = get_mozart_es()
 
 
 def tag_timedout_jobs(url, timeout):
@@ -62,7 +63,6 @@ def tag_timedout_jobs(url, timeout):
                       (r.status_code, json.dumps(query, indent=2)))
     r.raise_for_status()
     scan_result = r.json()
-    count = scan_result['hits']['total']
     scroll_id = scan_result['_scroll_id']
 
     # get list of results
@@ -76,8 +76,7 @@ def tag_timedout_jobs(url, timeout):
         for hit in res['hits']['hits']:
             results.append(hit)
 
-    logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
-                 " older than %d seconds." % timeout)
+    logging.info("Found %d stuck jobs in job-started or job-offline older than %d seconds." % (len(results), timeout))
 
     # tag each with timedout
     for res in results:
@@ -109,7 +108,7 @@ def tag_timedout_jobs(url, timeout):
                 },
                 "_source": ["status"]
             }
-            r = requests.post('%s/task_status-current/task/_search' % url,
+            r = requests.post('%s/task_status-current/_search' % url,
                               data=json.dumps(task_query))
             if r.status_code != 200:
                 logging.error("Failed to query ES. Got status code %d:\n%s" %
@@ -127,7 +126,7 @@ def tag_timedout_jobs(url, timeout):
                 },
                 "_source": ["status", "tags"]
             }
-            r = requests.post('%s/worker_status-current/task/_search' % url,
+            r = requests.post('%s/worker_status-current/_search' % url,
                               data=json.dumps(worker_query))
             if r.status_code != 200:
                 logging.error("Failed to query ES. Got status code %d:\n%s" %
@@ -138,9 +137,9 @@ def tag_timedout_jobs(url, timeout):
 
             # determine new status
             new_status = status
-            if worker_res['hits']['total'] == 0 and duration > time_limit:
+            if worker_res['hits']['total']['value'] == 0 and duration > time_limit:
                 new_status = 'job-offline'
-            if worker_res['hits']['total'] > 0 and (
+            if worker_res['hits']['total']['value'] > 0 and (
                 "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
                 worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
                 new_status = 'job-offline'
@@ -151,7 +150,7 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logger.info("updating status from {} to {}".format(status, new_status))
+                logging.info("updating status from {} to {}".format(status, new_status))
                 if duration > time_limit and 'timedout' not in tags:
                     tags.append('timedout')
                 new_doc = {
