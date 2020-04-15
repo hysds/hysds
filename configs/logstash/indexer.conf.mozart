@@ -42,7 +42,7 @@ output {
   if [resource] == "job" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "job_status-%{+yyyy.MM.dd}"
+      index => "job_status-%{+yyyy-MM-dd}"
       document_id => "%{payload_id}"
       template => "{{ OPS_HOME }}/mozart/etc/job_status.template"
       template_name => "job_status"
@@ -50,7 +50,7 @@ output {
   } else if [resource] == "worker" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "worker_status-%{+yyyy.MM.dd}"
+      index => "worker_status-%{+yyyy-MM-dd}"
       document_id => "%{celery_hostname}"
       template => "{{ OPS_HOME }}/mozart/etc/worker_status.template"
       template_name => "worker_status"
@@ -58,7 +58,7 @@ output {
   } else if [resource] == "task" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "task_status-%{+yyyy.MM.dd}"
+      index => "task_status-%{+yyyy-MM-dd}"
       document_id => "%{uuid}"
       template => "{{ OPS_HOME }}/mozart/etc/task_status.template"
       template_name => "task_status"
@@ -66,7 +66,7 @@ output {
   } else if [resource] == "event" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "event_status-%{+yyyy.MM.dd}"
+      index => "event_status-%{+yyyy-MM-dd}"
       document_id => "%{uuid}"
       template => "{{ OPS_HOME }}/mozart/etc/event_status.template"
       template_name => "event_status"
