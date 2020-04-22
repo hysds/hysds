@@ -193,7 +193,7 @@ def do_queue_query(url, queue_name):
         },
         "sort": [{"job.job_info.time_start": {"order": "desc"}}],
         "_source": ["job_id", "status", "job_queue", "payload_id", "payload_hash", "uuid",
-                    "job.job_info.time_queued", "job.job_info.time_start",
+                    "job.job_info.time_queued", "job.job_info.time_start", "job.job_info.time_limit",
                     "job.job_info.time_end", "error", "traceback"],
         "size": 1
     }
@@ -302,6 +302,9 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
                 start_dt = datetime.strptime(
                     latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
                 now = datetime.utcnow()
+                time_limit = latest_job['job']['job_info']['time_limit']
+                if time_limit:
+                    periodicity = time_limit+60
                 delta = (now-start_dt).total_seconds()
                 logging.info("Successful Job delta: %s" % delta)
                 if delta > periodicity:
@@ -336,6 +339,7 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
 
 
 if __name__ == "__main__":
+    periodicity = None
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rabbitmq_admin_url', help="RabbitMQ Admin Url")
@@ -347,5 +351,7 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--email', default=None,
                         help="email addresses (comma-separated) for notification")
     args = parser.parse_args()
+    if args.periodicity:
+        periodicity = args.periodicity
     check_queue_execution(args.url, args.rabbitmq_admin_url,
-                          args.periodicity, args.slack_url, args.email)
+                          periodicity, args.slack_url, args.email)
