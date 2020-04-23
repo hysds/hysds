@@ -24,6 +24,7 @@ import re
 import shlex
 import signal
 from datetime import datetime
+from itertools import compress
 from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
