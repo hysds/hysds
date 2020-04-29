@@ -38,6 +38,7 @@ JOB_INFO_POOL = None
 WORKER_STATUS_POOL = None
 EVENT_STATUS_POOL = None
 SOCKET_POOL = None
+REVOKED_TASK_POOL = None
 
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
@@ -47,6 +48,9 @@ WORKER_STATUS_KEY_TMPL = "hysds-worker-status-%s"
 
 # task worker key template
 TASK_WORKER_KEY_TMPL = "hysds-task-worker-%s"
+
+# revoked task key template
+REVOKED_TASK_TMPL = "hysds-revoked-task-%s"
 
 
 def backoff_max_value():
@@ -117,6 +121,15 @@ def set_redis_socket_pool():
     if SOCKET_POOL is None:
         SOCKET_POOL = BlockingConnectionPool.from_url(
             app.conf.REDIS_UNIX_DOMAIN_SOCKET)
+
+
+def set_redis_revoked_task_pool():
+    """Set redis connection pool for worker status."""
+
+    global REVOKED_TASK_POOL
+    if REVOKED_TASK_POOL is None:
+        REVOKED_TASK_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL)
 
 
 @backoff.on_exception(backoff.expo,
@@ -461,3 +474,19 @@ def log_publish_prov_es(prov_es_info, prov_es_file, prod_path, pub_urls,
     # write prov
     with open(prov_es_file, 'w') as f:
         json.dump(pd, f, indent=2)
+
+
+@backoff.on_exception(backoff.expo,
+                      RedisError,
+                      max_tries=backoff_max_tries,
+                      max_value=backoff_max_value)
+def is_revoked(task_id):
+    """Return True if task id is marked as revoked. Otherwise False."""
+
+    set_redis_revoked_task_pool()
+    global REVOKED_TASK_POOL
+
+    # retrieve value
+    key = REVOKED_TASK_TMPL % task_id
+    r = StrictRedis(connection_pool=REVOKED_TASK_POOL)
+    return False if r.get(key) is None else True
