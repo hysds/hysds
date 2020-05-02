@@ -74,7 +74,13 @@ TOSCA_URL = "https://{{ GRQ_PVT_IP }}/search/"
 GRQ_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}"
 GRQ_REST_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.1"
 GRQ_UPDATE_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.1/grq/dataset/index"
-GRQ_ES_URL = "http://{{ GRQ_ES_PVT_IP }}:9200"
+
+
+GRQ_AWS_ES = {{ GRQ_AWS_ES or False }}
+GRQ_ES_HOST = {{ GRQ_ES_PVT_IP }}
+GRQ_ES_PORT = {{ GRQ_ES_PORT or 9200 }}
+GRQ_ES_URL = 'http://%s:%s' % (GRQ_ES_HOST, GRQ_ES_PORT)
+
 
 DATASET_PROCESSED_QUEUE = "dataset_processed"
 USER_RULES_DATASET_QUEUE = "user_rules_dataset"
