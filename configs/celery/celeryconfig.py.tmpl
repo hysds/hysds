@@ -77,9 +77,9 @@ GRQ_UPDATE_URL = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.1/grq/dataset/in
 
 
 GRQ_AWS_ES = {{ GRQ_AWS_ES or False }}
-GRQ_ES_HOST = {{ GRQ_ES_PVT_IP }}
+GRQ_ES_HOST = "{{ GRQ_ES_PVT_IP }}"
 GRQ_ES_PORT = {{ GRQ_ES_PORT or 9200 }}
-GRQ_ES_URL = 'http://%s:%s' % (GRQ_ES_HOST, GRQ_ES_PORT)
+GRQ_ES_URL = 'http://%s:%d' % (GRQ_ES_HOST, GRQ_ES_PORT)
 
 
 DATASET_PROCESSED_QUEUE = "dataset_processed"
