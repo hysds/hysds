@@ -37,7 +37,7 @@ def get_grq_es():
         es_url = app.conf['GRQ_ES_URL']
         region = app.conf['AWS_REGION']
 
-        if aws_es:
+        if aws_es is True:
             aws_auth = BotoAWSRequestsAuth(aws_host=es_host, aws_region=region, aws_service='es')
             GRQ_ES = ElasticsearchUtility(
                 es_url=es_host,
