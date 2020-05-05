@@ -186,7 +186,8 @@ def do_job_query(url, job_type, job_status):
         "sort": [{"job.job_info.time_end": {"order": "desc"}}],
         "_source": ["job_id", "payload_id", "payload_hash", "uuid",
                     "job.job_info.time_queued", "job.job_info.time_start",
-                    "job.job_info.time_end", "error", "traceback"],
+                    "job.job_info.time_end", "job.job_info.time_limit"
+                    "error", "traceback"],
         "size": 1
     }
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
@@ -258,12 +259,12 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
         send_email_notification(email, job_type, subject + error)
 
 
-def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None):
+def check_job_execution(url, job_type, periodicity=0,  slack_url=None, email=None):
     """Check that job type ran successfully within the expected periodicity."""
 
     logging.info("url: %s" % url)
     logging.info("job_type: %s" % job_type)
-    logging.info("periodicity: %s" % periodicity)
+    logging.info("Initial periodicity: %s" % periodicity)
 
     # build query
     result = do_job_query(url, job_type, "job-completed")
@@ -278,6 +279,10 @@ def check_job_execution(url, job_type, periodicity,  slack_url=None, email=None)
             latest_job['job']['job_info']['time_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
         now = datetime.utcnow()
         delta = (now-end_dt).total_seconds()
+        if 'time_limit' in latest_job['job']['job_info']:
+            logging.info("Using job time limit as periodicity")
+            periodicity = latest_job['job']['job_info']['time_limit']
+        logging.info("periodicity: %s" % periodicity)
         logging.info("Successful Job delta: %s" % delta)
         if delta > periodicity:
             error = '\nThere has not been a successfully completed job type "%s" for more than %.2f-hours.\n' % (

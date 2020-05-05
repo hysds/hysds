@@ -302,9 +302,10 @@ def check_queue_execution(url, rabbitmq_url, periodicity,  slack_url=None, email
                 start_dt = datetime.strptime(
                     latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
                 now = datetime.utcnow()
-                time_limit = latest_job['job']['job_info']['time_limit']
-                if time_limit:
-                    periodicity = time_limit+60
+                if 'time_limit' in latest_job['job']['job_info']:
+                    logging.info("Using job time limit as periodicity")
+                    periodicity = latest_job['job']['job_info']['time_limit']
+                logging.info("periodicity: %s" % periodicity)
                 delta = (now-start_dt).total_seconds()
                 logging.info("Successful Job delta: %s" % delta)
                 if delta > periodicity:
