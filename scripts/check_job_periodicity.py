@@ -186,7 +186,7 @@ def do_job_query(url, job_type, job_status):
         "sort": [{"job.job_info.time_end": {"order": "desc"}}],
         "_source": ["job_id", "payload_id", "payload_hash", "uuid",
                     "job.job_info.time_queued", "job.job_info.time_start",
-                    "job.job_info.time_end", "job.job_info.time_limit"
+                    "job.job_info.time_end", "job.job_info.time_limit",
                     "error", "traceback"],
         "size": 1
     }
