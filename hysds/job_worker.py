@@ -24,6 +24,7 @@ import re
 import shlex
 import signal
 from datetime import datetime
+from itertools import compress
 from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
@@ -31,7 +32,8 @@ from celery.signals import task_revoked
 import hysds
 from hysds.celery import app
 from hysds.log_utils import (logger, log_job_status, log_job_info, get_job_status,
-                             log_task_worker, get_task_worker, get_worker_status, log_custom_event)
+                             log_task_worker, get_task_worker, get_worker_status,
+                             log_custom_event, is_revoked)
 
 from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func,
                          get_short_error, query_dedup_job, makedirs, find_dataset_json, find_cache_dir)
@@ -438,6 +440,10 @@ def fail_job(job_status_json, jd_file):
 @app.task
 def run_job(job, queue_when_finished=True):
     """Function to execute a job."""
+
+    # if revoked?
+    if is_revoked(run_job.request.id):
+        app.control.revoke(run_job.request.id, terminate=True)
 
     # get payload id
     payload_id = job['job_info']['job_payload']['payload_task_id']
