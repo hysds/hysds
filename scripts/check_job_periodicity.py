@@ -22,13 +22,15 @@ import traceback
 import logging
 import argparse
 from datetime import datetime
+import smtplib
 from smtplib import SMTP
-from email.MIMEMultipart import MIMEMultipart
-from email.MIMEText import MIMEText
-from email.MIMEBase import MIMEBase
-from email.Header import Header
-from email.Utils import parseaddr, formataddr, COMMASPACE, formatdate
-from email import Encoders
+# Import the email modules we'll need
+from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email.header import Header
+from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
 
 from hysds.celery import app
 
@@ -130,13 +132,16 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
 
     # Make sure email addresses do not contain non-ASCII characters
     sender_addr = sender_addr.encode('ascii')
-
+    recipients = cc_recipients + bcc_recipients
     # Create the message ('plain' stands for Content-Type: text/plain)
     msg = MIMEMultipart()
+    msg['To'] = ', '.join(recipients)
+    '''
     msg['CC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
                                  for recipient_name, recipient_addr in unicode_parsed_cc_recipients])
     msg['BCC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
                                   for recipient_name, recipient_addr in unicode_parsed_bcc_recipients])
+    '''
     msg['Subject'] = Header(str(subject), header_charset)
     msg['FROM'] = "no-reply@jpl.nasa.gov"
     msg.attach(MIMEText(body.encode(body_charset), 'plain', body_charset))
@@ -146,18 +151,17 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
         for fname in attachments:
             part = MIMEBase('application', "octet-stream")
             part.set_payload(attachments[fname])
-            Encoders.encode_base64(part)
+            email.encoders.encode_base64(part)
             part.add_header('Content-Disposition',
                             'attachment; filename="%s"' % fname)
             msg.attach(part)
 
     # Send the message via SMTP to docker host
     smtp_url = "smtp://127.0.0.1:25"
-    logger.info("smtp_url : %s" % smtp_url)
+    utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
     smtp = SMTP("127.0.0.1")
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
-
 
 def do_job_query(url, job_type, job_status):
 
@@ -186,7 +190,7 @@ def do_job_query(url, job_type, job_status):
         "sort": [{"job.job_info.time_end": {"order": "desc"}}],
         "_source": ["job_id", "payload_id", "payload_hash", "uuid",
                     "job.job_info.time_queued", "job.job_info.time_start",
-                    "job.job_info.time_end", "job.job_info.time_limit",
+                    "job.job_info.time_end", "job.job_info.time_limit"
                     "error", "traceback"],
         "size": 1
     }
