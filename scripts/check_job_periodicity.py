@@ -190,7 +190,7 @@ def do_job_query(url, job_type, job_status):
         "sort": [{"job.job_info.time_end": {"order": "desc"}}],
         "_source": ["job_id", "payload_id", "payload_hash", "uuid",
                     "job.job_info.time_queued", "job.job_info.time_start",
-                    "job.job_info.time_end", "job.job_info.time_limit"
+                    "job.job_info.time_end", "job.job_info.time_limit",
                     "error", "traceback"],
         "size": 1
     }
@@ -306,6 +306,7 @@ def check_job_execution(url, job_type, periodicity=0,  slack_url=None, email=Non
 
 
 if __name__ == "__main__":
+    periodicity = 0
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('job_type', help="HySDS job type to watchdog")
@@ -317,5 +318,7 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--email', default=None,
                         help="email addresses (comma-separated) for notification")
     args = parser.parse_args()
+    if args.periodicity:
+        periodicity = args.periodicity
     check_job_execution(args.url, args.job_type,
-                        args.periodicity, args.slack_url, args.email)
+                        periodicity, args.slack_url, args.email)

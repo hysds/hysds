@@ -343,7 +343,7 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
 
 
 if __name__ == "__main__":
-    periodicity = None
+    periodicity = 0
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rabbitmq_admin_url', help="RabbitMQ Admin Url")
