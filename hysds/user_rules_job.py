@@ -31,17 +31,9 @@ mozart_es = get_mozart_es()
 @backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    query = {
-        "query": {
-            'term': {
-                '_id': job_id
-             }
-        }
-    }
-    logger.info("ensure_job_indexed query: %s" % json.dumps(query, indent=2))
-
-    total = mozart_es.get_count(alias, query)
-    if total == 0:
+    logger.info("ensure_job_indexed: %s" % job_id)
+    job = mozart_es.get_by_id(index=alias, id=job_id)
+    if job['found'] is False:
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
@@ -105,7 +97,7 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
             }
         }
     }
-    rules = mozart_es.query(USER_RULES_JOB_INDEX, query)
+    rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for rule in rules:
