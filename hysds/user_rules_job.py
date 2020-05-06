@@ -31,9 +31,16 @@ mozart_es = get_mozart_es()
 @backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    logger.info("ensure_job_indexed: %s" % job_id)
-    job = mozart_es.get_by_id(index=alias, id=job_id)
-    if job['found'] is False:
+    query = {
+        "query": {
+            "term": {
+                "_id": job_id
+            }
+        }
+    }
+    logger.info("ensure_job_indexed: %s" % json.dumps(query))
+    count = mozart_es.get_count(index=alias, body=query)
+    if count == 0:
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
