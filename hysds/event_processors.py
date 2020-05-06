@@ -81,7 +81,7 @@ def offline_jobs(event):
     uuids = []
 
     try:
-        job_status_jsons = mozart_es.query("job_status-current", query)
+        job_status_jsons = mozart_es.query(index="job_status-current", body=query)
         logger.info("Got {} jobs for {}.".format(len(job_status_jsons), event["hostname"]))
 
         for job_status in job_status_jsons:

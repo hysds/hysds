@@ -33,15 +33,14 @@ def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
     query = {
         "query": {
-            'term': {
-                '_id': job_id
-             }
+            "term": {
+                "_id": job_id
+            }
         }
     }
-    logger.info("ensure_job_indexed query: %s" % json.dumps(query, indent=2))
-
-    total = mozart_es.get_count(alias, query)
-    if total == 0:
+    logger.info("ensure_job_indexed: %s" % json.dumps(query))
+    count = mozart_es.get_count(index=alias, body=query)
+    if count == 0:
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
 
 
@@ -105,7 +104,7 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
             }
         }
     }
-    rules = mozart_es.query(USER_RULES_JOB_INDEX, query)
+    rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for rule in rules:

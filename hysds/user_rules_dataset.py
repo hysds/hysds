@@ -42,10 +42,10 @@ def ensure_dataset_indexed(objectid, system_version, alias):
         }
       }
     }
-    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query, indent=2))
+    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
 
     try:
-        count = grq_es.get_count(alias, query)
+        count = grq_es.get_count(index=alias, body=query)
         if count == 0:
             error_message = "Failed to find indexed dataset: %s (%s)" % (objectid, system_version)
             logger.error(error_message)
@@ -108,7 +108,7 @@ def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, j
             }
         }
     }
-    rules = mozart_es.query(USER_RULES_DATASET_INDEX, query)
+    rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for document in rules:
@@ -139,7 +139,7 @@ def evaluate_user_rules_dataset(objectid, system_version, alias=DATASET_ALIAS, j
                 continue
             doc_res = result['hits']['hits'][0]
             logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
-        except ElasticsearchException as e:
+        except (ElasticsearchException, Exception) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
