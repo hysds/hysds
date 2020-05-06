@@ -158,7 +158,7 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
 
     # Send the message via SMTP to docker host
     smtp_url = "smtp://127.0.0.1:25"
-    utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
+    logger.info("smtp_url : %s" % smtp_url)
     smtp = SMTP("127.0.0.1")
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
