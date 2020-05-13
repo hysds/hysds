@@ -35,7 +35,7 @@ from email.mime.base import MIMEBase
 from email.header import Header
 from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
 from hysds.celery import app
-
+import elasticsearch
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -203,13 +203,8 @@ def do_queue_query(url, queue_name):
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
 
     # query
-    url_tmpl = "{}/job_status-current/_search"
-    r = requests.post(url_tmpl.format(url), data=json.dumps(query))
-    if r.status_code != 200:
-        logging.error("Failed to query ES. Got status code %d:\n%s" %
-                      (r.status_code, json.dumps(query, indent=2)))
-    r.raise_for_status()
-    result = r.json()
+    ES = elasticsearch.Elasticsearch(url)
+    result = ES.search(index="job_status-current", body=json.dumps(query))
 
     return result
 
