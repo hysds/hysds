@@ -3,18 +3,14 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import absolute_import
 
-
 from builtins import str
 from builtins import int
 from builtins import open
 from future import standard_library
 standard_library.install_aliases()
+
 import os
-import sys
 import re
-import urllib.request
-import urllib.parse
-import urllib.error
 import json
 import requests
 import math
@@ -24,24 +20,27 @@ import copy
 import errno
 import shutil
 import traceback
+
 from glob import glob
 from datetime import datetime
 from subprocess import check_output
 from urllib.request import urlopen
-from urllib.parse import urlparse, ParseResult
+
 from io import StringIO
 from lxml.etree import XMLParser, parse, tostring
 from importlib import import_module
 from celery.result import AsyncResult
-from urllib.parse import urlparse
 from atomicwrites import atomic_write
 from bisect import insort
 
 import hysds
 from hysds.log_utils import logger, log_prov_es
 from hysds.celery import app
+from hysds.es_util import get_grq_es
 
 import osaka.main
+
+grq_es = get_grq_es()
 
 # disk usage setting converter
 DU_CALC = {
@@ -429,30 +428,12 @@ def check_dataset(_id, es_index="grq"):
             }
         }
     }
-    es_url = app.conf['GRQ_ES_URL']
-    if es_url.endswith('/'):
-        search_url = '%s%s/_count' % (es_url, es_index)
-    else:
-        search_url = '%s/%s/_count' % (es_url, es_index)
-
-    headers = {'Content-Type': 'application/json'}
-    r = requests.post(search_url, data=json.dumps(query), headers=headers)
-    if r.status_code == 200:
-        result = r.json()
-        return result['count']
-    else:
-        logger.warn("Failed to query %s:\n%s" % (es_url, r.text))
-        logger.warn("query: %s" % json.dumps(query, indent=2))
-        logger.warn("returned: %s" % r.text)
-        if r.status_code == 404:
-            return 0
-        else:
-            r.raise_for_status()
+    count = grq_es.get_count(index=es_index, body=query)
+    return count
 
 
 def dataset_exists(_id, es_index="grq"):
     """Return true if dataset id exists."""
-
     return True if check_dataset(_id, es_index) > 0 else False
 
 
