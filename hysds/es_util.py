@@ -5,7 +5,6 @@ from __future__ import absolute_import
 
 from aws_requests_auth.boto_utils import BotoAWSRequestsAuth
 from elasticsearch import RequestsHttpConnection
-import urllib3
 
 from hysds.celery import app
 from hysds.log_utils import logger
@@ -14,8 +13,6 @@ try:
     from hysds_commons.elasticsearch_utils import ElasticsearchUtility
 except (ImportError, ModuleNotFoundError):
     logger.error('Cannot import hysds_commons.elasticsearch_utils')
-
-urllib3.disable_warnings()
 
 MOZART_ES = None
 GRQ_ES = None
@@ -46,6 +43,7 @@ def get_grq_es():
                 connection_class=RequestsHttpConnection,
                 use_ssl=True,
                 verify_certs=False,
+                ssl_show_warn=False
             )
         else:
             GRQ_ES = ElasticsearchUtility(es_url, logger)
