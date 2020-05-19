@@ -29,7 +29,7 @@ def get_grq_es():
     global GRQ_ES
 
     if GRQ_ES is None:
-        aws_es = app.conf['GRQ_AWS_ES']
+        aws_es = app.conf.get('GRQ_AWS_ES', False)
         es_host = app.conf['GRQ_ES_HOST']
         es_url = app.conf['GRQ_ES_URL']
         region = app.conf['AWS_REGION']
