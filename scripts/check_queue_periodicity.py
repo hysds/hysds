@@ -37,6 +37,10 @@ from email.header import Header
 from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
 from hysds.celery import app
 import elasticsearch
+try:
+    import hysds.es_util
+except:
+    pass
 
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
@@ -205,7 +209,10 @@ def do_queue_query(url, queue_name):
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
 
     # query
-    ES = elasticsearch.Elasticsearch(url)
+    try:
+        ES = es_util.get_mozart_es()
+    except:
+        ES = elasticsearch.Elasticsearch(url)
     result = ES.search(index="job_status-current", body=json.dumps(query))
     return result
 
