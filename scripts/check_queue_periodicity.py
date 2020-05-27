@@ -10,24 +10,20 @@ from __future__ import absolute_import
 from builtins import str
 from future import standard_library
 standard_library.install_aliases()
+
 import os
-import sys
 import getpass
 import requests
 import json
-import types
-import base64
 import socket
 from requests.auth import HTTPBasicAuth
 from requests import HTTPError
-from hysds_commons.request_utils import get_requests_json_response
-from hysds_commons.log_utils import logger
-import traceback
+
 import logging
 import argparse
 from datetime import datetime
-import smtplib
 from smtplib import SMTP
+
 # Import the email modules we'll need
 from email.message import EmailMessage
 from email.mime.multipart import MIMEMultipart
@@ -35,8 +31,10 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.header import Header
 from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
+
+from hysds_commons.request_utils import get_requests_json_response
+from hysds_commons.log_utils import logger
 from hysds.celery import app
-import elasticsearch
 import hysds.es_util
 
 
@@ -88,8 +86,7 @@ def get_hostname():
         try:
             return socket.gethostbyname(socket.gethostname())
         except:
-            raise RuntimeError(
-                "Failed to resolve hostname for full email address. Check system.")
+            raise RuntimeError("Failed to resolve hostname for full email address. Check system.")
 
 
 def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments=None):
@@ -127,7 +124,7 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     sender_name, sender_addr = parseaddr(sender)
     parsed_cc_recipients = [parseaddr(rec) for rec in cc_recipients]
     parsed_bcc_recipients = [parseaddr(rec) for rec in bcc_recipients]
-    #recipient_name, recipient_addr = parseaddr(recipient)
+    # recipient_name, recipient_addr = parseaddr(recipient)
 
     # We must always pass Unicode strings to Header, otherwise it will
     # use RFC 2047 encoding even on plain ASCII strings.
@@ -135,12 +132,15 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     unicode_parsed_cc_recipients = []
     for recipient_name, recipient_addr in parsed_cc_recipients:
         recipient_name = str(Header(str(recipient_name), header_charset))
+
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_cc_recipients.append((recipient_name, recipient_addr))
+
     unicode_parsed_bcc_recipients = []
     for recipient_name, recipient_addr in parsed_bcc_recipients:
         recipient_name = str(Header(str(recipient_name), header_charset))
+
         # Make sure email addresses do not contain non-ASCII characters
         recipient_addr = recipient_addr.encode('ascii')
         unicode_parsed_bcc_recipients.append((recipient_name, recipient_addr))
@@ -178,8 +178,8 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
 
-def do_queue_query(url, queue_name):
 
+def do_queue_query(queue_name):
     query = {
         "query": {
             "bool": {
@@ -224,12 +224,13 @@ def send_email_notification(emails, job_type, text, attachments=[]):
 
 
 def get_all_queues(rabbitmq_admin_url, user=None, password=None):
-    '''
-    List the queues available for job-running
-    Note: does not return celery internal queues
-    @param rabbitmq_admin_url: RabbitMQ admin URL
-    @return: list of queues
-    '''
+    """
+    List the queues available for job-running (Note: does not return celery internal queues)
+    :param rabbitmq_admin_url: RabbitMQ admin URL
+    :param user:
+    :param password:
+    :return: list of queues
+    """
     print("get_all_queues : {}/ {}".format(user,password))
 
     try:
@@ -237,68 +238,67 @@ def get_all_queues(rabbitmq_admin_url, user=None, password=None):
             data = get_requests_json_response(os.path.join(rabbitmq_admin_url, "api/queues"), auth=HTTPBasicAuth(user, password), verify=False)
         else:
             data = get_requests_json_response(os.path.join(rabbitmq_admin_url, "api/queues"), verify=False)
-            #print(data)
     except HTTPError as e:
         if e.response.status_code == 401:
             logger.error("Failed to authenticate to {}. Ensure credentials are set in .netrc.".format(rabbitmq_admin_url))
         raise
-    #'''
+
     for obj in data:
         if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES:
-            if obj["name"] =='Recommended Queues':
+            if obj["name"] == 'Recommended Queues':
                 continue
-	    
-            if obj["name"]=="factotum-job_worker-scihub_throttled":
+
+            if obj["name"] == "factotum-job_worker-scihub_throttled":
                 print(obj["name"])
                 print(obj)
                 print(json.dumps(obj, indent=2, sort_keys=True))
                 break
-    #'''	    
-    return [ obj for obj in data if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES and obj["name"] !='Recommended Queues' and obj["messages_ready"]>0]
 
-def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, email=None, user=None, password=None):
+    return [obj for obj in data if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES and
+            obj["name"] != 'Recommended Queues' and obj["messages_ready"] > 0]
+
+
+def check_queue_execution(rabbitmq_url, periodicity=0,  slack_url=None, email=None, user=None, password=None):
     """Check that job type ran successfully within the expected periodicity."""
 
-    logging.info("url: %s" % url)
     logging.info("rabbitmq url: %s" % rabbitmq_url)
     logging.info("periodicity: %s" % periodicity)
-    
+
     queue_list = get_all_queues(rabbitmq_url, user, password)
-    #print(queue_list)
-    if len(queue_list)==0:
+    if len(queue_list) == 0:
         print("No non-empty queue found")
         return
 
     is_alert=False
-    error=""
+    error = ""
     for obj in queue_list:
         queue_name=obj["name"]
-        if queue_name=='Recommended Queues':
+        if queue_name == 'Recommended Queues':
             continue
         messages_ready=obj["messages_ready"]
         total_messages=obj["messages"]
         messages_unacked=obj["messages_unacknowledged"]
         running = total_messages - messages_ready
-	
-        if messages_ready>0 and messages_unacked==0:
+
+        if messages_ready>0 and messages_unacked == 0:
             is_alert=True
-            error +='\nQueue Name : %s' %queue_name
+            error += '\nQueue Name : %s' % queue_name
             error += "\nError : No job running though jobs are waiting in the queue!!"
-            error +='\nTotal jobs : %s' %total_messages
-            error += '\nJobs WAITING in the queue : %s' %messages_ready
-            error +='\nJobs running : %s' %messages_unacked
+            error += '\nTotal jobs : %s' % total_messages
+            error += '\nJobs WAITING in the queue : %s' % messages_ready
+            error += '\nJobs running : %s' % messages_unacked
         else:
-            print("processing job status for queue : %s" %queue_name)
-            result = do_queue_query(url, queue_name)
+            print("processing job status for queue : %s" % queue_name)
+            result = do_queue_query(queue_name)
             count = result['hits']['total']
             if count == 0: 
                 is_alert=True
-                error +='\nQueue Name : %s' %queue_name
+                error += '\nQueue Name : %s' % queue_name
                 error += "\nError : No job found for Queue :  %s!!\n." % queue_name
             else:
                 latest_job = result['hits']['hits'][0]['_source']
                 logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-                print("job status : %s" %latest_job['status'])
+                print("job status : %s" % latest_job['status'])
                 start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
                 now = datetime.utcnow()
                 delta = (now-start_dt).total_seconds()
@@ -309,12 +309,12 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
                 logging.info("Successful Job delta: %s" % delta)
                 if delta > periodicity:
                     is_alert=True
-                    error +='\nQueue Name : %s' %queue_name
+                    error += '\nQueue Name : %s' % queue_name
                     error += '\nError: Possible Job hanging in the queue'
-                    error +='\nTotal jobs : %s' %total_messages
-                    error += '\nJobs WAITING in the queue : %s' %messages_ready
-                    error +='\nJobs running : %s' %messages_unacked
-                    error  += '\nThe last job running in Queue "%s" for %.2f-hours.\n' % (queue_name, delta/3600.) 
+                    error += '\nTotal jobs : %s' % total_messages
+                    error += '\nJobs WAITING in the queue : %s' % messages_ready
+                    error += '\nJobs running : %s' % messages_unacked
+                    error += '\nThe last job running in Queue "%s" for %.2f-hours.\n' % (queue_name, delta/3600.)
                     error += "job_id: %s\n" % latest_job['job_id']
                     error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
                     error += "time_started: %s\n" % latest_job['job']['job_info']['time_start']
@@ -323,7 +323,8 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
 
     if not is_alert:
         return
-    #Send the queue status now.
+
+    # Send the queue status now.
     subject = "\n\nQueue Status Alert\n\n" 
 
     # send notification via slack
@@ -335,17 +336,17 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
         send_email_notification(email, "Queue Status", subject + error)
 
 
-
 if __name__ == "__main__":
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rabbitmq_admin_url', help="RabbitMQ Admin Url")
-    parser.add_argument('periodicity', type=int,
-                        help="successful job execution periodicity in seconds")
+    parser.add_argument('periodicity', type=int, help="successful job execution periodicity in seconds")
     parser.add_argument('-u', '--url', default=host, help="ElasticSearch URL")
     parser.add_argument('-n', '--user', default=None, help="User to access the rabbit_mq")
     parser.add_argument('-p', '--password', default=None, help="password to access the rabbit_mq")
     parser.add_argument('-s', '--slack_url', default=None, help="Slack URL for notification")
     parser.add_argument('-e', '--email', default=None, help="email addresses (comma-separated) for notification")
+
     args = parser.parse_args()
-    check_queue_execution(args.url, args.rabbitmq_admin_url, args.periodicity, args.slack_url, args.email, args.user, args.password)
+    check_queue_execution(args.rabbitmq_admin_url, args.periodicity, args.slack_url, args.email, args.user,
+                          args.password)
