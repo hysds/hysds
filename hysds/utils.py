@@ -310,7 +310,10 @@ def pprintXml(et):
 def parse_iso8601(t):
     """Return datetime from ISO8601 string."""
 
-    return datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%fZ')
+    try:
+        return datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%fZ')
+    except ValueError:
+        return datetime.strptime(t, '%Y-%m-%dT%H:%M:%SZ')
 
 
 def get_short_error(e):
@@ -514,7 +517,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     datasets_cfg_file = job['job_info']['datasets_cfg_file']
 
     # time start
-    time_start = datetime.strptime(time_start_iso, '%Y-%m-%dT%H:%M:%S.%fZ')
+    time_start = parse_iso8601(time_start_iso)
 
     # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
     # also overwrite merged PROV-ES JSON file
