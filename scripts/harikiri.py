@@ -213,12 +213,6 @@ def seppuku(logger=None):
 
     logging.info("Initiating seppuku.")
 
-    # introduce random sleep
-    meditation_time = randint(0, 600)
-    logging.info(
-        "Meditating for %s seconds to avoid thundering herd." % meditation_time)
-    time.sleep(meditation_time)
-
     # instances may be part of autoscaling group or spot fleet
     as_group = None
     spot_fleet = None
@@ -304,14 +298,13 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
         logging.error("Got exception in graceful_shutdown(): %s\n%s" %
                       (str(e), traceback.format_exc()))
 
-    time.sleep(60)
-
     # log seppuku
     if logger is not None:
         try:
             print((log_event(logger, 'harikiri', 'shutdown', {}, [])))
         except:
             pass
+    time.sleep(60)
 
     call(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"])
 
