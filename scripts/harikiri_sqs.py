@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 import os
 import sys
@@ -29,13 +30,14 @@ from datetime import datetime
 from pprint import pformat
 import boto3
 from botocore.exceptions import ClientError
-
+import yaml
+import re
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 
-DAY_DIR_RE = re.compile(r'jobs/\d{4}/\d{2}/\d{2}/\d{2}/\d{2}$')
+DAY_DIR_RE = re.compile(r"jobs/\d{4}/\d{2}/\d{2}/\d{2}/\d{2}$")
 
 NO_JOBS_TIMER = None
 
@@ -46,15 +48,16 @@ def log_event(url, event_type, event_status, event, tags):
     """Log custom event."""
 
     params = {
-        'type': event_type,
-        'status': event_status,
-        'event': event,
-        'tags': tags,
-        'hostname': socket.getfqdn(),
+        "type": event_type,
+        "status": event_status,
+        "event": event,
+        "tags": tags,
+        "hostname": socket.getfqdn(),
     }
-    headers = {'Content-type': 'application/json'}
-    r = requests.post("%s/event/add" % url, data=json.dumps(params),
-                      verify=False, headers=headers)
+    headers = {"Content-type": "application/json"}
+    r = requests.post(
+        "%s/event/add" % url, data=json.dumps(params), verify=False, headers=headers
+    )
     r.raise_for_status()
     resp = r.json()
     return resp
@@ -81,7 +84,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             KEEP_ALIVE = True
             if logger is not None:
                 try:
-                    print((log_event(logger, 'harikiri', 'keep_alive_set', {}, [])))
+                    print((log_event(logger, "harikiri", "keep_alive_set", {}, [])))
                 except:
                     pass
         logging.info("Keep-alive exists.")
@@ -91,7 +94,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             KEEP_ALIVE = False
             if logger is not None:
                 try:
-                    print((log_event(logger, 'harikiri', 'keep_alive_unset', {}, [])))
+                    print((log_event(logger, "harikiri", "keep_alive_unset", {}, [])))
                 except:
                     pass
             logging.info("Keep-alive removed.")
@@ -104,10 +107,9 @@ def is_jobless(root_work, inactivity_secs, logger=None):
         dirs.sort()
         for d in dirs:
             job_dir = os.path.join(root, d)
-            done_file = os.path.join(job_dir, '.done')
+            done_file = os.path.join(job_dir, ".done")
             if not os.path.exists(done_file):
-                logging.info(
-                    "%s: no .done file found. Not jobless yet." % job_dir)
+                logging.info("%s: no .done file found. Not jobless yet." % job_dir)
                 return False
             t = os.path.getmtime(done_file)
             done_dt = datetime.fromtimestamp(t)
@@ -129,7 +131,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
 
 @backoff.on_exception(backoff.expo, ClientError, max_tries=10, max_value=512)
 def get_all_groups(c):
-    """Get all AutoScaling groups."""
+    """Get all AutoScaling groups. c is boto3 client. """
 
     groups = []
     next_token = None
@@ -138,8 +140,8 @@ def get_all_groups(c):
             resp = c.describe_auto_scaling_groups()
         else:
             resp = c.describe_auto_scaling_groups(NextToken=next_token)
-        groups.extend(resp['AutoScalingGroups'])
-        next_token = resp.get('NextToken', None)
+        groups.extend(resp["AutoScalingGroups"])
+        next_token = resp.get("NextToken", None)
         if next_token is None:
             break
     return groups
@@ -156,8 +158,8 @@ def get_all_fleets(c):
             resp = c.describe_spot_fleet_requests()
         else:
             resp = c.describe_spot_fleet_requests(NextToken=next_token)
-        fleets.extend(resp['SpotFleetRequestConfigs'])
-        next_token = resp.get('NextToken', None)
+        fleets.extend(resp["SpotFleetRequestConfigs"])
+        next_token = resp.get("NextToken", None)
         if next_token is None:
             break
     return fleets
@@ -171,13 +173,13 @@ def get_fleet_instances(c, fleet_name):
     next_token = None
     while True:
         if next_token is None:
-            resp = c.describe_spot_fleet_instances(
-                SpotFleetRequestId=fleet_name)
+            resp = c.describe_spot_fleet_instances(SpotFleetRequestId=fleet_name)
         else:
-            resp = c.describe_spot_fleet_instances(SpotFleetRequestId=fleet_name,
-                                                   NextToken=next_token)
-        instances.extend(resp['ActiveInstances'])
-        next_token = resp.get('NextToken', None)
+            resp = c.describe_spot_fleet_instances(
+                SpotFleetRequestId=fleet_name, NextToken=next_token
+            )
+        instances.extend(resp["ActiveInstances"])
+        next_token = resp.get("NextToken", None)
         if next_token is None:
             break
     return instances
@@ -186,8 +188,11 @@ def get_fleet_instances(c, fleet_name):
 @backoff.on_exception(backoff.expo, ClientError, max_value=512)
 def detach_instance(c, as_group, id):
     """Detach instance from AutoScaling group."""
-    c.detach_instances(InstanceIds=[id], AutoScalingGroupName=as_group,
-                       ShouldDecrementDesiredCapacity=True)
+    c.detach_instances(
+        InstanceIds=[id],
+        AutoScalingGroupName=as_group,
+        ShouldDecrementDesiredCapacity=True,
+    )
 
 
 @backoff.on_exception(backoff.expo, ClientError, max_value=512)
@@ -195,15 +200,19 @@ def decrement_fleet(c, spot_fleet):
     """Decrement target capacity of spot fleet."""
 
     resp = c.describe_spot_fleet_requests(SpotFleetRequestIds=[spot_fleet])
-    tg = resp['SpotFleetRequestConfigs'][0]['SpotFleetRequestConfig']['TargetCapacity']
+    tg = resp["SpotFleetRequestConfigs"][0]["SpotFleetRequestConfig"]["TargetCapacity"]
     logging.info("TargetCapacity: %s" % tg)
     tg -= 1
     if tg > 0:
-        c.modify_spot_fleet_request(ExcessCapacityTerminationPolicy='NoTermination',
-                                    SpotFleetRequestId=spot_fleet, TargetCapacity=tg)
+        c.modify_spot_fleet_request(
+            ExcessCapacityTerminationPolicy="NoTermination",
+            SpotFleetRequestId=spot_fleet,
+            TargetCapacity=tg,
+        )
     else:
-        c.cancel_spot_fleet_requests(SpotFleetRequestIds=[spot_fleet],
-                                     TerminateInstances=False)
+        c.cancel_spot_fleet_requests(
+            SpotFleetRequestIds=[spot_fleet], TerminateInstances=False
+        )
     logging.info("response: %s" % pformat(resp))
 
 
@@ -219,50 +228,23 @@ def seppuku(logger=None):
 
     # check if instance part of an autoscale group
     id = requests.get(
-        'http://169.254.169.254/latest/meta-data/instance-id').content.decode()
+        "http://169.254.169.254/latest/meta-data/instance-id"
+    ).content.decode()
     logging.info("Our instance id: %s" % id)
-    c = boto3.client('autoscaling')
-    for group in get_all_groups(c):
-        group_name = str(group['AutoScalingGroupName'])
-        logging.info("Checking group: %s" % group_name)
-        for i in group['Instances']:
-            asg_inst_id = str(i['InstanceId'])
-            logging.info("Checking group instance: %s" % asg_inst_id)
-            if id == asg_inst_id:
-                as_group = group_name
-                logging.info("Matched!")
-                break
-    if as_group is None:
-        logging.info(
-            "This instance %s is not part of any autoscale group." % id)
-
-        # check if instance is part of a spot fleet
-        c = boto3.client('ec2')
-        for fleet in get_all_fleets(c):
-            fleet_name = str(fleet['SpotFleetRequestId'])
-            logging.info("Checking fleet: %s" % fleet_name)
-            for i in get_fleet_instances(c, fleet_name):
-                sf_inst_id = str(i['InstanceId'])
-                logging.info("Checking fleet instance: %s" % sf_inst_id)
-                if id == sf_inst_id:
-                    spot_fleet = fleet_name
-                    logging.info("Matched!")
-                    break
-        if spot_fleet is None:
-            logging.info(
-                "This instance %s is not part of any spot fleet." % id)
 
     # gracefully shutdown
     while True:
         try:
-            graceful_shutdown(as_group, spot_fleet, id, logger)
+            graceful_shutdown(id, logger)
         except Exception as e:
-            logging.error("Got exception in graceful_shutdown(): %s\n%s" %
-                          (str(e), traceback.format_exc()))
+            logging.error(
+                "Got exception in graceful_shutdown(): %s\n%s"
+                % (str(e), traceback.format_exc())
+            )
         time.sleep(randint(0, 600))
 
 
-def graceful_shutdown(as_group, spot_fleet, id, logger=None):
+def graceful_shutdown(id, logger=None):
     """Gracefully shutdown supervisord, detach from AutoScale group or spot fleet,
        and shutdown."""
 
@@ -285,26 +267,37 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
 
     # detach and die
     logging.info("Committing seppuku.")
-
-    # detach if part of a spot fleet or autoscaling group
     try:
-        if as_group is not None:
-            c = boto3.client('autoscaling')
-            detach_instance(c, as_group, id)
-        if spot_fleet is not None:
-            c = boto3.client('ec2')
-            decrement_fleet(c, spot_fleet)
-    except Exception as e:
-        logging.error("Got exception in graceful_shutdown(): %s\n%s" %
-                      (str(e), traceback.format_exc()))
+        zone = requests.get('http://169.254.169.254/latest/meta-data/placement/availability-zone')
+        region = zone.text[:-1]
+        endpoint_url = "https://sqs.{}.amazonaws.com".format(region)       
+        sqs = boto3.resource("sqs",endpoint_url=endpoint_url)
+        yaml.SafeLoader.add_constructor(
+            "tag:yaml.org,2002:python/regexp",
+            lambda l, n: re.compile(l.construct_scalar(n)),
+        )
+        # get queue name
+        with open("/home/ops/verdi/etc/settings.yaml") as f:
+            yml = yaml.safe_load(f)
+        venue = yml["VENUE"]
+        queue_name = venue + ("-queue")
+        # Get the queue. This returns an SQS.Queue instance
+        queue = sqs.get_queue_by_name(QueueName=queue_name)
+
+        # Create a new message, message body is the instance id
+        response = queue.send_message(MessageBody=id)
+    except Exception:
+        logging.error("Got exception in calling queue")
+        traceback.print_exc()
 
     # log seppuku
     if logger is not None:
         try:
-            print((log_event(logger, 'harikiri', 'shutdown', {}, [])))
+            print((log_event(logger, "harikiri", "shutdown", {}, [])))
         except:
             pass
-    time.sleep(60)
+
+    time.sleep(3600)
 
     call(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"])
 
@@ -326,21 +319,39 @@ def harikiri(root_work, inactivity_secs, check_interval, logger=None):
             try:
                 seppuku(logger)
             except Exception as e:
-                logging.error("Got exception in seppuku(): %s\n%s" %
-                              (str(e), traceback.format_exc()))
+                logging.error(
+                    "Got exception in seppuku(): %s\n%s"
+                    % (str(e), traceback.format_exc())
+                )
         time.sleep(check_interval)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('root_work_dir',
-                        help="root HySDS work directory, e.g. /data/work")
-    parser.add_argument('-i', '--inactivity', type=int, default=600,
-                        help="inactivity threshold in seconds")
-    parser.add_argument('-c', '--check', type=int, default=60,
-                        help="check for inactivity every N seconds")
-    parser.add_argument('-l', '--logger', type=str, default=None,
-                        help="enable event logging; specify Mozart REST API," +
-                              " e.g. https://192.168.0.1/mozart/api/v0.1")
+    parser.add_argument(
+        "root_work_dir", help="root HySDS work directory, e.g. /data/work"
+    )
+    parser.add_argument(
+        "-i",
+        "--inactivity",
+        type=int,
+        default=600,
+        help="inactivity threshold in seconds",
+    )
+    parser.add_argument(
+        "-c",
+        "--check",
+        type=int,
+        default=60,
+        help="check for inactivity every N seconds",
+    )
+    parser.add_argument(
+        "-l",
+        "--logger",
+        type=str,
+        default=None,
+        help="enable event logging; specify Mozart REST API,"
+        + " e.g. https://192.168.0.1/mozart/api/v0.1",
+    )
     args = parser.parse_args()
     harikiri(args.root_work_dir, args.inactivity, args.check, args.logger)
