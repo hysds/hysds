@@ -131,7 +131,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
 
 @backoff.on_exception(backoff.expo, ClientError, max_tries=10, max_value=512)
 def get_all_groups(c):
-    """Get all AutoScaling groups."""
+    """Get all AutoScaling groups. c is boto3 client. """
 
     groups = []
     next_token = None
