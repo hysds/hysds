@@ -37,7 +37,7 @@ from email.header import Header
 from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
 from hysds.celery import app
 import elasticsearch
-
+import socket
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -309,7 +309,9 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
     logging.info("url: %s" % url)
     logging.info("rabbitmq url: %s" % rabbitmq_url)
     logging.info("periodicity: %s" % periodicity)
-    
+    hostname = socket.gethostname()    
+    IPAddr = socket.gethostbyname(hostname)
+   
     queue_list = get_all_queues(rabbitmq_url, user, password)
     #print("queue_list : {}".format(queue_list))
     if len(queue_list)==0:
@@ -335,64 +337,78 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
         total_messages=obj["messages"]
         messages_unacked=obj["messages_unacknowledged"]
         running = total_messages - messages_ready
-	
-        if messages_ready>0 and messages_unacked==0:
-            is_alert=True
-            error +='\nQueue Name : %s' %queue_name
-            error += "\nError : No job running though jobs are waiting in the queue!!"
-            error +='\nTotal jobs : %s' %total_messages
-            error += '\nJobs WAITING in the queue : %s' %messages_ready
-            error +='\nJobs running : %s' %messages_unacked
-        else:
-            print("processing job status for queue : %s" %queue_name)
-            result = do_queue_query(url, queue_name)
+        queue_alert_jobs = {}
 
+        try:	
+            result = do_queue_query(url, queue_name)
             print("result : {}".format(result))
-            #count = result['hits']['total']
             count = (len(result))
             if count == 0: 
-                is_alert=True
-                error +='\nQueue Name : %s' %queue_name
-                error += "\nError : No job found for Queue :  %s!!\n." % queue_name
+                is_alert=False
             else:
-                latest_job = result[0]['_source']
-                logging.info("latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
-                print("job status : %s" %latest_job['status'])
-                start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
-                now = datetime.utcnow()
-                delta = (now-start_dt).total_seconds()
-                if 'time_limit' in latest_job['job']['job_info']:
-                    logging.info("Using job time limit as periodicity")
-                    periodicity = latest_job['job']['job_info']['time_limit']
-                logging.info("periodicity: %s" % periodicity)
-                logging.info("Successful Job delta: %s" % delta)
-                if delta > periodicity:
-                    is_alert=True
-                    error +='\nQueue Name : %s' %queue_name
-                    error += '\nError: Possible Job hanging in the queue'
-                    error +='\nTotal jobs : %s' %total_messages
-                    error += '\nJobs WAITING in the queue : %s' %messages_ready
-                    error +='\nJobs running : %s' %messages_unacked
-                    error  += '\nThe last job running in Queue "%s" for %.2f-hours.\n' % (queue_name, delta/3600.) 
-                    error += "job_id: %s\n" % latest_job['job_id']
-                    error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
-                    error += "time_started: %s\n" % latest_job['job']['job_info']['time_start']
-                    color = "#f23e26"
-                else: continue
+                i = 0
+                while i<count:
+                    latest_job = result[i]['_source']
+                    i = i +1 
+                    #logging.info("Checking job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
+                    print("\nChecking Job : {}".format(latest_job['job_id']))
+                    print("job status : %s" %latest_job['status'])
+                    start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
+                    now = datetime.utcnow()
+                    delta = (now-start_dt).total_seconds()
+                    if 'time_limit' in latest_job['job']['job_info']:
+                        logging.info("Using job time limit as periodicity")
+                        periodicity = latest_job['job']['job_info']['time_limit']
+                        logging.info("periodicity: %s" % periodicity)
+                        logging.info("Job delta: %s" % delta)
+                        if delta > periodicity:
+                            logging.info("IS_ALERT is TRUE for : {}".format(latest_job['job_id']))
+                            is_alert=True
 
-    if not is_alert:
-        return
-    #Send the queue status now.
-    subject = "\n\nQueue Status Alert\n\n" 
+                            queue_alert_jobs[latest_job['job_id']] = {
+                                "time_queued" : latest_job['job']['job_info']['time_queued'],
+                                "time_started" : latest_job['job']['job_info']['time_start'],
+                                "time_limit" : "%s.2f-hours" %(periodicity/3600.),
+                                "delta" : "%s.2f-hours" %(delta/3600.)
+                            }
+                        else: continue
 
-    # send notification via slack
-    if slack_url:
-        send_slack_notification(slack_url, subject, error, "#f23e26", attachment_only=True)
+            if len(queue_alert_jobs)>0:
+                error = "Machine Name : {}".format(IPAddr)
+                error +='\nQueue Name : %s' %queue_name
+                error += "\nError : POSSIBLE JOB HANGING in Queue :  %s!!\n." % queue_name
+                error += "\nNUMBER of POSSIBLE JOB HANGING : %s!!\n." % len(queue_alert_jobs)
+                error += "\n\nError : The following jobs are running for longer than time limit".format(periodicity)
+ 
+                for job_id in queue_alert_jobs:
+                    error += "\n\nJob id : {}\n".format(job_id)
+                    error += "time_queued: %s\n" % queue_alert_jobs[job_id]["time_queued"]
+                    error += "time_started: %s\n" % queue_alert_jobs[job_id]["time_started"]
+                    error += "time_limit: %s\n" % queue_alert_jobs[job_id]["time_limit"]
+                    error += "RunTime: %s\n" % queue_alert_jobs[job_id]["delta"]
+                print(error)
+                #Send the queue status now.
+                subject = "\n\nQueue Status Alert: POSSIBLE JOB HANGING in Queue : {}\n\n".format(queue_name)
 
-    # send notification via email
-    if email:
-        send_email_notification(email, "Queue Status", subject + error)
+                # send notification via slack
+                if slack_url:
+                    send_slack_notification(slack_url, subject, error, "#f23e26", attachment_only=True)
 
+                # send notification via email
+                if email:
+                    send_email_notification(email, "Queue Status", subject + error)
+        except Exception as err:
+            subject = "Error Retriving Job Status"
+            error = "Machine Name : {}".format(IPAddr)
+            error +='\nQueue Name : %s' %queue_name
+            error += "\nError : {}".format(str(err))
+
+            if slack_url:
+                send_slack_notification(slack_url, subject, error, "#f23e26", attachment_only=True)
+
+                # send notification via email
+            if email:
+                send_email_notification(email, "Queue Status", subject + error)
 
 
 if __name__ == "__main__":
