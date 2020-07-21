@@ -510,6 +510,29 @@ def getworker_info(celery_hostname):
         logger.info("ERROR : getworker_info for job_id : {} : {}".format(worker_id, str(err)))
     return worker_res
 
+def update_job_status(id, new_status, tags):
+    update_status = 0
+    try:
+        new_doc = {
+            "doc": {"status": new_status,
+            "tags": tags },
+            "doc_as_upsert": True
+        }
+        r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
+                                  data=json.dumps(new_doc))
+        result = r.json()
+        if r.status_code != 200:
+            logging.error("Failed to update status for %s. Got status code %d:\n%s" %
+                          (id, r.status_code, json.dumps(result, indent=2)))
+        else:
+            update_status = 1
+        logging.info("Set job {} to {} and tagged as timedout.".format(id, new_status))
+    except Exception as err:
+        logging.error("Failed to update status for %s. Error : %s" %(id, str(err)))
+        update_status = 0
+
+    return update_status
+
 def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, email=None, user=None, password=None):
     """Check that job type ran successfully within the expected periodicity."""
 
@@ -574,12 +597,14 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
                         if delta > periodicity:
                             logging.info("IS_ALERT is TRUE for : {}".format(latest_job['job_id']))
                             is_alert=True
-
+                            if 'timedout' not in tags:
+                                tags.append('timedout')
                             queue_alert_jobs[latest_job['job_id']] = {
                                 "time_queued" : latest_job['job']['job_info']['time_queued'],
                                 "time_started" : latest_job['job']['job_info']['time_start'],
                                 "time_limit" : "%s.2f-hours" %(periodicity/3600.),
-                                "delta" : "%s.2f-hours" %(delta/3600.)
+                                "delta" : "%s.2f-hours" %(delta/3600.),
+                                "tags" : tags
                             }
                         else: continue
 
@@ -596,6 +621,15 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
                     error += "time_started: %s\n" % queue_alert_jobs[job_id]["time_started"]
                     error += "time_limit: %s\n" % queue_alert_jobs[job_id]["time_limit"]
                     error += "RunTime: %s\n" % queue_alert_jobs[job_id]["delta"]
+                    try:
+                        update_status = update_job_status(job_id, 'job-offline', queue_alert_jobs[job_id]["tags"])
+                        if update_status:
+                            error += "Job Update Status: Job status has been successfully updated to 'job-failed' with tag 'timedout'!!"
+                        else:
+                            error += "Job Update Status: FAILED to update job status to 'job-failed'!!"
+                    except Exception as err:
+                        error += "Job Update Status: FAILED to update job status to 'job-failed'!!"
+                        
                 print(error)
                 #Send the queue status now.
                 subject = "\n\nQueue Status Alert: POSSIBLE JOB HANGING in Queue : {}\n\n".format(queue_name)
