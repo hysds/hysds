@@ -203,7 +203,7 @@ def do_queue_query(url, queue_name):
         "sort": [{"job.job_info.time_start": {"order": "asc"}}],
         "_source": ["job_id", "status", "job_queue", "payload_id", "payload_hash", "uuid",
                     "job.job_info.time_queued", "job.job_info.time_start", "job.job_info.time_limit",
-                    "job.job_info.time_end", "error", "traceback"]
+                    "job.job_info.time_end", "tags", "celery_hostname", "error", "traceback"]
     }
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
 
@@ -257,6 +257,167 @@ def query_es(es_url, query, es_index):
         hits.extend(res['hits']['hits'])
     return hits
 
+def tag_timedout_jobs(url, timeout):
+    """Tag jobs stuck in job-started or job-offline that have timed out."""
+
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {
+                        "terms": {
+                            "status": ["job-started", "job-offline"]
+                        }
+                    },
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "lt": "now-%ds" % timeout
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        "_source": [
+            "status", "tags", "uuid", "celery_hostname",
+            "job.job_info.time_start", "job.job_info.time_limit"
+        ]
+    }
+
+    # query
+    url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
+    r = requests.post(url_tmpl.format(url), data=json.dumps(query))
+    if r.status_code != 200:
+        logging.error("Failed to query ES. Got status code %d:\n%s" %
+                      (r.status_code, json.dumps(query, indent=2)))
+    r.raise_for_status()
+    scan_result = r.json()
+    count = scan_result['hits']['total']
+    scroll_id = scan_result['_scroll_id']
+
+    # get list of results
+    results = []
+    while True:
+        r = requests.post('%s/_search/scroll?scroll=10m' % url, data=scroll_id)
+        res = r.json()
+        scroll_id = res['_scroll_id']
+        if len(res['hits']['hits']) == 0:
+            break
+        for hit in res['hits']['hits']:
+            results.append(hit)
+
+    logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
+                 " older than %d seconds." % timeout)
+
+    # tag each with timedout
+    for res in results:
+        id = res['_id']
+        src = res.get('_source', {})
+        status = src['status']
+        tags = src.get('tags', [])
+        task_id = src['uuid']
+        celery_hostname = src['celery_hostname']
+        logging.info("job_info: {}".format(json.dumps(src)))
+
+        # get job duration
+        time_limit = src['job']['job_info']['time_limit']
+        logging.info("time_limit: {}".format(time_limit))
+        time_start = parse_iso8601(src['job']['job_info']['time_start'])
+        logging.info("time_start: {}".format(time_start))
+        time_now = datetime.utcnow()
+        logging.info("time_now: {}".format(time_now))
+        duration = (time_now - time_start).seconds
+        logging.info("duration: {}".format(duration))
+
+        if status == "job-started":
+            # get task info
+            task_query = {
+                "query": {
+                    "term": {
+                        "_id": task_id
+                    }
+                },
+                "_source": ["status"]
+            }
+            r = requests.post('%s/task_status-current/task/_search' % url,
+                              data=json.dumps(task_query))
+            if r.status_code != 200:
+                logging.error("Failed to query ES. Got status code %d:\n%s" %
+                              (r.status_code, json.dumps(task_query, indent=2)))
+                continue
+            task_res = r.json()
+            logging.info("task_res: {}".format(json.dumps(task_res)))
+
+            # get worker info
+            worker_query = {
+                "query": {
+                    "term": {
+                        "_id": celery_hostname
+                    }
+                },
+                "_source": ["status", "tags"]
+            }
+            r = requests.post('%s/worker_status-current/task/_search' % url,
+                              data=json.dumps(worker_query))
+            if r.status_code != 200:
+                logging.error("Failed to query ES. Got status code %d:\n%s" %
+                              (r.status_code, json.dumps(worker_query, indent=2)))
+                continue
+            worker_res = r.json()
+            logging.info("worker_res: {}".format(json.dumps(worker_res)))
+
+            # determine new status
+            new_status = status
+            if worker_res['hits']['total'] == 0 and duration > time_limit:
+                new_status = 'job-offline'
+            if worker_res['hits']['total'] > 0 and (
+                "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
+                worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
+                new_status = 'job-offline'
+            if task_res['hits']['total'] > 0:
+                task_info = task_res['hits']['hits'][0]
+                if task_info['_source']['status'] == 'task-failed':
+                    new_status = 'job-failed'
+
+            # update status
+            if status != new_status:
+                logger.info("updating status from {} to {}".format(status, new_status))
+                if duration > time_limit and 'timedout' not in tags:
+                    tags.append('timedout')
+                new_doc = {
+                    "doc": {"status": new_status,
+                            "tags": tags },
+                    "doc_as_upsert": True
+                }
+                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
+                                  data=json.dumps(new_doc))
+                result = r.json()
+                if r.status_code != 200:
+                    logging.error("Failed to update status for %s. Got status code %d:\n%s" %
+                                  (id, r.status_code, json.dumps(result, indent=2)))
+                r.raise_for_status()
+                logging.info("Set job {} to {} and tagged as timedout.".format(id, new_status))
+                continue
+
+        if 'timedout' in tags:
+            logging.info("%s already tagged as timedout." % id)
+        else:
+            if duration > time_limit:
+                tags.append('timedout')
+                new_doc = {
+                    "doc": {"tags": tags},
+                    "doc_as_upsert": True
+                }
+                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
+                                  data=json.dumps(new_doc))
+                result = r.json()
+                if r.status_code != 200:
+                    logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
+                                  (id, r.status_code, json.dumps(result, indent=2)))
+                r.raise_for_status()
+                logging.info("Tagged %s as timedout." % id)
+
 
 def send_email_notification(emails, job_type, text, attachments=[]):
     """Send email notification."""
@@ -302,6 +463,52 @@ def get_all_queues(rabbitmq_admin_url, user=None, password=None):
                 break
     #'''	    
     return [ obj for obj in data if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES and obj["name"] !='Recommended Queues' and obj["messages_ready"]>0]
+
+def getTask_info(task_id):
+    task_res = None
+    try:
+        task_query = {
+            "query": {
+                "term": {
+                    "_id": task_id
+                }
+            },
+            "_source": ["status"]
+        }
+        r = requests.post('%s/task_status-current/task/_search' % url,
+                              data=json.dumps(task_query))
+        if r.status_code != 200:
+            logging.error("Failed to query ES. Got status code %d:\n%s" %
+                              (r.status_code, json.dumps(task_query, indent=2)))
+        else:
+            task_res = r.json()
+            logging.info("task_res: {}".format(json.dumps(task_res)))
+    except Exception as err:
+        logger.info("ERROR : getTask_info for job_id : {} : {}".format(task_id, str(err)))
+    return task_res
+
+def getworker_info(celery_hostname):
+    worker_res = None
+    try:
+        worker_query = {
+            "query": {
+                "term": {
+                    "_id": celery_hostname
+                }
+            },
+            "_source": ["status", "tags"]
+        }
+        r = requests.post('%s/worker_status-current/task/_search' % url,
+                              data=json.dumps(worker_query))
+        if r.status_code != 200:
+            logging.error("Failed to query ES. Got status code %d:\n%s" %
+                              (r.status_code, json.dumps(worker_query, indent=2)))
+        else:
+            worker_res = r.json()
+            logging.info("worker_res: {}".format(json.dumps(worker_res)))
+    except Exception as err:
+        logger.info("ERROR : getworker_info for job_id : {} : {}".format(worker_id, str(err)))
+    return worker_res
 
 def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, email=None, user=None, password=None):
     """Check that job type ran successfully within the expected periodicity."""
@@ -349,8 +556,11 @@ def check_queue_execution(url, rabbitmq_url, periodicity=0,  slack_url=None, ema
                 i = 0
                 while i<count:
                     latest_job = result[i]['_source']
+                    tags = latest_job.get('tags', [])
+                    task_id = latest_job['uuid']
+                    celery_hostname = latest_job['celery_hostname']
                     i = i +1 
-                    #logging.info("Checking job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
+                    logging.info("Checking job: %s" % json.dumps(latest_job, indent=2, sort_keys=True))
                     print("\nChecking Job : {}".format(latest_job['job_id']))
                     print("job status : %s" %latest_job['status'])
                     start_dt = datetime.strptime(latest_job['job']['job_info']['time_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
