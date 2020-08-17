@@ -151,7 +151,7 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logger.info("updating status from {} to {}".format(status, new_status))
+                logging.info("updating status from {} to {}".format(status, new_status))
                 if duration > time_limit and 'timedout' not in tags:
                     tags.append('timedout')
                 new_doc = {
