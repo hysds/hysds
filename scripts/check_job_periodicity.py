@@ -22,196 +22,14 @@ import traceback
 import logging
 import argparse
 from datetime import datetime
-import smtplib
-from smtplib import SMTP
-# Import the email modules we'll need
-from email.message import EmailMessage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email.header import Header
-from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
 import elasticsearch
 from hysds.celery import app
+import job_util
+
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
-
-
-def send_slack_notification(channel_url, subject, text, color=None, subject_link=None,
-                            attachment_only=False):
-    """Send slack notification."""
-
-    attachment = {
-        "title": subject,
-        "text": text,
-    }
-    if color is not None:
-        attachment['color'] = color
-    if subject_link is not None:
-        attachment['subject_link'] = subject_link
-    payload = {
-        'attachments': [attachment]
-    }
-    if not attachment_only:
-        payload['text'] = text
-    r = requests.post(channel_url, data=json.dumps(payload),
-                      headers={'Content-Type': 'application/json'})
-    r.raise_for_status()
-
-
-def get_hostname():
-    """Get hostname."""
-
-    # get hostname
-    try:
-        return socket.getfqdn()
-    except:
-        # get IP
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except:
-            raise RuntimeError(
-                "Failed to resolve hostname for full email address. Check system.")
-
-
-def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments=None):
-    """Send an email.
-
-    All arguments should be Unicode strings (plain ASCII works as well).
-
-    Only the real name part of sender and recipient addresses may contain
-    non-ASCII characters.
-
-    The email will be properly MIME encoded and delivered though SMTP to
-    172.17.0.1.  This is easy to change if you want something different.
-
-    The charset of the email will be the first one out of US-ASCII, ISO-8859-1
-    and UTF-8 that can represent all the characters occurring in the email.
-    """
-
-    # combined recipients
-    recipients = cc_recipients + bcc_recipients
-
-    # Header class is smart enough to try US-ASCII, then the charset we
-    # provide, then fall back to UTF-8.
-    header_charset = 'ISO-8859-1'
-
-    # We must choose the body charset manually
-    for body_charset in 'US-ASCII', 'ISO-8859-1', 'UTF-8':
-        try:
-            body.encode(body_charset)
-        except UnicodeError:
-            pass
-        else:
-            break
-
-    # Split real name (which is optional) and email address parts
-    sender_name, sender_addr = parseaddr(sender)
-    parsed_cc_recipients = [parseaddr(rec) for rec in cc_recipients]
-    parsed_bcc_recipients = [parseaddr(rec) for rec in bcc_recipients]
-    #recipient_name, recipient_addr = parseaddr(recipient)
-
-    # We must always pass Unicode strings to Header, otherwise it will
-    # use RFC 2047 encoding even on plain ASCII strings.
-    sender_name = str(Header(str(sender_name), header_charset))
-    unicode_parsed_cc_recipients = []
-    for recipient_name, recipient_addr in parsed_cc_recipients:
-        recipient_name = str(Header(str(recipient_name), header_charset))
-        # Make sure email addresses do not contain non-ASCII characters
-        recipient_addr = recipient_addr.encode('ascii')
-        unicode_parsed_cc_recipients.append((recipient_name, recipient_addr))
-    unicode_parsed_bcc_recipients = []
-    for recipient_name, recipient_addr in parsed_bcc_recipients:
-        recipient_name = str(Header(str(recipient_name), header_charset))
-        # Make sure email addresses do not contain non-ASCII characters
-        recipient_addr = recipient_addr.encode('ascii')
-        unicode_parsed_bcc_recipients.append((recipient_name, recipient_addr))
-
-    # Make sure email addresses do not contain non-ASCII characters
-    sender_addr = sender_addr.encode('ascii')
-    recipients = cc_recipients + bcc_recipients
-    # Create the message ('plain' stands for Content-Type: text/plain)
-    msg = MIMEMultipart()
-    msg['To'] = ', '.join(recipients)
-    '''
-    msg['CC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
-                                 for recipient_name, recipient_addr in unicode_parsed_cc_recipients])
-    msg['BCC'] = COMMASPACE.join([formataddr((recipient_name, recipient_addr))
-                                  for recipient_name, recipient_addr in unicode_parsed_bcc_recipients])
-    '''
-    msg['Subject'] = Header(str(subject), header_charset)
-    msg['FROM'] = "no-reply@jpl.nasa.gov"
-    msg.attach(MIMEText(body.encode(body_charset), 'plain', body_charset))
-
-    # Add attachments
-    if isinstance(attachments, dict):
-        for fname in attachments:
-            part = MIMEBase('application', "octet-stream")
-            part.set_payload(attachments[fname])
-            email.encoders.encode_base64(part)
-            part.add_header('Content-Disposition',
-                            'attachment; filename="%s"' % fname)
-            msg.attach(part)
-
-    # Send the message via SMTP to docker host
-    smtp_url = "smtp://127.0.0.1:25"
-    utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
-    smtp = SMTP("127.0.0.1")
-    smtp.sendmail(sender, recipients, msg.as_string())
-    smtp.quit()
-
-def do_job_query(url, job_type, job_status):
-
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {
-                        "terms": {
-                            "status": [job_status]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "resource": ["job"]
-                        }
-                    },
-                    {
-                        "terms": {
-                            "type": [job_type]
-                        }
-                    }
-                ]
-            }
-        },
-        "sort": [{"job.job_info.time_end": {"order": "desc"}}],
-        "_source": ["job_id", "payload_id", "payload_hash", "uuid",
-                    "job.job_info.time_queued", "job.job_info.time_start",
-                    "job.job_info.time_end", "job.job_info.time_limit"
-                    "error", "traceback"],
-        "size": 1
-    }
-    logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
-
-    # query
-    ES = elasticsearch.Elasticsearch(url)
-    result = ES.search(index="job_status-current", body=json.dumps(query)) 
-
-    return result
-
-
-def send_email_notification(emails, job_type, text, attachments=[]):
-    """Send email notification."""
-
-    cc_recipients = [i.strip() for i in emails.split(',')]
-    bcc_recipients = []
-    subject = "[job_periodicity_watchdog] %s" % job_type
-    body = text
-    attachments = None
-    send_email("%s@%s" % (getpass.getuser(), get_hostname()), cc_recipients,
-               bcc_recipients, subject, body, attachments=attachments)
 
 
 def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=None):
@@ -222,7 +40,7 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
     logging.info("periodicity: %s" % periodicity)
 
     # build query
-    result = do_job_query(url, job_type, "job-failed")
+    result = job_util.do_job_query(url, job_type, "job-failed")
     count = result['hits']['total']
     if count == 0:
         error += "\n\nNo Failed jobs found for job type %s." % job_type
@@ -249,12 +67,12 @@ def check_failed_job(url, job_type, periodicity, error, slack_url=None, email=No
 
     # send notification via slack
     if slack_url:
-        send_slack_notification(slack_url, subject, error,
+        job_util.send_slack_notification(slack_url, subject, error,
                                 "#f23e26", attachment_only=True)
 
     # send notification via email
     if email:
-        send_email_notification(email, job_type, subject + error)
+        job_util.send_email_notification(email, job_type, subject + error)
 
 
 def check_job_execution(url, job_type, periodicity=0,  slack_url=None, email=None):
@@ -265,7 +83,7 @@ def check_job_execution(url, job_type, periodicity=0,  slack_url=None, email=Non
     logging.info("Initial periodicity: %s" % periodicity)
 
     # build query
-    result = do_job_query(url, job_type, "job-completed")
+    result = job_util.do_job_query(url, job_type, "job-completed")
     count = result['hits']['total']
     if count == 0:
         error = "No Successfully Completed jobs found for job type %s!!\n." % job_type
