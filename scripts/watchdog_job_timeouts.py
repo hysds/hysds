@@ -1,4 +1,3 @@
-(mozart) hysdsops@nisar-100-64-122-181:~/mozart/ops/hysds/scripts$ cat watchdog_job_timeouts.py 
 #!/usr/bin/env python
 from __future__ import division
 from __future__ import unicode_literals
@@ -29,7 +28,11 @@ def tag_timedout_jobs(url, timeout):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
 
     status = ["job-started", "job-offline"]
-    query = job_utils.get_timedout_query(timeout, status)
+    source_data = [
+            "status", "tags", "uuid", "celery_hostname",
+            "job.job_info.time_start", "job.job_info.time_limit"
+        ]
+    query = job_utils.get_timedout_query(timeout, status, source_data)
     results = job_utils.run_query_with_scroll(query, url)
     logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
                  " older than %d seconds." % timeout)

@@ -23,7 +23,7 @@ from hysds.celery import app
 import hysds.es_util as es_util
 from elasticsearch import Elasticsearch, exceptions
 
-def get_timedout_query(timeout, status):
+def get_timedout_query(timeout, status, source_data):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
 
     query = {
@@ -45,10 +45,7 @@ def get_timedout_query(timeout, status):
                 ]
             }
         },
-        "_source": [
-            "status", "tags", "uuid", "celery_hostname",
-            "job.job_info.time_start", "job.job_info.time_limit"
-        ]
+        "_source": source_data
     }
     return query
 
@@ -66,7 +63,7 @@ def run_query_with_scroll(query, url="localhost:9200", index = "job_status-curre
     resp = client.search(
             index = index,
             body = json.dumps(query),
-            scroll = '10s' # length of time to keep search context
+            scroll = '10m' # length of time to keep search context
         )
     old_scroll_id = resp['_scroll_id']
     results = []
