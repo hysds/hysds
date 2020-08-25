@@ -12,16 +12,13 @@ import json
 import time
 import traceback
 import logging
-import argparse
-import random
-import boto3
-import requests
 from datetime import datetime
 
 from hysds.utils import parse_iso8601
 from hysds.celery import app
 import hysds.es_util as es_util
 from elasticsearch import Elasticsearch, exceptions
+
 
 def get_timedout_query(timeout, status, source_data):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
