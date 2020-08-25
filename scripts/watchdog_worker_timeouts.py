@@ -14,11 +14,9 @@ import traceback
 import logging
 import argparse
 import random
-import boto3
-import requests
 
 from hysds.celery import app
-
+import job_utils
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_worker_timeouts] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -49,6 +47,17 @@ def tag_timedout_workers(url, timeout):
         "_source": ["status", "tags"]
     }
 
+    status = ["worker-heartbeat"]
+    source_data = ["status", "tags"]
+    query = job_utils.get_timedout_query(timeout, status, source_data)
+    print(json.dumps(query, indent=2))
+
+    results = job_utils.run_query_with_scroll(query, url, index = "worker_status-current")
+    print(results)
+    logging.info("Found %d stuck workers with heartbeats" % len(results) +
+                 " older than %d seconds." % timeout)
+
+    '''
     # query
     url_tmpl = "{}/worker_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(url), data=json.dumps(query))
@@ -73,6 +82,7 @@ def tag_timedout_workers(url, timeout):
 
     logging.info("Found %d workers with hearbeats" % len(results) +
                  " older than %d seconds." % timeout)
+    '''
 
     # tag each with timedout
     for res in results:
@@ -87,6 +97,12 @@ def tag_timedout_workers(url, timeout):
                 "doc": {"tags": tags},
                 "doc_as_upsert": True
             }
+            response = job_utils.update_es(id, new_doc, url=url, index = "worker_status-current")
+            if response['result'].strip() != "updated":
+                     err_str = "Failed to update status for {} : {}".format(id, json.dumps(response, indent=2))
+                     logging.error(err_str)
+                     raise Exception(err_str)
+            '''
             r = requests.post('%s/worker_status-current/worker/%s/_update' % (url, id),
                               data=json.dumps(new_doc))
             result = r.json()
@@ -94,6 +110,7 @@ def tag_timedout_workers(url, timeout):
                 logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
                               (id, r.status_code, json.dumps(result, indent=2)))
             r.raise_for_status()
+            '''
             logging.info("Tagged %s as timedout." % id)
         else:
             logging.info("%s already tagged as timedout." % id)
