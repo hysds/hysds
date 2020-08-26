@@ -67,7 +67,7 @@ def tag_timedout_jobs(url, timeout):
                 },
                 "_source": ["status"]
             }
-            task_res = job_utils.es_query(task_query)
+            task_res = job_utils.es_query(task_query, index="task_status-current")
           
             if len(task_res['hits']['hits'])==0:
                 logging.error("No result found with : query\n%s" %
@@ -85,31 +85,30 @@ def tag_timedout_jobs(url, timeout):
                 "_source": ["status", "tags"]
             }
 
-            worker_res = job_utils.es_query(worker_query)
+            worker_res = job_utils.es_query(worker_query, index="worker_status-current")
             
             if len(worker_res['hits']['hits'])==0:
                 logging.error("No result found with : query\n%s" %
                               (json.dumps(worker_query, indent=2)))
 
-            worker_res = r.json()
             logging.info("worker_res: {}".format(json.dumps(worker_res)))
 
             # determine new status
             new_status = status
-            if worker_res['hits']['total'] == 0 and duration > time_limit:
+            if worker_res['hits']['total']['value'] == 0 and duration > time_limit:
                 new_status = 'job-offline'
-            if worker_res['hits']['total'] > 0 and (
+            if worker_res['hits']['total']['value'] > 0 and (
                 "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
                 worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
                 new_status = 'job-offline'
-            if task_res['hits']['total'] > 0:
+            if task_res['hits']['total']['value'] > 0:
                 task_info = task_res['hits']['hits'][0]
                 if task_info['_source']['status'] == 'task-failed':
                     new_status = 'job-failed'
 
             # update status
             if status != new_status:
-                logger.info("updating status from {} to {}".format(status, new_status))
+                logging.info("updating status from {} to {}".format(status, new_status))
                 if duration > time_limit and 'timedout' not in tags:
                     tags.append('timedout')
                 new_doc = {
