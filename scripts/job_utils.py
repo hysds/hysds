@@ -62,7 +62,7 @@ def run_query_with_scroll(query, index = "job_status-current"):
     return results
 
     
-def update_es(doc_id, data, url="localhost:9200", index = "job_status-current"):
+def update_es(doc_id, data, index = "job_status-current"):
     ES = es_util.get_mozart_es()
     response = ES.update_document(index=index, id=doc_id, body=data)
     print(response)
