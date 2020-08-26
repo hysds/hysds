@@ -70,7 +70,7 @@ def tag_timedout_workers(url, timeout):
                 "doc": {"tags": tags},
                 "doc_as_upsert": True
             }
-            response = job_utils.update_es(id, new_doc, url=url, index = "worker_status-current")
+            response = job_utils.update_es(id, new_doc,  index = "worker_status-current")
             if response['result'].strip() != "updated":
                      err_str = "Failed to update status for {} : {}".format(id, json.dumps(response, indent=2))
                      logging.error(err_str)
