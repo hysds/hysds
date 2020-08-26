@@ -52,7 +52,7 @@ def tag_timedout_workers(url, timeout):
     query = job_utils.get_timedout_query(timeout, status, source_data)
     print(json.dumps(query, indent=2))
 
-    results = job_utils.run_query_with_scroll(query, url, index = "worker_status-current")
+    results = job_utils.run_query_with_scroll(query, index = "worker_status-current")
     print(results)
     logging.info("Found %d stuck workers with heartbeats" % len(results) +
                  " older than %d seconds." % timeout)

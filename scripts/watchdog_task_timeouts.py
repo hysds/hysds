@@ -30,7 +30,7 @@ def tag_timedout_tasks(url, timeout):
     query = job_utils.get_timedout_query(timeout, status, source_data)
     print(json.dumps(query, indent=2))
 
-    results = job_utils.run_query_with_scroll(query, url, index = "task_status-current")
+    results = job_utils.run_query_with_scroll(query, index = "task_status-current")
     print(results)
     logging.info("Found %d stuck tasks in task-started or task-offline" % len(results) +
                  " older than %d seconds." % timeout)

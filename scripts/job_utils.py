@@ -17,8 +17,6 @@ from datetime import datetime
 from hysds.utils import parse_iso8601
 from hysds.celery import app
 import hysds.es_util as es_util
-from elasticsearch import Elasticsearch, exceptions
-
 
 def get_timedout_query(timeout, status, source_data):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
@@ -55,30 +53,16 @@ def run_query(query):
     return result
 
 
-def run_query_with_scroll(query, url="localhost:9200", index = "job_status-current"):
-    client = Elasticsearch(url)
-    resp = client.search(
-            index = index,
-            body = json.dumps(query),
-            scroll = '10m' # length of time to keep search context
-        )
-    old_scroll_id = resp['_scroll_id']
-    results = []
-    while len(resp['hits']['hits']):
-        resp = client.scroll(
-                scroll_id = old_scroll_id,
-                scroll = '10s' # length of time to keep search context
-            )
-        old_scroll_id = resp['_scroll_id']
-        if len(resp['hits']['hits']) == 0:
-            break
-        for hit in resp['hits']['hits']:
-            results.append(hit)
-    
+def run_query_with_scroll(query, index = "job_status-current"):
+    print(query)
+    ES = es_util.get_mozart_es()
+    results = ES.query(body=query, index=index)
+    print(results)
     return results
 
+    
 def update_es(doc_id, data, url="localhost:9200", index = "job_status-current"):
-    client = Elasticsearch(url)
-    response = client.update(index=index, id=doc_id, body=data)
+    ES = es_util.get_mozart_es()
+    response = ES.update_document(index=index, id=doc_id, body=data)
     print(response)
     return response

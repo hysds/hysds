@@ -33,7 +33,7 @@ def tag_timedout_jobs(url, timeout):
             "job.job_info.time_start", "job.job_info.time_limit"
         ]
     query = job_utils.get_timedout_query(timeout, status, source_data)
-    results = job_utils.run_query_with_scroll(query, url)
+    results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
                  " older than %d seconds." % timeout)
 
