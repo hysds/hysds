@@ -10,7 +10,7 @@ jobs:
           command: |
             source $HOME/.bash_profile
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
-            pytest test
+            pytest -s test
 
 workflows:
   version: 2
