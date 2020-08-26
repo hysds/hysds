@@ -95,13 +95,13 @@ def tag_timedout_jobs(url, timeout):
 
             # determine new status
             new_status = status
-            if worker_res['hits']['total']['value'] == 0 and duration > time_limit:
+            if len(worker_res['hits']['hits']) == 0 and duration > time_limit:
                 new_status = 'job-offline'
-            if worker_res['hits']['total']['value'] > 0 and (
+            if len(worker_res['hits']['hits']) > 0 and (
                 "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
                 worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
                 new_status = 'job-offline'
-            if task_res['hits']['total']['value'] > 0:
+            if len(task_res['hits']['hits']) > 0:
                 task_info = task_res['hits']['hits'][0]
                 if task_info['_source']['status'] == 'task-failed':
                     new_status = 'job-failed'
