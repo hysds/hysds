@@ -364,3 +364,33 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(os.path.exists(expected_triage_log_file1))
         self.assertTrue(os.path.exists(expected_triage_log_file2))
         self.assertTrue(len(glob.glob("{}/test.log*".format(expected_triage_dataset))) == 2)
+
+
+class TestUtils(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="tmp-")
+        logging.info("self.tmp_dir: {}".format(self.tmp_dir))
+
+    def tearDown(self):
+        umock.patch.stopall()
+        shutil.rmtree(self.tmp_dir)
+
+    def test_disk_usage(self):
+        import hysds.utils
+        size_bytes = 1024 * 1024 # 1KB
+        with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
+            f.write(os.urandom(size_bytes))
+        self.assertTrue(hysds.utils.get_disk_usage(self.tmp_dir) == size_bytes)
+
+    def test_disk_usage_with_symlink(self):
+        import hysds.utils
+        size_bytes = 1024 * 1024 # 1KB
+        bin_file = os.path.join(self.tmp_dir, 'test.bin')
+        with open(bin_file, 'wb') as f:
+            f.write(os.urandom(size_bytes))
+        self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
+        sym_file = os.path.join(self.tmp_dir2, 'test.bin')
+        os.symlink(bin_file, sym_file)
+        self.assertTrue(hysds.utils.get_disk_usage(self.tmp_dir2) == size_bytes)
+        shutil.rmtree(self.tmp_dir2)

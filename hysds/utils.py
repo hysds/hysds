@@ -213,7 +213,7 @@ def get_disk_usage(path):
 
     size = 0
     try:
-        size = int(check_output(['du', '-sk', path]
+        size = int(check_output(['du', '-skL', path]
                                 ).split()[0]) * DU_CALC['KB']
     except:
         pass
