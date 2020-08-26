@@ -44,11 +44,11 @@ def get_timedout_query(timeout, status, source_data):
     }
     return query
 
-def run_query(query):
+def run_query(query, index="job_status-current"):
     
     print(query)
     ES = es_util.get_mozart_es()
-    result = ES.search(index="job_status-current", body=json.dumps(query))
+    result = ES.search(index=index, body=json.dumps(query))
     print("run_query : result : \n{}".format(json.dumps(result, indent = 2)))
     return result
 
