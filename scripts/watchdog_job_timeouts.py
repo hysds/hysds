@@ -14,13 +14,11 @@ import traceback
 import logging
 import argparse
 import random
-import boto3
-import requests
 from datetime import datetime
 
 from hysds.utils import parse_iso8601
 from hysds.celery import app
-
+import job_utils
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -29,53 +27,13 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 def tag_timedout_jobs(url, timeout):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
 
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {
-                        "terms": {
-                            "status": ["job-started", "job-offline"]
-                        }
-                    },
-                    {
-                        "range": {
-                            "@timestamp": {
-                                "lt": "now-%ds" % timeout
-                            }
-                        }
-                    }
-                ]
-            }
-        },
-        "_source": [
+    status = ["job-started", "job-offline"]
+    source_data = [
             "status", "tags", "uuid", "celery_hostname",
             "job.job_info.time_start", "job.job_info.time_limit"
         ]
-    }
-
-    # query
-    url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
-    r = requests.post(url_tmpl.format(url), data=json.dumps(query))
-    if r.status_code != 200:
-        logging.error("Failed to query ES. Got status code %d:\n%s" %
-                      (r.status_code, json.dumps(query, indent=2)))
-    r.raise_for_status()
-    scan_result = r.json()
-    count = scan_result['hits']['total']
-    scroll_id = scan_result['_scroll_id']
-
-    # get list of results
-    results = []
-    while True:
-        r = requests.post('%s/_search/scroll?scroll=10m' % url, data=scroll_id)
-        res = r.json()
-        scroll_id = res['_scroll_id']
-        if len(res['hits']['hits']) == 0:
-            break
-        for hit in res['hits']['hits']:
-            results.append(hit)
-
+    query = job_utils.get_timedout_query(timeout, status, source_data)
+    results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info("Found %d stuck jobs in job-started or job-offline" % len(results) +
                  " older than %d seconds." % timeout)
 
@@ -109,13 +67,12 @@ def tag_timedout_jobs(url, timeout):
                 },
                 "_source": ["status"]
             }
-            r = requests.post('%s/task_status-current/task/_search' % url,
-                              data=json.dumps(task_query))
-            if r.status_code != 200:
-                logging.error("Failed to query ES. Got status code %d:\n%s" %
-                              (r.status_code, json.dumps(task_query, indent=2)))
-                continue
-            task_res = r.json()
+            task_res = job_utils.es_query(task_query, index="task_status-current")
+          
+            if len(task_res['hits']['hits'])==0:
+                logging.error("No result found with : query\n%s" %
+                              (json.dumps(task_query, indent=2)))
+
             logging.info("task_res: {}".format(json.dumps(task_res)))
 
             # get worker info
@@ -127,31 +84,31 @@ def tag_timedout_jobs(url, timeout):
                 },
                 "_source": ["status", "tags"]
             }
-            r = requests.post('%s/worker_status-current/task/_search' % url,
-                              data=json.dumps(worker_query))
-            if r.status_code != 200:
-                logging.error("Failed to query ES. Got status code %d:\n%s" %
-                              (r.status_code, json.dumps(worker_query, indent=2)))
-                continue
-            worker_res = r.json()
+
+            worker_res = job_utils.es_query(worker_query, index="worker_status-current")
+            
+            if len(worker_res['hits']['hits'])==0:
+                logging.error("No result found with : query\n%s" %
+                              (json.dumps(worker_query, indent=2)))
+
             logging.info("worker_res: {}".format(json.dumps(worker_res)))
 
             # determine new status
             new_status = status
-            if worker_res['hits']['total'] == 0 and duration > time_limit:
+            if len(worker_res['hits']['hits']) == 0 and duration > time_limit:
                 new_status = 'job-offline'
-            if worker_res['hits']['total'] > 0 and (
+            if len(worker_res['hits']['hits']) > 0 and (
                 "timedout" in worker_res['hits']['hits'][0]['_source'].get('tags', []) or \
                 worker_res['hits']['hits'][0]['_source']['status'] == 'worker-offline'):
                 new_status = 'job-offline'
-            if task_res['hits']['total'] > 0:
+            if len(task_res['hits']['hits']) > 0:
                 task_info = task_res['hits']['hits'][0]
                 if task_info['_source']['status'] == 'task-failed':
                     new_status = 'job-failed'
 
             # update status
             if status != new_status:
-                logger.info("updating status from {} to {}".format(status, new_status))
+                logging.info("updating status from {} to {}".format(status, new_status))
                 if duration > time_limit and 'timedout' not in tags:
                     tags.append('timedout')
                 new_doc = {
@@ -159,13 +116,12 @@ def tag_timedout_jobs(url, timeout):
                             "tags": tags },
                     "doc_as_upsert": True
                 }
-                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
-                                  data=json.dumps(new_doc))
-                result = r.json()
-                if r.status_code != 200:
-                    logging.error("Failed to update status for %s. Got status code %d:\n%s" %
-                                  (id, r.status_code, json.dumps(result, indent=2)))
-                r.raise_for_status()
+                print(json.dumps(new_doc, indent=2))
+                response = job_utils.update_es(id, new_doc, index = "job_status-current")
+                if response['result'].strip() != "updated":
+                     err_str = "Failed to update status for {} : {}".format(id, json.dumps(response, indent=2))
+                     logging.error(err_str)
+                     raise Exception(err_str)
                 logging.info("Set job {} to {} and tagged as timedout.".format(id, new_status))
                 continue
 
@@ -178,15 +134,12 @@ def tag_timedout_jobs(url, timeout):
                     "doc": {"tags": tags},
                     "doc_as_upsert": True
                 }
-                r = requests.post('%s/job_status-current/job/%s/_update' % (url, id),
-                                  data=json.dumps(new_doc))
-                result = r.json()
-                if r.status_code != 200:
-                    logging.error("Failed to update tags for %s. Got status code %d:\n%s" %
-                                  (id, r.status_code, json.dumps(result, indent=2)))
-                r.raise_for_status()
-                logging.info("Tagged %s as timedout." % id)
-
+                print(json.dumps(new_doc, indent=2))
+                response = job_utils.update_es(id, new_doc, index = "job_status-current")
+                if response['result'].strip() != "updated":
+                     err_str = "Failed to update status for {} : {}".format(id, json.dumps(response, indent=2))
+                     logging.error(err_str)
+                     raise Exception(err_str)
 
 def daemon(interval, url, timeout):
     """Watch for jobs that have timed out in job-started or job-offline state."""
@@ -205,12 +158,14 @@ def daemon(interval, url, timeout):
         except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
+            traceback.format_exc()
         time.sleep(random.randint(interval_min, interval_max))
 
 
 if __name__ == "__main__":
     desc = "Watchdog jobs stuck in job-offline or job-started."
     host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
+    print("host : {}".format(host))
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('-i', '--interval', type=int, default=3600,
                         help="wake-up time interval in seconds")
