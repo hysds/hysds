@@ -22,7 +22,7 @@ logging.basicConfig()
 class TestTriage(unittest.TestCase):
 
     def setUp(self):
-        self.job_dir = tempfile.mkdtemp(prefix="job-")
+        self.job_dir = tempfile.mkdtemp(prefix="job-", dir=os.path.dirname(__file__))
         logging.info("self.job_dir: {}".format(self.job_dir))
 
     def tearDown(self):
@@ -370,7 +370,7 @@ class TestTriage(unittest.TestCase):
 class TestUtils(unittest.TestCase):
 
     def setUp(self):
-        self.tmp_dir = tempfile.mkdtemp(prefix="tmp-")
+        self.tmp_dir = tempfile.mkdtemp(prefix="tmp-", dir=os.path.dirname(__file__))
         logging.info("self.tmp_dir: {}".format(self.tmp_dir))
 
     def tearDown(self):
@@ -422,10 +422,9 @@ class TestUtils(unittest.TestCase):
         bin_file = os.path.join(self.tmp_dir, 'test.bin')
         with open(bin_file, 'wb') as f:
             f.write(os.urandom(size_bytes))
-        self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
+        self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-", dir=os.path.dirname(__file__))
         sym_file = os.path.join(self.tmp_dir2, 'test.bin')
         os.symlink(bin_file, sym_file)
         size = hysds.utils.get_disk_usage(self.tmp_dir2)
-        print(abs(size - self.get_disk_usage(self.tmp_dir2)))
-        self.assertTrue(abs(size - self.get_disk_usage(self.tmp_dir2)) < 2)
+        self.assertTrue(size == self.get_disk_usage(self.tmp_dir2))
         shutil.rmtree(self.tmp_dir2)
