@@ -380,6 +380,7 @@ class TestUtils(unittest.TestCase):
         import hysds.utils
         size_bytes = 1024 * 1024 # 1KB
         print("size_bytes: {}".format(size_bytes))
+        os.system("df -hv")
         with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
             f.write(os.urandom(size_bytes))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
