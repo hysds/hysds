@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from subprocess import check_output
 
 try:
     import unittest.mock as umock
@@ -376,24 +377,48 @@ class TestUtils(unittest.TestCase):
         umock.patch.stopall()
         shutil.rmtree(self.tmp_dir)
 
+    def get_disk_usage(self, path):
+        """Return disk usage in bytes. Equivalent to `du -sbL`."""
+
+        if os.path.islink(path):
+            return (os.lstat(path).st_size, 0)
+        if os.path.isfile(path):
+            st = os.lstat(path)
+            return (st.st_size, st.st_blocks * 512)
+        apparent_total_bytes = 0
+        total_bytes = 0
+        have = []
+        for dirpath, dirnames, filenames in os.walk(path, followlinks=True):
+            apparent_total_bytes += os.lstat(dirpath).st_size
+            total_bytes += os.lstat(dirpath).st_blocks * 512
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                if os.path.islink(fp):
+                    apparent_total_bytes += os.lstat(os.path.realpath(fp)).st_size
+                    continue
+                st = os.lstat(fp)
+                if st.st_ino in have:
+                    continue  # skip hardlinks which were already counted
+                have.append(st.st_ino)
+                apparent_total_bytes += st.st_size
+                total_bytes += st.st_blocks * 512
+            for d in dirnames:
+                dp = os.path.join(dirpath, d)
+                if os.path.islink(dp):
+                    apparent_total_bytes += os.lstat(dp).st_size
+        return apparent_total_bytes
+
     def test_disk_usage(self):
         import hysds.utils
         size_bytes = 1024 * 1024 # 1 MB
-        print("size_bytes: {}".format(size_bytes))
         with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
             f.write(os.urandom(size_bytes))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
-        print("size: {}".format(size))
-        os.system("mount")
-        os.system("df -hv")
-        os.system("du -sbL {}".format(self.tmp_dir))
-        os.system("ls -al {}".format(self.tmp_dir))
-        self.assertTrue(size == size_bytes)
+        self.assertTrue(size == self.get_disk_usage(self.tmp_dir))
 
     def test_disk_usage_with_symlink(self):
         import hysds.utils
         size_bytes = 1024 * 1024 # 1 MB
-        print("size_bytes: {}".format(size_bytes))
         bin_file = os.path.join(self.tmp_dir, 'test.bin')
         with open(bin_file, 'wb') as f:
             f.write(os.urandom(size_bytes))
@@ -401,11 +426,5 @@ class TestUtils(unittest.TestCase):
         sym_file = os.path.join(self.tmp_dir2, 'test.bin')
         os.symlink(bin_file, sym_file)
         size = hysds.utils.get_disk_usage(self.tmp_dir2)
-        print("size: {}".format(size))
-        os.system("mount")
-        os.system("df -hv")
-        os.system("du -sbL {}".format(self.tmp_dir2))
-        os.system("ls -al {}".format(self.tmp_dir2))
-        os.system("du --version")
-        self.assertTrue(size == size_bytes)
+        self.assertTrue(size == self.get_disk_usage(self.tmp_dir2))
         shutil.rmtree(self.tmp_dir2)

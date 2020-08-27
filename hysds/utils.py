@@ -211,12 +211,13 @@ def get_threshold(path, disk_usage):
 def get_disk_usage(path, follow_symlinks=True):
     """Return disk usage size in bytes."""
 
+    size = 0
     try:
-        with os.scandir(path) as it:
-            return sum(get_disk_usage(entry, follow_symlinks=follow_symlinks) for entry in it)
-    except NotADirectoryError:
-        return os.stat(path, follow_symlinks=follow_symlinks).st_size
-    except: return 0
+        size = int(check_output(['du', '-sbL', path]
+                                ).split()[0])
+    except:
+        pass
+    return size
 
 
 def makedirs(dir, mode=0o777):
