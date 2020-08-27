@@ -211,9 +211,10 @@ def get_threshold(path, disk_usage):
 def get_disk_usage(path, follow_symlinks=True):
     """Return disk usage size in bytes."""
 
+    opts = "-sbL" if follow_symlinks else "-sb"
     size = 0
     try:
-        size = int(check_output(['du', '-sbL', path]
+        size = int(check_output(['du', opts, path]
                                 ).split()[0])
     except:
         pass
