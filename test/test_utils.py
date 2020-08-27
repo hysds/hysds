@@ -378,28 +378,25 @@ class TestUtils(unittest.TestCase):
 
     def test_disk_usage(self):
         import hysds.utils
-        size_bytes = 5 * 1024 * 1024 * 1024 # 1KB
+        size_bytes = 1024 * 1024 # 1 MB
         print("size_bytes: {}".format(size_bytes))
-        #with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
-        #    f.write(os.urandom(size_bytes))
-        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(os.path.join(self.tmp_dir, 'test.bin')))
+        with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
+            f.write(os.urandom(size_bytes))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
         print("size: {}".format(size))
         os.system("mount")
         os.system("df -hv")
-        os.system("du -skL {}".format(self.tmp_dir))
+        os.system("du -sbL {}".format(self.tmp_dir))
         os.system("ls -al {}".format(self.tmp_dir))
         self.assertTrue(size == size_bytes)
 
     def test_disk_usage_with_symlink(self):
         import hysds.utils
-        #size_bytes = 1024 * 1024 # 1KB
-        size_bytes = 5 * 1024 * 1024 * 1024 # 1KB
+        size_bytes = 1024 * 1024 # 1 MB
         print("size_bytes: {}".format(size_bytes))
         bin_file = os.path.join(self.tmp_dir, 'test.bin')
-        #with open(bin_file, 'wb') as f:
-        #    f.write(os.urandom(size_bytes))
-        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(bin_file))
+        with open(bin_file, 'wb') as f:
+            f.write(os.urandom(size_bytes))
         self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
         sym_file = os.path.join(self.tmp_dir2, 'test.bin')
         os.symlink(bin_file, sym_file)
@@ -407,7 +404,7 @@ class TestUtils(unittest.TestCase):
         print("size: {}".format(size))
         os.system("mount")
         os.system("df -hv")
-        os.system("du -skL {}".format(self.tmp_dir2))
+        os.system("du -sbL {}".format(self.tmp_dir2))
         os.system("ls -al {}".format(self.tmp_dir2))
         os.system("du --version")
         self.assertTrue(size == size_bytes)

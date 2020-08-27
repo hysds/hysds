@@ -208,16 +208,15 @@ def get_threshold(path, disk_usage):
     return math.ceil(float(100) / float(capacity) * du_bytes)
 
 
-def get_disk_usage(path):
-    """Return disk size, "du -sk", for a path."""
+def get_disk_usage(path, follow_symlinks=True):
+    """Return disk usage size in bytes."""
 
-    size = 0
     try:
-        size = int(check_output(['du', '-skL', path]
-                                ).split()[0]) * DU_CALC['KB']
-    except:
-        pass
-    return size
+        with os.scandir(path) as it:
+            return sum(get_disk_usage(entry, follow_symlinks=follow_symlinks) for entry in it)
+    except NotADirectoryError:
+        return os.stat(path, follow_symlinks=follow_symlinks).st_size
+    except: return 0
 
 
 def makedirs(dir, mode=0o777):
