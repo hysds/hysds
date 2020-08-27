@@ -406,5 +406,6 @@ class TestUtils(unittest.TestCase):
         os.system("df -hv")
         os.system("du -skL {}".format(self.tmp_dir2))
         os.system("ls -al {}".format(self.tmp_dir2))
+        os.system("du --version")
         self.assertTrue(size == size_bytes)
         shutil.rmtree(self.tmp_dir2)
