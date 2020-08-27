@@ -36,7 +36,7 @@ workflows:
   version: 2
   pr-checks:
     jobs:
-      - code-analysis
+      #- code-analysis
       - test
   weekly:
     triggers:
