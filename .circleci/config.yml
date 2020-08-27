@@ -10,13 +10,13 @@ jobs:
           command: |
             pip install flake8 flake8-junit-report
             mkdir -p test-results/flake8
+            flake8 . --output-file=/tmp/flake8.txt --exit-zero
+            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
             #set +e
             #flake8 . --output-file=/tmp/flake8.txt
             #exit_code=$?
             #flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
             #exit $exit_code
-            flake8 . --output-file=/tmp/flake8.txt --exit-zero
-            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
       - store_test_results:
           path: test-results
   test:
