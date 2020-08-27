@@ -380,11 +380,14 @@ class TestUtils(unittest.TestCase):
         import hysds.utils
         size_bytes = 1024 * 1024 # 1KB
         print("size_bytes: {}".format(size_bytes))
-        os.system("df -hv")
         with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
             f.write(os.urandom(size_bytes))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
         print("size: {}".format(size))
+        os.system("mount")
+        os.system("df -hv")
+        os.system("du -skL {}".format(self.tmp_dir))
+        os.system("ls -al {}".format(self.tmp_dir))
         self.assertTrue(size == size_bytes)
 
     def test_disk_usage_with_symlink(self):
@@ -399,5 +402,9 @@ class TestUtils(unittest.TestCase):
         os.symlink(bin_file, sym_file)
         size = hysds.utils.get_disk_usage(self.tmp_dir2)
         print("size: {}".format(size))
+        os.system("mount")
+        os.system("df -hv")
+        os.system("du -skL {}".format(self.tmp_dir2))
+        os.system("ls -al {}".format(self.tmp_dir2))
         self.assertTrue(size == size_bytes)
         shutil.rmtree(self.tmp_dir2)
