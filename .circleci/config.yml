@@ -9,9 +9,12 @@ jobs:
           name: code-analysis
           command: |
             pip install flake8 flake8-junit-report
-            flake8 . --output-file=/tmp/flake8.txt --exit-zero
             mkdir -p test-results/flake8
+            set +e
+            flake8 . --output-file=/tmp/flake8.txt
+            exit_code=$?
             flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
+            exit $exit_code
       - store_test_results:
           path: test-results
   test:
