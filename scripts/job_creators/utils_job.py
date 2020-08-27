@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 import json
 import types
@@ -19,7 +20,7 @@ def notify_job_by_email(info):
             'type': 'notify_job_by_email',
             'name': 'action-notify_job_by_email-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'Email CSK ingest',
-            'username': 'ariaops', 
+            'username': 'ariaops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'emails': 'test@test.com,test2@test.com',
@@ -32,20 +33,20 @@ def notify_job_by_email(info):
 
     # build params
     params = {}
-    params['id'] = info['job_id']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['emails'] = kwargs['email_addresses']
-    rule_hit = info['rule_hit']
-    params['url'] = rule_hit['_source']['job']['job_info']['job_url']
+    params["id"] = info["job_id"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["emails"] = kwargs["email_addresses"]
+    rule_hit = info["rule_hit"]
+    params["url"] = rule_hit["_source"]["job"]["job_info"]["job_url"]
     job = {
-        'type': 'notify_job_by_email',
-        'name': 'action-notify_job_by_email-%s' % info['job_id'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "notify_job_by_email",
+        "name": "action-notify_job_by_email-%s" % info["job_id"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
     return job
@@ -61,7 +62,7 @@ def notify_job_by_tweet(info):
             'type': 'notify_job_by_tweet',
             'name': 'action-notify_job_by_tweet-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'tweet CSK ingest',
-            'username': 'ariaops', 
+            'username': 'ariaops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'url': 'http://path_to_job',
@@ -74,20 +75,20 @@ def notify_job_by_tweet(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['hash_tags'] = kwargs['hash_tags']
-    rule_hit = info['rule_hit']
-    params['url'] = rule_hit['_source']['job']['job_info']['job_url']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["hash_tags"] = kwargs["hash_tags"]
+    rule_hit = info["rule_hit"]
+    params["url"] = rule_hit["_source"]["job"]["job_info"]["job_url"]
     job = {
-        'type': 'notify_job_by_tweet',
-        'name': 'action-notify_job_by_tweet-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "notify_job_by_tweet",
+        "name": "action-notify_job_by_tweet-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
     return job
@@ -100,24 +101,24 @@ def retry_job(info):
 
     # build params
     params = {}
-    params['id'] = info['job_id']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    rule_hit = info['rule_hit']
-    params['job'] = rule_hit['_source']['job']
-    job_id = params['job'].get('job_id', None)
-    if isinstance(job_id, str) and job_id.startswith('action-retry_job'):
+    params["id"] = info["job_id"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    rule_hit = info["rule_hit"]
+    params["job"] = rule_hit["_source"]["job"]
+    job_id = params["job"].get("job_id", None)
+    if isinstance(job_id, str) and job_id.startswith("action-retry_job"):
         name = job_id
     else:
-        name = 'action-retry_job-%s' % job_id
+        name = "action-retry_job-%s" % job_id
     job = {
-        'type': 'retry_job',
-        'name': name,
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "retry_job",
+        "name": name,
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
     return job

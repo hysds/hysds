@@ -6,14 +6,17 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
-from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
+from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
+    AbstractInterruptableProcess,
+)
 import logging
+
 logger = logging.getLogger()
 
 
 class StreamReaderProcess(AbstractInterruptableProcess):
-
     def __init__(self, stream, streamSubject):
         """
         Initializer.
@@ -21,6 +24,7 @@ class StreamReaderProcess(AbstractInterruptableProcess):
         AbstractInterruptableProcess.__init__(self)
         self._stream = stream
         self._streamSubject = streamSubject
+
     # end def
 
     def __del__(self):
@@ -28,6 +32,7 @@ class StreamReaderProcess(AbstractInterruptableProcess):
         Finalizer.
         """
         AbstractInterruptableProcess.__del__(self)
+
     # end def
 
     def run(self):
@@ -54,5 +59,6 @@ class StreamReaderProcess(AbstractInterruptableProcess):
         # end while
 
     # end def
+
 
 # end class

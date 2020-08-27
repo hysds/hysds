@@ -17,10 +17,12 @@ from __future__ import absolute_import
 from builtins import open
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import object
 import os
 import logging
+
 logger = logging.getLogger()
 
 
@@ -34,7 +36,8 @@ class StreamObserverFileWriter(object):
         Initializer.
         """
         self._filepath = filepath
-        self._file = open(filepath, 'w')
+        self._file = open(filepath, "w")
+
     # end def
 
     def __del__(self):
@@ -42,6 +45,7 @@ class StreamObserverFileWriter(object):
         Finalizer.
         """
         self._file.close()
+
     # end def
 
     def __str__(self):
@@ -51,6 +55,7 @@ class StreamObserverFileWriter(object):
         @rtype: str
         """
         return 'filepath: "%s"' % (self._filepath)
+
     # end def
 
     def notifyLine(self, line):
@@ -63,8 +68,10 @@ class StreamObserverFileWriter(object):
             # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
             self._file.flush()
         except IOError as e:
-            logger.warning('Unable to write output to "%s": %s' %
-                           (self._filepath, str(e)))
+            logger.warning(
+                'Unable to write output to "%s": %s' % (self._filepath, str(e))
+            )
+
     # end def
 
     def notifyEOF(self):
@@ -72,6 +79,8 @@ class StreamObserverFileWriter(object):
         Invoked when end of stream is reached.
         """
         self._file.close()
+
     # end def
+
 
 # end class

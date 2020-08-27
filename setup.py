@@ -45,7 +45,7 @@ setup(
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "aws-requests-auth==0.4.2"
+        "aws-requests-auth==0.4.2",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],

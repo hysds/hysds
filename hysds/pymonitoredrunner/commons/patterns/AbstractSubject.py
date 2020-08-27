@@ -16,6 +16,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import object
 import threading
@@ -36,6 +37,7 @@ class AbstractSubject(object):
         """
         self._observers = list()
         self._lock = threading.RLock()
+
     # end def
 
     def __del__(self):
@@ -43,6 +45,7 @@ class AbstractSubject(object):
         Finalizer.
         """
         pass
+
     # end def
 
     def __str__(self):
@@ -51,7 +54,8 @@ class AbstractSubject(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'observers: %s' % (self._observers)
+        return "observers: %s" % (self._observers)
+
     # end def
 
     # -------------------------------------------------------------------------
@@ -63,6 +67,7 @@ class AbstractSubject(object):
         Gets the observers for this subject.
         """
         return self._observers
+
     # end def
 
     def addObserver(self, observer):
@@ -72,6 +77,7 @@ class AbstractSubject(object):
         with self._lock:
             self._observers.append(observer)
         # end with
+
     # end def
 
     def removeObserver(self, observer):
@@ -81,6 +87,7 @@ class AbstractSubject(object):
         with self._lock:
             self._observers.remove(observer)
         # end with
+
     # end def
 
 

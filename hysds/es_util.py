@@ -12,7 +12,7 @@ from hysds.log_utils import logger
 try:
     from hysds_commons.elasticsearch_utils import ElasticsearchUtility
 except (ImportError, ModuleNotFoundError):
-    logger.error('Cannot import hysds_commons.elasticsearch_utils')
+    logger.error("Cannot import hysds_commons.elasticsearch_utils")
 
 MOZART_ES = None
 GRQ_ES = None
@@ -29,13 +29,15 @@ def get_grq_es():
     global GRQ_ES
 
     if GRQ_ES is None:
-        aws_es = app.conf.get('GRQ_AWS_ES', False)
-        es_host = app.conf['GRQ_ES_HOST']
-        es_url = app.conf['GRQ_ES_URL']
-        region = app.conf['AWS_REGION']
+        aws_es = app.conf.get("GRQ_AWS_ES", False)
+        es_host = app.conf["GRQ_ES_HOST"]
+        es_url = app.conf["GRQ_ES_URL"]
+        region = app.conf["AWS_REGION"]
 
         if aws_es is True:
-            aws_auth = BotoAWSRequestsAuth(aws_host=es_host, aws_region=region, aws_service='es')
+            aws_auth = BotoAWSRequestsAuth(
+                aws_host=es_host, aws_region=region, aws_service="es"
+            )
             GRQ_ES = ElasticsearchUtility(
                 es_url=es_url,
                 logger=logger,
@@ -43,7 +45,7 @@ def get_grq_es():
                 connection_class=RequestsHttpConnection,
                 use_ssl=True,
                 verify_certs=False,
-                ssl_show_warn=False
+                ssl_show_warn=False,
             )
         else:
             GRQ_ES = ElasticsearchUtility(es_url, logger)

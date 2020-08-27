@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 
 import json
@@ -14,27 +15,28 @@ from datetime import datetime
 
 from hysds.task_worker import run_task
 from hysds.celery import app
-from hysds.log_utils import logger, log_job_status, get_val_via_socket, backoff_max_tries, backoff_max_value, \
-    TASK_WORKER_KEY_TMPL, JOB_STATUS_KEY_TMPL
+from hysds.log_utils import (
+    logger,
+    log_job_status,
+    get_val_via_socket,
+    backoff_max_tries,
+    backoff_max_value,
+    TASK_WORKER_KEY_TMPL,
+    JOB_STATUS_KEY_TMPL,
+)
 from hysds.es_util import get_mozart_es
 
 
 mozart_es = get_mozart_es()
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def fail_job(event, uuid, exc, short_error):
     """Set job status to job-failed."""
 
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"term": {"uuid": uuid}}
-                ]
-            }
-        }
-    }
+    query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
     search_url = "%s/job_status-current/_search" % app.conf["JOBS_ES_URL"]
 
     headers = {"Content-Type": "application/json"}
@@ -62,7 +64,9 @@ def fail_job(event, uuid, exc, short_error):
     log_job_status(job_status)
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def offline_jobs(event):
     """Set job status to job-offline."""
 
@@ -82,10 +86,12 @@ def offline_jobs(event):
 
     try:
         job_status_jsons = mozart_es.query(index="job_status-current", body=query)
-        logger.info("Got {} jobs for {}.".format(len(job_status_jsons), event["hostname"]))
+        logger.info(
+            "Got {} jobs for {}.".format(len(job_status_jsons), event["hostname"])
+        )
 
         for job_status in job_status_jsons:
-            job_status_json = job_status['_source']
+            job_status_json = job_status["_source"]
             uuid = job_status_json["uuid"]
 
             # offline the job only if it hasn't been picked up by another worker
@@ -96,20 +102,31 @@ def offline_jobs(event):
 
             if cur_job_status == "job-started" and cur_job_worker == event["hostname"]:
                 job_status_json["status"] = "job-offline"
-                job_status_json["error"] = "Received worker-offline event during job execution."
+                job_status_json[
+                    "error"
+                ] = "Received worker-offline event during job execution."
                 job_status_json["short_error"] = "worker-offline"
-                job_status_json.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+                job_status_json.setdefault("job", {}).setdefault("job_info", {})[
+                    "time_end"
+                ] = time_end
                 log_job_status(job_status_json)
                 logger.info("Offlined job with UUID %s" % uuid)
                 uuids.append(uuid)
             else:
-                logger.info("Not offlining job with UUID %s since real-time job status doesn't match" % uuid)
+                logger.info(
+                    "Not offlining job with UUID %s since real-time job status doesn't match"
+                    % uuid
+                )
     except Exception as e:
-        logger.warn("Got exception trying to update task events for offline worker %s: %s\n%s" % (
-            event["hostname"], str(e), traceback.format_exc()))
+        logger.warn(
+            "Got exception trying to update task events for offline worker %s: %s\n%s"
+            % (event["hostname"], str(e), traceback.format_exc())
+        )
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_fail_job(event, uuid, exc, short_error):
     """Queue task to set job status to job-failed."""
 
@@ -121,7 +138,9 @@ def queue_fail_job(event, uuid, exc, short_error):
     run_task.apply_async((payload,), queue=app.conf.PROCESS_EVENTS_TASKS_QUEUE)
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_offline_jobs(event):
     """Queue task to set job status to job-offine."""
 

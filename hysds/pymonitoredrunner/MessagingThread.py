@@ -6,26 +6,30 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
-from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import AbstractInterruptableProcess
+from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
+    AbstractInterruptableProcess,
+)
 from multiprocessing import Event
 from billiard import JoinableQueue
 import billiard
 import queue
 import logging
+
 logger = logging.getLogger()
 
-#import threading
+# import threading
 
 
-#from hysds.pymonitoredrunner.commons.thread.AbstractInterruptableThread import AbstractInterruptableThread
+# from hysds.pymonitoredrunner.commons.thread.AbstractInterruptableThread import AbstractInterruptableThread
 
 
 class MessagingThread(AbstractInterruptableProcess):
-    '''
+    """
     Periodically sends the full contents of the queue to messaging.
     Stops when a None is popped from the queue.
-    '''
+    """
 
     def __init__(self, queue, sendInterval, messenger=None):
         """
@@ -35,6 +39,7 @@ class MessagingThread(AbstractInterruptableProcess):
         self._queue = queue
         self._sendInterval = sendInterval
         self._messenger = messenger
+
     # end def
 
     def __del__(self):
@@ -42,6 +47,7 @@ class MessagingThread(AbstractInterruptableProcess):
         Finalizer.
         """
         AbstractInterruptableProcess.__del__(self)
+
     # end def
 
     def run(self):
@@ -81,7 +87,7 @@ class MessagingThread(AbstractInterruptableProcess):
             # end while
 
             if len(items) > 0:
-                chunk = ''.join(items)
+                chunk = "".join(items)
 
                 # send the chunk
                 if self._messenger is not None:
@@ -96,5 +102,6 @@ class MessagingThread(AbstractInterruptableProcess):
         # end while
 
     # end def
+
 
 # end class

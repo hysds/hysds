@@ -15,6 +15,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 from hysds.pymonitoredrunner.commons.patterns.AbstractSubject import AbstractSubject
 
@@ -33,6 +34,7 @@ class StreamSubject(AbstractSubject):
         Initializer.
         """
         AbstractSubject.__init__(self)
+
     # end def
 
     def __del__(self):
@@ -40,6 +42,7 @@ class StreamSubject(AbstractSubject):
         Finalizer.
         """
         AbstractSubject.__del__(self)
+
     # end def
 
     def __str__(self):
@@ -48,7 +51,8 @@ class StreamSubject(AbstractSubject):
         @return: the string representation of this object.
         @rtype: str
         """
-        return '%s' % (AbstractSubject.__str__(self))
+        return "%s" % (AbstractSubject.__str__(self))
+
     # end def
 
     # -------------------------------------------------------------------------
@@ -62,6 +66,7 @@ class StreamSubject(AbstractSubject):
         for observer in self._observers:
             observer.notifyLine(line)
         # end for
+
     # end def
 
     def notifyEOF(self):
@@ -71,6 +76,7 @@ class StreamSubject(AbstractSubject):
         for observer in self._observers:
             observer.notifyEOF()
         # end for
+
     # end def
 
 
