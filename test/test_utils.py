@@ -382,7 +382,7 @@ class TestUtils(unittest.TestCase):
         print("size_bytes: {}".format(size_bytes))
         #with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
         #    f.write(os.urandom(size_bytes))
-        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(os.path.join(self.tmp_dir, 'test.bin'))
+        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(os.path.join(self.tmp_dir, 'test.bin')))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
         print("size: {}".format(size))
         os.system("mount")
