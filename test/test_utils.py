@@ -378,10 +378,11 @@ class TestUtils(unittest.TestCase):
 
     def test_disk_usage(self):
         import hysds.utils
-        size_bytes = 1024 * 1024 # 1KB
+        size_bytes = 5 * 1024 * 1024 * 1024 # 1KB
         print("size_bytes: {}".format(size_bytes))
-        with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
-            f.write(os.urandom(size_bytes))
+        #with open(os.path.join(self.tmp_dir, 'test.bin'), 'wb') as f:
+        #    f.write(os.urandom(size_bytes))
+        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(os.path.join(self.tmp_dir, 'test.bin'))
         size = hysds.utils.get_disk_usage(self.tmp_dir)
         print("size: {}".format(size))
         os.system("mount")
@@ -392,11 +393,13 @@ class TestUtils(unittest.TestCase):
 
     def test_disk_usage_with_symlink(self):
         import hysds.utils
-        size_bytes = 1024 * 1024 # 1KB
+        #size_bytes = 1024 * 1024 # 1KB
+        size_bytes = 5 * 1024 * 1024 * 1024 # 1KB
         print("size_bytes: {}".format(size_bytes))
         bin_file = os.path.join(self.tmp_dir, 'test.bin')
-        with open(bin_file, 'wb') as f:
-            f.write(os.urandom(size_bytes))
+        #with open(bin_file, 'wb') as f:
+        #    f.write(os.urandom(size_bytes))
+        os.system("dd if=/dev/urandom of={} bs=1M count=5".format(bin_file))
         self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
         sym_file = os.path.join(self.tmp_dir2, 'test.bin')
         os.symlink(bin_file, sym_file)
