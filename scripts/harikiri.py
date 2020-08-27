@@ -79,7 +79,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
     # check if keep-alive
     logging.info("KEEP_ALIVE: %s" % KEEP_ALIVE)
     if keep_alive(root_work):
-        if KEEP_ALIVE != True:
+        if KEEP_ALIVE is not True:
             KEEP_ALIVE = True
             if logger is not None:
                 try:
@@ -89,7 +89,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
         logging.info("Keep-alive exists.")
         return
     else:
-        if KEEP_ALIVE != False:
+        if KEEP_ALIVE is not False:
             KEEP_ALIVE = False
             if logger is not None:
                 try:

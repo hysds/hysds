@@ -74,7 +74,7 @@ class MessagingThread(AbstractInterruptableProcess):
                     item = self._queue.get_nowait()
 
                     # stop thread when done with queue
-                    if item == None:
+                    if item is None:
                         self._isRunnable = False
                     else:
                         items.append(item.decode())

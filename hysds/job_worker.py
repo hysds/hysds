@@ -1457,7 +1457,7 @@ def run_job(job, queue_when_finished=True):
             f.write("%sZ\n" % datetime.utcnow().isoformat())
 
         # queue job finished for user rules processing
-        if queue_when_finished == True:
+        if queue_when_finished is True:
             queue_finished_job(payload_id)
     except Exception as e:
         error = str(e)
