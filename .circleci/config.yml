@@ -1,5 +1,17 @@
 version: 2.1
 jobs:
+  flake8:
+    steps:
+      - checkout
+      - run:
+          name: flake8
+          command: |
+            pip install flake8 flake8-junit-report
+            flake8 . --output-file=/tmp/flake8.txt --exit-zero
+            mkdir test-results/flake8
+            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
+      - store_test_results:
+          path: test-results
   test:
     docker:
       - image: hysds/pge-base:latest
@@ -9,13 +21,13 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
-            pip install flake8 flake8-junit-report
+            #pip install flake8 flake8-junit-report
             pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest -s --junit-xml=test-results/pytest/results.xml test
-            flake8 . --output-file=/tmp/flake8.txt --exit-zero
-            mkdir test-results/flake8
-            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
+            #flake8 . --output-file=/tmp/flake8.txt --exit-zero
+            #mkdir test-results/flake8
+            #flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
       - store_test_results:
           path: test-results
 
@@ -23,6 +35,7 @@ workflows:
   version: 2
   test:
     jobs:
+      - flake8
       - test
   weekly:
     triggers:
@@ -34,6 +47,10 @@ workflows:
                 - develop
     jobs:
       - test:
+          filters:
+            branches:
+              only: develop
+      - flake8:
           filters:
             branches:
               only: develop
