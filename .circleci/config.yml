@@ -9,9 +9,12 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
+            pip install flake8 flake8-junit-report
             pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest -s --junit-xml=test-results/pytest/results.xml test
+            flake8 . --output-file=/tmp/flake8.txt
+            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
       - store_test_results:
           path: test-results
 

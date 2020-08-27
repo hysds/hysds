@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-from subprocess import check_output
 
 try:
     import unittest.mock as umock
