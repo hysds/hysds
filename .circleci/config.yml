@@ -13,7 +13,7 @@ jobs:
             pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest -s --junit-xml=test-results/pytest/results.xml test
-            flake8 . --output-file=/tmp/flake8.txt
+            flake8 . --output-file=/tmp/flake8.txt --exit-zero
             mkdir test-results/flake8
             flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
       - store_test_results:
