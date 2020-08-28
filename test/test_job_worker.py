@@ -36,7 +36,7 @@ class TestJobWorkerFuncs(unittest.TestCase):
         # copy example _docker_stats.json
         stats_file = os.path.join(self.examples_dir, "_docker_stats.json")
         shutil.copy(stats_file, self.job_dir)
-        subdir = os.path.join(self.job_dir, 'subdir1', 'subdir2')
+        subdir = os.path.join(self.job_dir, "subdir1", "subdir2")
         os.makedirs(subdir)
         shutil.copy(stats_file, subdir)
 

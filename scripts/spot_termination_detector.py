@@ -9,6 +9,7 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 import os
 import sys
@@ -31,15 +32,16 @@ def log_event(url, event_type, event_status, event, tags):
     """Log custom event."""
 
     params = {
-        'type': event_type,
-        'status': event_status,
-        'event': event,
-        'tags': tags,
-        'hostname': socket.getfqdn(),
+        "type": event_type,
+        "status": event_status,
+        "event": event,
+        "tags": tags,
+        "hostname": socket.getfqdn(),
     }
-    headers = {'Content-type': 'application/json'}
-    r = requests.post("%s/event/add" % url, data=json.dumps(params),
-                      verify=False, headers=headers)
+    headers = {"Content-type": "application/json"}
+    r = requests.post(
+        "%s/event/add" % url, data=json.dumps(params), verify=False, headers=headers
+    )
     r.raise_for_status()
     resp = r.json()
     return resp
@@ -48,9 +50,8 @@ def log_event(url, event_type, event_status, event, tags):
 def check_spot_termination():
     """Check if instance is marked for spot termination."""
 
-    r = requests.get(
-        'http://169.254.169.254/latest/meta-data/spot/termination-time')
-    #logging.info("got status code: %d" % r.status_code)
+    r = requests.get("http://169.254.169.254/latest/meta-data/spot/termination-time")
+    # logging.info("got status code: %d" % r.status_code)
     if r.status_code == 200:
         return r.content.decode()
     else:
@@ -59,7 +60,7 @@ def check_spot_termination():
 
 def graceful_shutdown(url, term_time):
     """Gracefully shutdown supervisord, detach from AutoScale group or spot fleet,
-       and shutdown."""
+    and shutdown."""
 
     # stop docker containers
     try:
@@ -77,8 +78,17 @@ def graceful_shutdown(url, term_time):
 
     # log marked_for_termination
     try:
-        print((log_event(url, 'aws_spot', 'marked_for_termination',
-                         {'terminate_time': term_time}, [])))
+        print(
+            (
+                log_event(
+                    url,
+                    "aws_spot",
+                    "marked_for_termination",
+                    {"terminate_time": term_time},
+                    [],
+                )
+            )
+        )
     except:
         pass
 
@@ -102,9 +112,16 @@ def daemon(url, check_interval):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mozart_rest_url', help="Mozart REST API," +
-                        " e.g. https://192.168.0.1/mozart/api/v0.1")
-    parser.add_argument('-c', '--check', type=int, default=60,
-                        help="check for spot termination notice every N seconds")
+    parser.add_argument(
+        "mozart_rest_url",
+        help="Mozart REST API," + " e.g. https://192.168.0.1/mozart/api/v0.1",
+    )
+    parser.add_argument(
+        "-c",
+        "--check",
+        type=int,
+        default=60,
+        help="check for spot termination notice every N seconds",
+    )
     args = parser.parse_args()
     daemon(args.mozart_rest_url, args.check)

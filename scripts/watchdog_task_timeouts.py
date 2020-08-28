@@ -5,6 +5,7 @@ from __future__ import print_function
 from __future__ import absolute_import
 from builtins import int
 from future import standard_library
+
 standard_library.install_aliases()
 import os
 import sys
@@ -30,32 +31,32 @@ def tag_timedout_tasks(url, timeout):
     query = job_utils.get_timedout_query(timeout, status, source_data)
     print(json.dumps(query, indent=2))
 
-    results = job_utils.run_query_with_scroll(query, index = "task_status-current")
+    results = job_utils.run_query_with_scroll(query, index="task_status-current")
     print(results)
-    logging.info("Found %d stuck tasks in task-started or task-offline" % len(results) +
-                 " older than %d seconds." % timeout)
-
+    logging.info(
+        "Found %d stuck tasks in task-started or task-offline" % len(results)
+        + " older than %d seconds." % timeout
+    )
 
     # tag each with timedout
     for res in results:
-        id = res['_id']
-        src = res.get('_source', {})
-        status = src['status']
-        tags = src.get('tags', [])
-        task_id = src['uuid']
+        id = res["_id"]
+        src = res.get("_source", {})
+        status = src["status"]
+        tags = src.get("tags", [])
+        task_id = src["uuid"]
 
-        if 'timedout' not in tags:
-            tags.append('timedout')
-            new_doc = {
-                "doc": {"tags": tags},
-                "doc_as_upsert": True
-            }
+        if "timedout" not in tags:
+            tags.append("timedout")
+            new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
 
-            response = job_utils.update_es(id, new_doc, index = "task_status-current")
-            if response['result'].strip() != "updated":
-                     err_str = "Failed to update status for {} : {}".format(id, json.dumps(response, indent=2))
-                     logging.error(err_str)
-                     raise Exception(err_str)
+            response = job_utils.update_es(id, new_doc, index="task_status-current")
+            if response["result"].strip() != "updated":
+                err_str = "Failed to update status for {} : {}".format(
+                    id, json.dumps(response, indent=2)
+                )
+                logging.error(err_str)
+                raise Exception(err_str)
 
             logging.info("Tagged %s as timedout." % id)
         else:
@@ -65,8 +66,8 @@ def tag_timedout_tasks(url, timeout):
 def daemon(interval, url, timeout):
     """Watch for tasks that have timed out in task-started state."""
 
-    interval_min = interval - int(interval/4)
-    interval_max = int(interval/4) + interval
+    interval_min = interval - int(interval / 4)
+    interval_max = int(interval / 4) + interval
 
     logging.info("interval min: %d" % interval_min)
     logging.info("interval max: %d" % interval_max)
@@ -84,12 +85,18 @@ def daemon(interval, url, timeout):
 
 if __name__ == "__main__":
     desc = "Watchdog tasks stuck in task-started."
-    host = app.conf.get('JOBS_ES_URL', 'http://localhost:9200')
+    host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('-i', '--interval', type=int, default=3600,
-                        help="wake-up time interval in seconds")
-    parser.add_argument('-u', '--url', default=host, help="ElasticSearch URL")
-    parser.add_argument('-t', '--timeout', type=int, default=86400,
-                        help="timeout threshold")
+    parser.add_argument(
+        "-i",
+        "--interval",
+        type=int,
+        default=3600,
+        help="wake-up time interval in seconds",
+    )
+    parser.add_argument("-u", "--url", default=host, help="ElasticSearch URL")
+    parser.add_argument(
+        "-t", "--timeout", type=int, default=86400, help="timeout threshold"
+    )
     args = parser.parse_args()
     daemon(args.interval, args.url, args.timeout)

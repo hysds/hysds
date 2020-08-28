@@ -1,0 +1,19 @@
+[flake8] 
+max-line-length = 120
+ignore =
+    # E203: whitespace before ':' 
+    E203,
+    # E501: line too long
+    E501,
+    # W503: line break before binary operator
+    W503,
+    # E722: do not use bare 'except'
+    E722,
+    # P101: format string does contain unindexed parameters
+    P101,
+    # P102: docstring does contain unindexed parameters
+    P102,
+    # P103: other string does contain unindexed parameters
+    P103
+statistics = 1
+tee = 1

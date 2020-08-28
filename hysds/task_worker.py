@@ -6,6 +6,7 @@ from __future__ import absolute_import
 
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 import os
 import sys
@@ -26,7 +27,8 @@ from hysds.orchestrator import get_function
 from hysds.job_worker import get_facts, AZ_INFO, INS_TYPE_INFO
 from hysds.log_utils import backoff_max_tries, backoff_max_value
 from hysds.utils import makedirs
-#from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
+
+# from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 
 
 # store facts
@@ -36,20 +38,20 @@ FACTS = None
 @app.task(bind=True)
 def run_task(self, payload):
     """Run task on a task worker. Payload is a JSON file describing the task.
-       Currently supports python function task.
+    Currently supports python function task.
 
-       Example of function payload:
+    Example of function payload:
 
-           {
-               "type": "my_job_type",
-               "function": "mymodule.myfunction",
-               "sys_path": "/home/ops/custom_libs", <- optional
-               "args": [ 1, "a" ],
-               "kwargs": {
-                   "kw1": "this is a test",
-                   "kw2": "this is another test",
-               }
-           }
+        {
+            "type": "my_job_type",
+            "function": "mymodule.myfunction",
+            "sys_path": "/home/ops/custom_libs", <- optional
+            "args": [ 1, "a" ],
+            "kwargs": {
+                "kw1": "this is a test",
+                "kw2": "this is another test",
+            }
+        }
     """
 
     # get worker instance facts
@@ -59,13 +61,13 @@ def run_task(self, payload):
     try:
         r = requests.get(AZ_INFO, timeout=1)
         if r.status_code == 200:
-            facts['ec2_placement_availability_zone'] = r.content
+            facts["ec2_placement_availability_zone"] = r.content
     except:
         pass
     try:
         r = requests.get(INS_TYPE_INFO, timeout=1)
         if r.status_code == 200:
-            facts['ec2_instance_type'] = r.content
+            facts["ec2_instance_type"] = r.content
     except:
         pass
 
@@ -74,69 +76,66 @@ def run_task(self, payload):
     delivery_info = self.request.delivery_info
 
     # create task work directory and enter it
-    task_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, 'tasks')
-    #yr, mo, dy, hr, mi, se, wd, y, z = time.gmtime()
+    task_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, "tasks")
+    # yr, mo, dy, hr, mi, se, wd, y, z = time.gmtime()
     # task_dir = os.path.join(task_dir_abs, "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                       "%02d" % hr, "%02d" % mi, task_id)
     task_dir = task_dir_abs
     makedirs(task_dir)
-    webdav_url = "http://%s:%s" % (facts['hysds_public_ip'],
-                                   app.conf.WEBDAV_PORT)
+    webdav_url = "http://%s:%s" % (facts["hysds_public_ip"], app.conf.WEBDAV_PORT)
     # task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                        "%02d" % hr, "%02d" % mi, task_id)
-    task_url = os.path.join(webdav_url, 'tasks')
+    task_url = os.path.join(webdav_url, "tasks")
     os.chdir(task_dir)
 
     # set up task logger
-    #log_file = os.path.join(task_dir, 'run_task.log')
-    #task_logger = self.app.log.setup_task_loggers(loglevel=logging.DEBUG, logfile=log_file)
+    # log_file = os.path.join(task_dir, 'run_task.log')
+    # task_logger = self.app.log.setup_task_loggers(loglevel=logging.DEBUG, logfile=log_file)
     task_logger = self.app.log.setup_task_loggers(loglevel=logging.DEBUG)
-    #hdlr = logging.FileHandler(log_file)
+    # hdlr = logging.FileHandler(log_file)
     # task_logger.addHandler(hdlr)
-    #old_outs = sys.stdout, sys.stderr
+    # old_outs = sys.stdout, sys.stderr
 
     # run task
     try:
         # redirect stdout/stderr
-        #self.app.log.redirect_stdouts_to_logger(task_logger, loglevel=logging.DEBUG)
+        # self.app.log.redirect_stdouts_to_logger(task_logger, loglevel=logging.DEBUG)
 
         # write task's running file to reserve space for task's done file later
-        #task_running_file = os.path.join(task_dir, '.running')
+        # task_running_file = os.path.join(task_dir, '.running')
         # with open(task_running_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
 
         # get task's .done file
-        #task_done_file = os.path.join(task_dir, '.done')
+        # task_done_file = os.path.join(task_dir, '.done')
 
         # parse payload
-        sys_path = payload.get('sys_path', None)
-        func = get_function(payload['function'], sys_path)
-        args = payload.get('args', [])
-        kwargs = payload.get('kwargs', {})
+        sys_path = payload.get("sys_path", None)
+        func = get_function(payload["function"], sys_path)
+        args = payload.get("args", [])
+        kwargs = payload.get("kwargs", {})
 
         # log task info
-        task_logger.info("task type: %s" % payload['type'])
-        task_logger.info("function to run: %s" % payload['function'])
+        task_logger.info("task type: %s" % payload["type"])
+        task_logger.info("function to run: %s" % payload["function"])
         task_logger.info("sys_path: %s" % str(sys_path))
         task_logger.info("args: %s" % str(args))
         task_logger.info("kwargs: %s" % json.dumps(kwargs, indent=2))
-        task_logger.info("task started: {}".format(
-            datetime.utcnow().isoformat()))
+        task_logger.info("task started: {}".format(datetime.utcnow().isoformat()))
 
         # get task result
         result = func(*args, **kwargs)
         task_logger.info("result: {}".format(result))
     finally:
         # restore stdout/stderr
-        #sys.stdout, sys.stderr = old_outs
+        # sys.stdout, sys.stderr = old_outs
         # task_logger.removeHandler(hdlr)
 
         # transition running file to done file
-        #os.rename(task_running_file, task_done_file)
+        # os.rename(task_running_file, task_done_file)
         # with open(task_done_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
-        task_logger.info("task finished: {}".format(
-            datetime.utcnow().isoformat()))
+        task_logger.info("task finished: {}".format(datetime.utcnow().isoformat()))
 
     # return task url
     return task_url
@@ -206,10 +205,9 @@ def run_task(self, payload):
 #        raise RuntimeError("Failed to run task: %s" % json.dumps(payload, indent=2))
 
 
-@backoff.on_exception(backoff.expo,
-                      socket.error,
-                      max_tries=backoff_max_tries,
-                      max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def do_submit_task(payload, task_queue):
     """Submit task wrapper with exponential backoff and full jitter."""
 

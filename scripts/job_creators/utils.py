@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 import json
 from pprint import pprint, pformat
@@ -14,9 +15,9 @@ def get_job_json(info, job_type):
     """
 
     return {
-        'type': job_type,
-        'params': info,
-        'localize_urls': info.get('localize_urls', []),
+        "type": job_type,
+        "params": info,
+        "localize_urls": info.get("localize_urls", []),
     }
 
 
@@ -51,16 +52,16 @@ def ingest_dataset(info):
 
     # build params
     params = {}
-    params['dataset'] = info['dataset']
+    params["dataset"] = info["dataset"]
     job = {
-        'type': 'ingest_dataset',
-        'name': 'ingest_dataset-%s' % params['dataset'],
-        'params': params,
-        'localize_urls': info['dataset_urls']
+        "type": "ingest_dataset",
+        "name": "ingest_dataset-%s" % params["dataset"],
+        "params": params,
+        "localize_urls": info["dataset_urls"],
     }
 
     # print "Job:"
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -74,7 +75,7 @@ def notify_by_email(info):
             'type': 'notify_by_email',
             'name': 'action-notify_by_email-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'Email CSK ingest',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'emails': 'test@test.com,test2@test.com',
@@ -87,27 +88,27 @@ def notify_by_email(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['emails'] = kwargs['email_addresses']
-    rule_hit = info['rule_hit']
-    urls = rule_hit['_source']['urls']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["emails"] = kwargs["email_addresses"]
+    rule_hit = info["rule_hit"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
+        params["url"] = None
     job = {
-        'type': 'notify_by_email',
-        'name': 'action-notify_by_email-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "notify_by_email",
+        "name": "action-notify_by_email-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -121,7 +122,7 @@ def notify_by_tweet(info):
             'type': 'notify_by_tweet',
             'name': 'action-notify_by_tweet-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'tweet CSK ingest',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'url': 'http://path_to_repo',
@@ -134,27 +135,27 @@ def notify_by_tweet(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['hash_tags'] = kwargs['hash_tags']
-    rule_hit = info['rule_hit']
-    urls = rule_hit['_source']['urls']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["hash_tags"] = kwargs["hash_tags"]
+    rule_hit = info["rule_hit"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
+        params["url"] = None
     job = {
-        'type': 'notify_by_tweet',
-        'name': 'action-notify_by_tweet-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "notify_by_tweet",
+        "name": "action-notify_by_tweet-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -168,7 +169,7 @@ def ftp_push(info):
             'type': 'ftp_push',
             'name': 'action-ftp_push-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'FTP Push CSK Calimap',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'url': 'http://path_to_repo'
@@ -182,28 +183,28 @@ def ftp_push(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['ftp_url'] = kwargs['ftp_url']
-    params['emails'] = kwargs['email_addresses']
-    rule_hit = info['rule_hit']
-    urls = rule_hit['_source']['urls']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["ftp_url"] = kwargs["ftp_url"]
+    params["emails"] = kwargs["email_addresses"]
+    rule_hit = info["rule_hit"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
+        params["url"] = None
     job = {
-        'type': 'ftp_push',
-        'name': 'action-ftp_push-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "ftp_push",
+        "name": "action-ftp_push-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -217,7 +218,7 @@ def sftp_push(info):
             'type': 'sftp_push',
             'name': 'action-sftp_push-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'SFTP Push CSK Calimap',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'url': 'http://path_to_repo'
@@ -231,28 +232,28 @@ def sftp_push(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['sftp_url'] = kwargs['sftp_url']
-    params['emails'] = kwargs['email_addresses']
-    rule_hit = info['rule_hit']
-    urls = rule_hit['_source']['urls']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["sftp_url"] = kwargs["sftp_url"]
+    params["emails"] = kwargs["email_addresses"]
+    rule_hit = info["rule_hit"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
+        params["url"] = None
     job = {
-        'type': 'sftp_push',
-        'name': 'action-sftp_push-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "sftp_push",
+        "name": "action-sftp_push-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -266,7 +267,7 @@ def rsync_push(info):
             'type': 'rsync_push',
             'name': 'action-rsync_push-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'Rsync Push CSK Calimap',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336'
                 'url': 'http://path_to_repo'
@@ -280,28 +281,28 @@ def rsync_push(info):
 
     # build params
     params = {}
-    params['id'] = info['objectid']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
-    kwargs = json.loads(info['rule']['kwargs'])
-    params['rsync_url'] = kwargs['rsync_url']
-    params['emails'] = kwargs['email_addresses']
-    rule_hit = info['rule_hit']
-    urls = rule_hit['_source']['urls']
+    params["id"] = info["objectid"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
+    kwargs = json.loads(info["rule"]["kwargs"])
+    params["rsync_url"] = kwargs["rsync_url"]
+    params["emails"] = kwargs["email_addresses"]
+    rule_hit = info["rule_hit"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
+        params["url"] = None
     job = {
-        'type': 'rsync_push',
-        'name': 'action-rsync_push-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "rsync_push",
+        "name": "action-rsync_push-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -315,7 +316,7 @@ def purge_dataset(info):
             'type': 'purge_dataset',
             'name': 'action-purge_dataset-CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
             'tag': 'v0.3 purge',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'index': 'grq_dev_v03_csk',
                 'id': 'CSKS4_RAW_B_HI_11_HH_RD_20131004020329_20131004020336',
@@ -327,27 +328,27 @@ def purge_dataset(info):
 
     # build params
     params = {}
-    rule_hit = info['rule_hit']
-    params['index'] = rule_hit['_index']
-    params['doctype'] = rule_hit['_type']
-    params['id'] = info['objectid']
-    urls = rule_hit['_source']['urls']
+    rule_hit = info["rule_hit"]
+    params["index"] = rule_hit["_index"]
+    params["doctype"] = rule_hit["_type"]
+    params["id"] = info["objectid"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['url'] = urls[0]
+        params["url"] = urls[0]
     else:
-        params['url'] = None
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
+        params["url"] = None
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
     job = {
-        'type': 'purge_dataset',
-        'name': 'action-purge_dataset-%s' % info['objectid'],
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "purge_dataset",
+        "name": "action-purge_dataset-%s" % info["objectid"],
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -361,7 +362,7 @@ def purge_datasets(info):
             'type': 'purge_datasets',
             'name': 'action-purge_datasets',
             'tag': 'v0.3 purge',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'index': 'grq_dev_v03_csk',
                 'query': '<ES query>'
@@ -372,20 +373,20 @@ def purge_datasets(info):
 
     # build params
     params = {}
-    params['index'] = info['index']
-    params['query'] = info['query']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
+    params["index"] = info["index"]
+    params["query"] = info["query"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
     job = {
-        'type': 'purge_datasets',
-        'name': 'action-purge_datasets',
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "purge_datasets",
+        "name": "action-purge_datasets",
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -399,7 +400,7 @@ def custom_script(info):
             'type': 'custom_script',
             'name': 'action-custom_script',
             'tag': 'v0.3 custom_script',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'index': 'grq_dev_v03_csk',
                 'query': '<ES query>'
@@ -410,25 +411,25 @@ def custom_script(info):
 
     # build params
     params = {}
-    params['index'] = info['index']
-    params['query'] = info['query']
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
+    params["index"] = info["index"]
+    params["query"] = info["query"]
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
 
     # update params with kwargs
-    kwargs = json.loads(info['rule']['kwargs'])
+    kwargs = json.loads(info["rule"]["kwargs"])
     params.update(kwargs)
 
     job = {
-        'type': 'custom_script',
-        'name': 'action-custom_script',
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "custom_script",
+        "name": "action-custom_script",
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job
 
 
@@ -442,7 +443,7 @@ def import_prov_es(info):
             'type': 'import_prov_es',
             'name': 'action-import_prov_es',
             'tag': 'v0.3_import',
-            'username': 'ops', 
+            'username': 'ops',
             'params': {
                 'prod_url': '<dataset url>'
             },
@@ -452,29 +453,29 @@ def import_prov_es(info):
 
     # build params
     params = {}
-    rule_hit = info['rule_hit']
-    params['index'] = rule_hit['_index']
-    params['doctype'] = rule_hit['_type']
-    params['id'] = info['objectid']
-    urls = rule_hit['_source']['urls']
+    rule_hit = info["rule_hit"]
+    params["index"] = rule_hit["_index"]
+    params["doctype"] = rule_hit["_type"]
+    params["id"] = info["objectid"]
+    urls = rule_hit["_source"]["urls"]
     if len(urls) > 0:
-        params['prod_url'] = urls[0]
+        params["prod_url"] = urls[0]
         for url in urls:
-            if url.startswith('s3'):
-                params['prod_url'] = url
+            if url.startswith("s3"):
+                params["prod_url"] = url
                 break
     else:
-        params['prod_url'] = None
-    params['rule_name'] = info['rule']['rule_name']
-    params['username'] = info['rule']['username']
+        params["prod_url"] = None
+    params["rule_name"] = info["rule"]["rule_name"]
+    params["username"] = info["rule"]["username"]
     job = {
-        'type': 'import_prov_es',
-        'name': 'action-import_prov_es',
-        'tag': params['rule_name'],
-        'username': params['username'],
-        'params': params,
-        'localize_urls': []
+        "type": "import_prov_es",
+        "name": "action-import_prov_es",
+        "tag": params["rule_name"],
+        "username": params["username"],
+        "params": params,
+        "localize_urls": [],
     }
 
-    #pprint(job, indent=2)
+    # pprint(job, indent=2)
     return job

@@ -70,8 +70,8 @@ def keep_alive(root_work):
 
 
 def is_jobless(root_work, inactivity_secs, logger=None):
-    """Check if no jobs are running and hasn't run in the past 
-       amount of time passed in.
+    """Check if no jobs are running and hasn't run in the past
+    amount of time passed in.
     """
 
     global NO_JOBS_TIMER
@@ -80,7 +80,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
     # check if keep-alive
     logging.info("KEEP_ALIVE: %s" % KEEP_ALIVE)
     if keep_alive(root_work):
-        if KEEP_ALIVE != True:
+        if KEEP_ALIVE is not True:
             KEEP_ALIVE = True
             if logger is not None:
                 try:
@@ -90,7 +90,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
         logging.info("Keep-alive exists.")
         return
     else:
-        if KEEP_ALIVE != False:
+        if KEEP_ALIVE is not False:
             KEEP_ALIVE = False
             if logger is not None:
                 try:
@@ -217,8 +217,8 @@ def decrement_fleet(c, spot_fleet):
 
 
 def seppuku(logger=None):
-    """Shutdown supervisord and the instance if it detects that it is 
-       currently part of an autoscale group."""
+    """Shutdown supervisord and the instance if it detects that it is
+    currently part of an autoscale group."""
 
     logging.info("Initiating seppuku.")
 
@@ -246,7 +246,7 @@ def seppuku(logger=None):
 
 def graceful_shutdown(id, logger=None):
     """Gracefully shutdown supervisord, detach from AutoScale group or spot fleet,
-       and shutdown."""
+    and shutdown."""
 
     # stop docker containers
     try:
@@ -268,10 +268,12 @@ def graceful_shutdown(id, logger=None):
     # detach and die
     logging.info("Committing seppuku.")
     try:
-        zone = requests.get('http://169.254.169.254/latest/meta-data/placement/availability-zone')
+        zone = requests.get(
+            "http://169.254.169.254/latest/meta-data/placement/availability-zone"
+        )
         region = zone.text[:-1]
-        endpoint_url = "https://sqs.{}.amazonaws.com".format(region)       
-        sqs = boto3.resource("sqs",endpoint_url=endpoint_url)
+        endpoint_url = "https://sqs.{}.amazonaws.com".format(region)
+        sqs = boto3.resource("sqs", endpoint_url=endpoint_url)
         yaml.SafeLoader.add_constructor(
             "tag:yaml.org,2002:python/regexp",
             lambda l, n: re.compile(l.construct_scalar(n)),
@@ -303,9 +305,9 @@ def graceful_shutdown(id, logger=None):
 
 
 def harikiri(root_work, inactivity_secs, check_interval, logger=None):
-    """If no jobs are running and the last job finished more than the 
-       threshold, shutdown supervisord gracefully then shutdown the 
-       instance.
+    """If no jobs are running and the last job finished more than the
+    threshold, shutdown supervisord gracefully then shutdown the
+    instance.
     """
 
     logging.info("harikiri configuration:")

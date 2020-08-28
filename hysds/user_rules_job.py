@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
 
 import json
@@ -28,16 +29,12 @@ USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
 mozart_es = get_mozart_es()
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    query = {
-        "query": {
-            "term": {
-                "_id": job_id
-            }
-        }
-    }
+    query = {"query": {"term": {"_id": job_id}}}
     logger.info("ensure_job_indexed: %s" % json.dumps(query))
     count = mozart_es.get_count(index=alias, body=query)
     if count == 0:
@@ -46,15 +43,15 @@ def ensure_job_indexed(job_id, alias):
 
 def get_job(job_id, rule, result):
     """Return generic json job configuration."""
-    priority = rule.get('priority', 0)
+    priority = rule.get("priority", 0)
     return {
-        "job_type": "job:%s" % rule['job_type'],
+        "job_type": "job:%s" % rule["job_type"],
         "priority": priority,
         "payload": {
             "job_id": job_id,
             "rule": rule,
             "rule_hit": result,
-        }
+        },
     }
 
 
@@ -65,23 +62,13 @@ def update_query(job_id, rule):
     :param rule: dict
     :return: dict
     """
-    updated_query = json.loads(rule['query_string'])
+    updated_query = json.loads(rule["query_string"])
     filts = [updated_query]
 
-    if rule.get('query_all', False) is False:
-        filts.append({
-            "term": {
-                "_id": job_id
-            }
-        })
+    if rule.get("query_all", False) is False:
+        filts.append({"term": {"_id": job_id}})
 
-    final_query = {
-        "query": {
-            "bool": {
-                "must": filts
-            }
-        }
-    }
+    final_query = {"query": {"bool": {"must": filts}}}
 
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
     return final_query
@@ -97,39 +84,33 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     ensure_job_indexed(job_id, alias)  # ensure job is indexed
 
     # get all enabled user rules
-    query = {
-        "query": {
-            "term": {
-                "enabled": True
-            }
-        }
-    }
+    query = {"query": {"term": {"enabled": True}}}
     rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
     for rule in rules:
         time.sleep(1)  # sleep between queries
 
-        rule = rule['_source']  # extracting _source from the rule itself
-        logger.info('rule: %s' % json.dumps(rule, indent=2))
+        rule = rule["_source"]  # extracting _source from the rule itself
+        logger.info("rule: %s" % json.dumps(rule, indent=2))
 
         try:
             updated_query = update_query(job_id, rule)  # check for matching rules
-            rule['query'] = updated_query
-            rule['query_string'] = json.dumps(updated_query)
+            rule["query"] = updated_query
+            rule["query_string"] = json.dumps(updated_query)
         except (RuntimeError, Exception) as e:
             logger.error("unable to update user_rule's query, skipping")
             logger.error(e)
             continue
 
-        rule_name = rule['rule_name']
-        final_qs = rule['query_string']
+        rule_name = rule["rule_name"]
+        final_qs = rule["query_string"]
         logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
         # check for matching rules
         try:
             result = mozart_es.es.search(index=alias, body=final_qs)
-            if result['hits']['total']['value'] == 0:
+            if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
         except ElasticsearchException as e:
@@ -137,33 +118,37 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
             logger.error(e)
             continue
 
-        doc_res = result['hits']['hits'][0]
+        doc_res = result["hits"]["hits"][0]
         logger.info("Rule '%s' successfully matched for %s" % (rule_name, job_id))
 
         # submit trigger task
         queue_job_trigger(doc_res, rule)
-        logger.info("Trigger task submitted for %s: %s" % (job_id, rule['job_type']))
+        logger.info("Trigger task submitted for %s: %s" % (job_id, rule["job_type"]))
     return True
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_finished_job(id):
     """Queue job id for user_rules_job evaluation."""
     payload = {
-        'type': 'user_rules_job',
-        'function': 'hysds.user_rules_job.evaluate_user_rules_job',
-        'args': [id],
+        "type": "user_rules_job",
+        "function": "hysds.user_rules_job.evaluate_user_rules_job",
+        "args": [id],
     }
     hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_job_trigger(doc_res, rule):
     """Trigger job rule execution."""
     payload = {
-        'type': 'user_rules_trigger',
-        'function': 'hysds_commons.job_utils.submit_mozart_job',
-        'args': [doc_res, rule],
-        'kwargs': {'component': 'mozart'},
+        "type": "user_rules_trigger",
+        "function": "hysds_commons.job_utils.submit_mozart_job",
+        "args": [doc_res, rule],
+        "kwargs": {"component": "mozart"},
     }
     hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)

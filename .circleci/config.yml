@@ -1,5 +1,24 @@
 version: 2.1
 jobs:
+  code-analysis:
+    docker:
+      - image: cimg/python:3.8
+    steps:
+      - checkout
+      - run:
+          name: code-analysis
+          command: |
+            pip install flake8 flake8-junit-report
+            mkdir -p test-results/flake8
+            flake8 . --output-file=/tmp/flake8.txt --exit-zero
+            flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
+            #set +e
+            #flake8 . --output-file=/tmp/flake8.txt
+            #exit_code=$?
+            #flake8_junit /tmp/flake8.txt test-results/flake8/results.xml
+            #exit $exit_code
+      - store_test_results:
+          path: test-results
   test:
     docker:
       - image: hysds/pge-base:latest
@@ -9,13 +28,17 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
+            pip install -e .
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
-            pytest test
+            pytest -s --junit-xml=test-results/pytest/results.xml test
+      - store_test_results:
+          path: test-results
 
 workflows:
   version: 2
-  test:
+  pr-checks:
     jobs:
+      - code-analysis
       - test
   weekly:
     triggers:
@@ -27,6 +50,10 @@ workflows:
                 - develop
     jobs:
       - test:
+          filters:
+            branches:
+              only: develop
+      - code-analysis:
           filters:
             branches:
               only: develop

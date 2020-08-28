@@ -16,9 +16,11 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import object
 from future import standard_library
+
 standard_library.install_aliases()
 import threading
 import logging
+
 logger = logging.getLogger()
 
 
@@ -32,15 +34,14 @@ class StreamObserverQueue(object):
         Initializer.
         """
         self._queue = queue
+
     # end def
 
-
-#    def __del__(self):
-#        """
-#        Finalizer.
-#        """
-#    # end def
-
+    #    def __del__(self):
+    #        """
+    #        Finalizer.
+    #        """
+    #    # end def
 
     def __str__(self):
         """
@@ -49,6 +50,7 @@ class StreamObserverQueue(object):
         @rtype: str
         """
         return 'queue: "%s"' % (self._queue)
+
     # end def
 
     def notifyLine(self, line):
@@ -57,6 +59,7 @@ class StreamObserverQueue(object):
         Note that lines include the line separator.
         """
         self._queue.put(line)
+
     # end def
 
     def notifyEOF(self):
@@ -64,6 +67,7 @@ class StreamObserverQueue(object):
         Invoked when end of stream is reached.
         """
         self._queue.put(None)
+
     # end def
 
 

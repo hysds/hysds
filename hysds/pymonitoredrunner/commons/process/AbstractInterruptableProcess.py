@@ -16,10 +16,12 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 import time
 from billiard import Process
 import logging
+
 logger = logging.getLogger()
 
 
@@ -34,6 +36,7 @@ class AbstractInterruptableProcess(Process):
         """
         Process.__init__(self)
         self._isRunnable = True
+
     # end def
 
     def __del__(self):
@@ -42,14 +45,16 @@ class AbstractInterruptableProcess(Process):
         """
         pass
         # Process.__del__(self) does not exists
+
     # end def
 
     def stop(self):
         """
         Stops this process if it is running.
         """
-        #raise NotImplementedError('Subclasses should provide a concrete implementation.')
+        # raise NotImplementedError('Subclasses should provide a concrete implementation.')
         self._isRunnable = False
+
     # end def
 
     def run(self):
@@ -57,23 +62,24 @@ class AbstractInterruptableProcess(Process):
         Process loop.
         """
         raise NotImplementedError(
-            'Subclasses should provide a concrete implementation.')
+            "Subclasses should provide a concrete implementation."
+        )
 
-#        # recommended essentials for implementation:
-#
-#        # reset to true
-#        self._isRunnable = True
-#
-#        # ----------------------------------------------------------------------
-#        # process loop
-#
-#        while self._isRunnable:
-#
-#            # ------------------------------------------------------------------
-#            # sleep a little
-#            self.interruptableSleep(seconds)
-#
-#        # end while
+    #        # recommended essentials for implementation:
+    #
+    #        # reset to true
+    #        self._isRunnable = True
+    #
+    #        # ----------------------------------------------------------------------
+    #        # process loop
+    #
+    #        while self._isRunnable:
+    #
+    #            # ------------------------------------------------------------------
+    #            # sleep a little
+    #            self.interruptableSleep(seconds)
+    #
+    #        # end while
 
     # end def
 
@@ -91,7 +97,7 @@ class AbstractInterruptableProcess(Process):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug('=> Process interrupted. %s' % (str(e)))
+            logger.debug("=> Process interrupted. %s" % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
@@ -105,6 +111,7 @@ class AbstractInterruptableProcess(Process):
             # propagate exception
             raise e
         # end try-except
+
     # end def
 
     def interruptableSleep(self, seconds):
@@ -119,7 +126,7 @@ class AbstractInterruptableProcess(Process):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug('=> Sleep interrupted. %s' % (str(e)))
+            logger.debug("=> Sleep interrupted. %s" % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
@@ -133,6 +140,7 @@ class AbstractInterruptableProcess(Process):
             # propagate exception
             raise e
         # end try-except
+
     # end def
 
     def sleep(self, seconds):
@@ -140,6 +148,7 @@ class AbstractInterruptableProcess(Process):
         Sleep for the given seconds.
         """
         time.sleep(seconds)
+
     # end def
 
 

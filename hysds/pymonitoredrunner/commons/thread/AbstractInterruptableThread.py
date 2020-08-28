@@ -16,10 +16,12 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import str
 from future import standard_library
+
 standard_library.install_aliases()
 import time
 from threading import Thread
 import logging
+
 logger = logging.getLogger()
 
 
@@ -34,6 +36,7 @@ class AbstractInterruptableThread(Thread):
         """
         Thread.__init__(self)
         self._isRunnable = True
+
     # end def
 
     def __del__(self):
@@ -42,14 +45,16 @@ class AbstractInterruptableThread(Thread):
         """
         pass
         # Thread.__del__(self) does not exists
+
     # end def
 
     def stop(self):
         """
         Stops this thread if it is running.
         """
-        #raise NotImplementedError('Subclasses should provide a concrete implementation.')
+        # raise NotImplementedError('Subclasses should provide a concrete implementation.')
         self._isRunnable = False
+
     # end def
 
     def run(self):
@@ -57,23 +62,24 @@ class AbstractInterruptableThread(Thread):
         Thread loop.
         """
         raise NotImplementedError(
-            'Subclasses should provide a concrete implementation.')
+            "Subclasses should provide a concrete implementation."
+        )
 
-#        # recommended essentials for implementation:
-#
-#        # reset to true
-#        self._isRunnable = True
-#
-#        # ----------------------------------------------------------------------
-#        # thread loop
-#
-#        while self._isRunnable:
-#
-#            # ------------------------------------------------------------------
-#            # sleep a little
-#            self.interruptableSleep(seconds)
-#
-#        # end while
+    #        # recommended essentials for implementation:
+    #
+    #        # reset to true
+    #        self._isRunnable = True
+    #
+    #        # ----------------------------------------------------------------------
+    #        # thread loop
+    #
+    #        while self._isRunnable:
+    #
+    #            # ------------------------------------------------------------------
+    #            # sleep a little
+    #            self.interruptableSleep(seconds)
+    #
+    #        # end while
 
     # end def
 
@@ -101,7 +107,7 @@ class AbstractInterruptableThread(Thread):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug('=> Thread interrupted. %s' % (str(e)))
+            logger.debug("=> Thread interrupted. %s" % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
@@ -115,6 +121,7 @@ class AbstractInterruptableThread(Thread):
             # propagate exception
             raise e
         # end try-except
+
     # end def
 
     def interruptableSleep(self, seconds):
@@ -129,7 +136,7 @@ class AbstractInterruptableThread(Thread):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug('=> Sleep interrupted. %s' % (str(e)))
+            logger.debug("=> Sleep interrupted. %s" % (str(e)))
 
             # raised when user presses CTRL-C
             self.stop()
@@ -143,6 +150,7 @@ class AbstractInterruptableThread(Thread):
             # propagate exception
             raise e
         # end try-except
+
     # end def
 
     def sleep(self, seconds):
@@ -150,6 +158,7 @@ class AbstractInterruptableThread(Thread):
         Sleep for the given seconds.
         """
         time.sleep(seconds)
+
     # end def
 
 
