@@ -676,7 +676,8 @@ def triage(job, ctx):
         job["job_info"]["time_start"] = "{}Z".format(datetime.utcnow().isoformat("T"))
 
     # default triage id
-    default_triage_id_format = "triaged_job-{job[job_info][id]}-{job[task_id]}"
+    default_triage_id_format = "triaged_job-{job_id}_task-{job[task_id]}"
+    default_triage_id_regex = "triaged_job-(?P<job_id>.+)_task-(?P<task_id>[-\\w])"
 
     # if exit code of job command is zero, don't triage anything
     exit_code = job["job_info"]["status"]
@@ -698,18 +699,30 @@ def triage(job, ctx):
     # get job info
     job_dir = job["job_info"]["job_dir"]
     job_id = job["job_info"]["id"]
+    logger.info("job id: {}".format(job_id))
+
+    # Check if the job_id is a triaged dataset. If so, let's parse out the job_id
+    logger.info("Checking to see if the job_id matches the regex: {}".format(default_triage_id_regex))
+    match = re.search(default_triage_id_regex, job_id)
+    if match:
+        logger.info("job_id matches the triage dataset regex. Parsing out job_id")
+        parsed_job_id = match.groupdict()["job_id"]
+        logger.info("extracted job_id: {}".format(parsed_job_id))
+    else:
+        logger.info("job_id does not match the triage dataset regex: {}".format(default_triage_id_regex))
+        parsed_job_id = job_id
 
     # create triage dataset
     # Attempt to first use triage id format from user, but if there is any problem use the default id format instead
     try:
-        triage_id = triage_id_format.format(job=job, job_context=ctx)
+        triage_id = triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
     except Exception as e:
         logger.warning(
             "Failed to apply custom triage id format because of {}: {}. Falling back to default triage id".format(
                 e.__class__.__name__, e
             )
         )
-        triage_id = default_triage_id_format.format(job=job, job_context=ctx)
+        triage_id = default_triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
     triage_dir = os.path.join(job_dir, triage_id)
     makedirs(triage_dir)
 
@@ -717,7 +730,7 @@ def triage(job, ctx):
     ds_file = os.path.join(triage_dir, "{}.dataset.json".format(triage_id))
     ds = {
         "version": "v{}".format(hysds.__version__),
-        "label": "triage for job {}".format(job_id),
+        "label": "triage for job {}".format(parsed_job_id),
     }
     if "cmd_start" in job["job_info"]:
         ds["starttime"] = job["job_info"]["cmd_start"]
