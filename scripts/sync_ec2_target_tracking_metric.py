@@ -54,6 +54,21 @@ def get_desired_capacity(asg):
     return groups[0]["DesiredCapacity"]
 
 
+def bootstrap_asg(asg, desired):
+    """Bootstrap ASG's desired capacity."""
+
+    c = boto3.client("autoscaling")
+    asgs = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])[
+        "AutoScalingGroups"
+    ]
+    if len(asgs) == 0:
+        raise RuntimeError("Failed to find ASG %s." % asg)
+    max_size = asgs[0]["MaxSize"]
+    actual_desired = max_size if desired > max_size else desired
+    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=actual_desired)
+    return actual_desired
+
+
 def submit_metric(queue, asg, metric, metric_ns):
     """Submit EC2 custom metric data."""
 
@@ -65,14 +80,8 @@ def submit_metric(queue, asg, metric, metric_ns):
             {
                 "MetricName": metric_name,
                 "Dimensions": [
-                    {
-                        "Name": "AutoScalingGroupName",
-                        "Value": asg,
-                    },
-                    {
-                        "Name": "Queue",
-                        "Value": queue,
-                    },
+                    {"Name": "AutoScalingGroupName", "Value": asg},
+                    {"Name": "Queue", "Value": queue},
                 ],
                 "Value": metric,
             }
@@ -96,7 +105,13 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
             logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
             desired_capacity = float(get_desired_capacity(asg))
             if desired_capacity == 0:
-                desired_capacity = 1.0
+                if job_count > 0:
+                    desired_capacity = float(bootstrap_asg(asg, job_count))
+                    logging.info(
+                        "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
+                    )
+                else:
+                    desired_capacity = 1.0
             metric = job_count / desired_capacity
             submit_metric(queue, asg, metric, namespace)
         except Exception as e:
