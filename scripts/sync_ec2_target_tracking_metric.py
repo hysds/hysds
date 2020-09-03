@@ -58,8 +58,13 @@ def bootstrap_asg(asg, desired):
     """Bootstrap ASG's desired capacity."""
 
     c = boto3.client("autoscaling")
-    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=desired)
-    return desired
+    asgs = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])['AutoScalingGroups']
+    if len(asgs) == 0:
+        raise RuntimeError("Failed to find ASG %s." % asg)
+    max_size = asgs[0]['MaxSize']
+    actual_desired = max_size if desired > max_size else desired
+    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=actual_desired)
+    return actual_desired
 
 
 def submit_metric(queue, asg, metric, metric_ns):
