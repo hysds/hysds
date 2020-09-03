@@ -43,30 +43,23 @@ def get_waiting_job_count(queue, user="guest", password="guest"):
         return 0
 
 
-def get_desired_capacity(asg):
-    """Get current value of ASG's desired capacity."""
+def get_desired_capacity_max(asg):
+    """Get current value of ASG's desired capacity and max size."""
 
     c = boto3.client("autoscaling")
     r = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
     groups = r["AutoScalingGroups"]
     if len(groups) == 0:
         raise RuntimeError("Autoscaling group {} not found.".format(asg))
-    return groups[0]["DesiredCapacity"]
+    return groups[0]["DesiredCapacity"], groups[0]["MaxSize"]
 
 
 def bootstrap_asg(asg, desired):
     """Bootstrap ASG's desired capacity."""
 
     c = boto3.client("autoscaling")
-    asgs = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])[
-        "AutoScalingGroups"
-    ]
-    if len(asgs) == 0:
-        raise RuntimeError("Failed to find ASG %s." % asg)
-    max_size = asgs[0]["MaxSize"]
-    actual_desired = max_size if desired > max_size else desired
-    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(actual_desired))
-    return actual_desired
+    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
+    return desired
 
 
 def submit_metric(queue, asg, metric, metric_ns):
@@ -103,10 +96,10 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
         try:
             job_count = float(get_waiting_job_count(queue, user, password))
             logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
-            desired_capacity = float(get_desired_capacity(asg))
+            desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
-                    desired_capacity = float(bootstrap_asg(asg, job_count))
+                    desired_capacity = float(bootstrap_asg(asg, max_size if job_count > max_size else job_count))
                     logging.info(
                         "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
                     )
