@@ -65,7 +65,7 @@ def bootstrap_asg(asg, desired):
         raise RuntimeError("Failed to find ASG %s." % asg)
     max_size = asgs[0]["MaxSize"]
     actual_desired = max_size if desired > max_size else desired
-    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=actual_desired)
+    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(actual_desired))
     return actual_desired
 
 
