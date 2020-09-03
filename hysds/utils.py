@@ -696,34 +696,20 @@ def triage(job, ctx):
     else:
         triage_id_format = default_triage_id_format
 
-    if "_triage_id_regex" in ctx:
-        triage_id_regex = ctx["_triage_id_regex"]
-    else:
-        triage_id_regex = default_triage_id_regex
-
     # get job info
     job_dir = job["job_info"]["job_dir"]
     job_id = job["job_info"]["id"]
     logger.info("job id: {}".format(job_id))
 
     # Check if the job_id is a triaged dataset. If so, let's parse out the job_id
-    logger.info("Checking to see if the job_id matches the triage dataset regex: {}".format(triage_id_regex))
-    try:
-        match = re.search(triage_id_regex, job_id)
-    except Exception as e:
-        logger.warning(
-            "Failed to apply custom triage id regex because of {}: {}. Falling back to default triage regex".format(
-                e.__class__.__name__, e
-            )
-        )
-        match = re.search(default_triage_id_regex, job_id)
-
+    logger.info("Checking to see if the job_id matches the regex: {}".format(default_triage_id_regex))
+    match = re.search(default_triage_id_regex, job_id)
     if match:
         logger.info("job_id matches the triage dataset regex. Parsing out job_id")
         parsed_job_id = match.groupdict()["job_id"]
         logger.info("extracted job_id: {}".format(parsed_job_id))
     else:
-        logger.info("job_id does not match the triage dataset regex: {}".format(triage_id_regex))
+        logger.info("job_id does not match the triage dataset regex: {}".format(default_triage_id_regex))
         parsed_job_id = job_id
 
     # create triage dataset
