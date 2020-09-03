@@ -72,11 +72,11 @@ class TestTriage(unittest.TestCase):
         # Expectations
         expected_triage_dataset_filename = (
             self.job_dir
-            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
+            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
         )
         expected_triage_met_filename = (
             self.job_dir
-            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
+            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
         )
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
@@ -220,11 +220,11 @@ class TestTriage(unittest.TestCase):
         # Expectations
         expected_triage_dataset_filename = (
             self.job_dir
-            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
+            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
         )
         expected_triage_met_filename = (
             self.job_dir
-            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
+            + "/triaged_job-boogaloo-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
         )
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
