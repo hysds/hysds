@@ -676,8 +676,8 @@ def triage(job, ctx):
         job["job_info"]["time_start"] = "{}Z".format(datetime.utcnow().isoformat("T"))
 
     # default triage id
-    default_triage_id_format = "triaged_job-{job_id}-task-{job[task_id]}"
-    default_triage_id_regex = "triaged_job-(?P<job_id>.+)-task-(?P<task_id>[-\\w])"
+    default_triage_id_format = "triaged_job-{job_id}_task-{job[task_id]}"
+    default_triage_id_regex = "triaged_job-(?P<job_id>.+)_task-(?P<task_id>[-\\w])"
 
     # if exit code of job command is zero, don't triage anything
     exit_code = job["job_info"]["status"]
