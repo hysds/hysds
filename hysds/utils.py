@@ -969,12 +969,3 @@ def validate_checksum_files(job, cxt):
     else:
         logger.info("checksum preprocessing completed successfully")
     return True
-
-if __name__ == '__main__':
-    with open("_job.json", "r") as f:
-        job = json.load(f)
-
-    with open("_context.json", "r") as f:
-        ctx = json.load(f)
-
-    triage(job, ctx)
