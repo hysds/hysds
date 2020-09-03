@@ -704,12 +704,26 @@ def triage(job, ctx):
     # get job info
     job_dir = job["job_info"]["job_dir"]
     job_id = job["job_info"]["id"]
+    logger.info("job id: {}".format(job_id))
 
     # Check if the job_id is a triaged dataset. If so, let's parse out the job_id
-    match = re.search(triage_id_regex, job_id)
+    logger.info("Checking to see if the job_id matches the triage dataset regex: {}".format(triage_id_regex))
+    try:
+        match = re.search(triage_id_regex, job_id)
+    except Exception as e:
+        logger.warning(
+            "Failed to apply custom triage id regex because of {}: {}. Falling back to default triage regex".format(
+                e.__class__.__name__, e
+            )
+        )
+        match = re.search(default_triage_id_regex, job_id)
+
     if match:
+        logger.info("job_id matches the triage dataset regex. Parsing out job_id")
         parsed_job_id = match.groupdict()["job_id"]
+        logger.info("extracted job_id: {}".format(parsed_job_id))
     else:
+        logger.info("job_id does not match the triage dataset regex: {}".format(triage_id_regex))
         parsed_job_id = job_id
 
     # create triage dataset
@@ -969,3 +983,12 @@ def validate_checksum_files(job, cxt):
     else:
         logger.info("checksum preprocessing completed successfully")
     return True
+
+if __name__ == '__main__':
+    with open("_job.json", "r") as f:
+        job = json.load(f)
+
+    with open("_context.json", "r") as f:
+        ctx = json.load(f)
+
+    triage(job, ctx)
