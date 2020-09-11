@@ -1,11 +1,11 @@
 input {
   file {
-    path => ["${ROOT_WORK_DIR:/data/work}/jobs/**/**/**/**/**/**/*.sdswatch.log"]
+    path => ["/jobs/**/**/**/**/**/**/*.sdswatch.log"]
     start_position => "beginning" # start reading at the beginning of the log file
     type => "pge" # add a "type" field with value = "pge"
   }
   file {
-    path => ["${HOME}/verdi/log/*.sdswatch.log"]
+    path => ["/log/*.sdswatch.log"]
     start_position => "beginning"
     type => "worker"
   }
