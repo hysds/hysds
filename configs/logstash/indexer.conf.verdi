@@ -1,0 +1,99 @@
+input {
+  file {
+    path => ["${ROOT_WORK_DIR:/data/work}/jobs/**/**/**/**/**/**/*.sdswatch.log"]
+    start_position => "beginning" # start reading at the beginning of the log file
+    type => "pge" # add a "type" field with value = "pge"
+  }
+  file {
+    path => ["${HOME}/verdi/log/*.sdswatch.log"]
+    start_position => "beginning"
+    type => "worker"
+  }
+}
+
+
+
+filter {
+  if [type] == "worker" { # [type] returns the value of field "type"
+    csv {
+      source => "message" # parse csv format in [message]
+      separator => "," 
+      columns => ["sdswatch_timestamp", "host", "source_type", "source_id", "metric_key", "metric_value"]
+      quote_char => "'" # allow comma within token
+    } 
+    mutate {
+      strip => ["sdswatch_timestamp", "host", "source_type", "source_id", "metric_key", "metric_value"]
+    }
+  } else if [type] == "pge" {
+    csv {
+      source => "message"
+      separator => ","
+      columns => ["sdswatch_timestamp", "metric_key", "metric_value"]
+      quote_char => "'"
+    }
+    mutate {
+      remove_field => ["host"]
+      strip => ["sdswatch_timestamp", "metric_key", "metric_value"]
+    }
+    ruby { # use ruby code to handle tasks that Logstash doesn't provide
+           # in this case, we're trying to extract source_type and source_id from the file path
+           # refer to the SDSWatch wiki
+      code => '
+        path = event.get("path").split("/")
+        source_type = path[8].delete_suffix(".pge.sdswatch.log")
+        source_id = path[7]
+        event.set("source_type", source_type)
+        event.set("source_id", source_id)                       
+      '
+    }
+    mutate { 
+             # ${HOST} is used to access environment variable
+             # you will also want to do similarly with Filebeat client
+             # because we need the HOST on verdi to fill in missing "host" of pge sdswatch logs
+             # In addition, when migrating to Filebeat, it's a little bit tricky here.
+             # Since you need to move the filtering part to SDSWatch server,
+             # you cannot do ${HOST} anymore. I guess you have to add another field to Filebeat output on the client side.
+             # I suggest adding "source_host" field from the client side, shouldn't  use "host" because there is a default "host"
+             # field
+       add_field => {"host" => "${HOST}"}
+    }    
+  }
+  
+  mutate {
+    add_field => { "log_path" => "%{path}" }
+    remove_field => ["@timestamp", "path", "type"]
+  }
+
+  date { # match sdswatch_timestamp with the following patterns
+    match => ["sdswatch_timestamp", "yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss,SSS", "yyyy-MM-dd'T'HH:mm:ssZ" ] 
+    timezone => "UTC"
+    target => "sdswatch_timestamp"
+  }
+
+  ruby {
+    code => '
+      key = event.get("metric_key")
+      value = event.get("metric_value").chomp()
+      if value.to_f.to_s == value || value.to_i.to_s == value
+         numeric_value = value.to_f
+         event.set("metric_value_float", numeric_value)
+      end
+    '
+  }
+
+  mutate {
+    rename => ["metric_value", "metric_value_string"]
+  }
+}
+
+
+output { # send data to SDSWatch server
+  #stdout { codec => rubydebug }
+
+  redis {
+    host => "{{ METRICS_REDIS_PVT_IP }}"
+    {% if METRICS_REDIS_PASSWORD != "" %}password => "{{ METRICS_REDIS_PASSWORD }}"{% endif %}
+    data_type => "list"
+    key => "sdswatch"
+  }
+}
