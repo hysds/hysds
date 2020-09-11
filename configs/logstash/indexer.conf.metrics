@@ -9,6 +9,24 @@ input {
     # We use the 'msgpack' codec here because we expect to read
     # msgpack events from redis.
     codec => msgpack
+
+    # add field to distinguish from sdswatch
+    add_field => {
+      "@index" => "logstash"
+    }
+  }
+
+  redis {
+    host => "{{ METRICS_REDIS_PVT_IP }}"
+    {% if METRICS_REDIS_PASSWORD != "" %}password => "{{ METRICS_REDIS_PASSWORD }}"{% endif %}
+    # these settings should match the output of the agent
+    data_type => "list"
+    key => "sdswatch"
+
+    # add field to distinguish from logstash
+    add_field => {
+      "@index" => "sdswatch-%{+yyyy.MM.dd}"
+    }
   }
 }
 
@@ -17,6 +35,7 @@ output {
 
   elasticsearch {
     hosts => ["{{ METRICS_ES_PVT_IP }}:9200"]
+    index => "%{[@index]}"
   }
 }
 
