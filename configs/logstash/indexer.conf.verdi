@@ -1,11 +1,11 @@
 input {
   file {
-    path => ["/jobs/**/**/**/**/**/**/*.sdswatch.log"]
+    path => ["/sdswatch/jobs/**/**/**/**/**/**/*.sdswatch.log"]
     start_position => "beginning" # start reading at the beginning of the log file
     type => "pge" # add a "type" field with value = "pge"
   }
   file {
-    path => ["/log/*.sdswatch.log"]
+    path => ["/sdswatch/log/*.sdswatch.log"]
     start_position => "beginning"
     type => "worker"
   }
