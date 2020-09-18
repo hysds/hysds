@@ -34,9 +34,10 @@ from hysds.log_utils import (logger, log_job_status, log_job_info, get_job_statu
                              log_task_worker, get_task_worker, get_worker_status,
                              log_custom_event, is_revoked)
 
-from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func,
+from hysds.utils import (disk_space_info, get_threshold, get_disk_usage, get_func, lustre_quota_info,
                          get_short_error, query_dedup_job, makedirs, find_dataset_json, find_cache_dir)
-from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
+### from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
+from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd, get_singularity_cmd, get_singularity_params
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
 
@@ -195,11 +196,22 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.):
        and task directories and cached products."""
 
     # log initial disk stats
-    capacity, free, used, percent_free = disk_space_info(work_path)
+    ### capacity, free, used, percent_free = disk_space_info(work_path)
+
+    # the work_path looks like '{volume_root}/{userid}/...', e.g., '/nobackupp12/lpan/worker/workdir/'
+    volume_root = '/' + work_path.split('/')[1]
+    userid = work_path.split('/')[2]
+    logger.info('userid: %s' % userid)
+
+    percent_free = lustre_quota_info(userid, volume_root)
+    logger.info('percent_free: %s' % str(percent_free))
+
+    """
     logger.info("Free disk space for %s: %02.2f%% (%dGB free/%dGB total)" %
                 (work_path, percent_free, free/1024**3, capacity/1024**3))
     logger.info(
         "Configured free disk space threshold for this job type is %02.2f%%." % threshold)
+    """
 
     # cleanup needed?
     if percent_free > threshold:
@@ -224,9 +236,13 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.):
         evict_localize_cache(work_path, cache_path, percent_free, threshold)
 
     # log final disk stats
-    capacity, free, used, percent_free = disk_space_info(work_path)
+    ### capacity, free, used, percent_free = disk_space_info(work_path)
+    percent_free = lustre_quota_info(userid, volume_root)
+
+    """
     logger.info("Final free disk space for %s: %02.2f%% (%dGB free/%dGB total)" %
                 (work_path, percent_free, free/1024**3, capacity/1024**3))
+    """
 
 
 def cleanup_old_tasks(work_path, tasks_path, percent_free, threshold=10.):
@@ -439,6 +455,9 @@ def fail_job(job_status_json, jd_file):
 @app.task
 def run_job(job, queue_when_finished=True):
     """Function to execute a job."""
+    logger.info("XXXXXX in run_job(), job:%s" % json.dumps(job))
+    logger.info("XXXXXX in run_job(), job_id:%s" % job['job_id'])
+    logger.info("XXXXXX in run_job(), name:%s" % job['name'])
 
     # if revoked?
     if is_revoked(run_job.request.id):
@@ -514,17 +533,23 @@ def run_job(job, queue_when_finished=True):
     du_payload = job.get('params', {}).get('_disk_usage', None)
     logger.info("_disk_usage:%s" % du_payload)
 
-    # get depedency images
+    # get dependency images
     dependency_images = job.get('params', {}).get(
         'job_specification', {}).get('dependency_images', [])
     logger.info("dependency_images:%s" %
                 json.dumps(dependency_images, indent=2))
+
+    # get root work dir from env variable
+    if 'HYSDS_ROOT_WORK_DIR' in os.environ:
+      app.conf.ROOT_WORK_DIR = os.environ['HYSDS_ROOT_WORK_DIR']
+    logger.info("****** in job_worker.py:run_job(), app.conf.ROOT_WORK_DIR: %s" % app.conf.ROOT_WORK_DIR)
 
     # get workers dir
     workers_dir = "workers"
     workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
     try:
         makedirs(workers_dir_abs)
+        logger.info("****** made dir workers_dir_abs: %s" % workers_dir_abs)
     except Exception as e:
         error = str(e)
         job_status_json = {'uuid': job['task_id'],
@@ -621,6 +646,9 @@ def run_job(job, queue_when_finished=True):
         }
         if 'HYSDS_ROOT_WORK_DIR' in os.environ:
             worker_cfg['root_work_dir'] = os.environ['HYSDS_ROOT_WORK_DIR']
+        if 'HYSDS_ROOT_CACHE_DIR' in os.environ:
+            logger.info("set root_cache_dir from env vari")
+            worker_cfg['root_cache_dir'] = os.environ['HYSDS_ROOT_CACHE_DIR']
         if 'HYSDS_WEBDAV_PORT' in os.environ:
             worker_cfg['webdav_port'] = os.environ['HYSDS_WEBDAV_PORT']
         if 'HYSDS_WEBDAV_URL' in os.environ:
@@ -674,6 +702,7 @@ def run_job(job, queue_when_finished=True):
     else:
         job_queue = run_job.request.delivery_info['routing_key']
     root_work_dir = worker_cfg.get('root_work_dir', app.conf.ROOT_WORK_DIR)
+    root_cache_dir = worker_cfg.get('root_cache_dir')
     webdav_port = str(worker_cfg.get('webdav_port', app.conf.WEBDAV_PORT))
     webdav_url = worker_cfg.get('webdav_url', app.conf.get('WEBDAV_URL'))
 
@@ -711,9 +740,11 @@ def run_job(job, queue_when_finished=True):
 
     # get cache dir
     cache_dir = "cache"
-    cache_dir_abs = os.path.join(root_work_dir, cache_dir)
+    ### cache_dir_abs = os.path.join(root_work_dir, cache_dir)
+    cache_dir_abs = os.path.join(root_cache_dir, cache_dir)
     try:
         makedirs(cache_dir_abs)
+        logger.info("****** made dir cache_dir_abs:%s" % cache_dir_abs)
     except Exception as e:
         error = str(e)
         job_status_json = {'uuid': job['task_id'],
@@ -739,7 +770,8 @@ def run_job(job, queue_when_finished=True):
     tasks_dir_abs = os.path.join(root_work_dir, tasks_dir)
 
     # get disk usage requirement and compute threshold
-    disk_usage = work_cfgs[job['type']].get('disk_usage', du_payload)
+    ### disk_usage = work_cfgs[job['type']].get('disk_usage', du_payload)
+    disk_usage = None
     if disk_usage is None:
         threshold = 10.
     else:
@@ -747,6 +779,12 @@ def run_job(job, queue_when_finished=True):
 
     # check disk usage for root work dir;
     # cleanup old work and cached product directories
+    logger.info("****** before calling cleanup(): ")
+    logger.info('root_work_dir: %s' % root_work_dir)
+    logger.info('jobs_dir_abs: %s' % jobs_dir_abs)
+    logger.info('tasks_dir_abs: %s' % tasks_dir_abs)
+    logger.info('cache_dir_abs: %s' % cache_dir_abs)
+    logger.info('threshold: %s' % str(threshold))
     cleanup(root_work_dir, jobs_dir_abs, tasks_dir_abs,
             cache_dir_abs, threshold=threshold)
 
@@ -968,8 +1006,9 @@ def run_job(job, queue_when_finished=True):
         if image_name is not None:
             image_info = ensure_image_loaded(
                 image_name, image_url, cache_dir_abs)
-            job['container_image_id'] = image_info['Id']
-            context['container_image_id'] = job['container_image_id']
+            if image_info != None:
+              job['container_image_id'] = image_info['Id']
+              context['container_image_id'] = job['container_image_id']
         for i, dep_img in enumerate(job.get('dependency_images', [])):
             dep_image_info = ensure_image_loaded(dep_img['container_image_name'],
                                                  dep_img['container_image_url'],
@@ -1013,37 +1052,54 @@ def run_job(job, queue_when_finished=True):
 
         # check if job needs to run in a container
         docker_params = {}
+        singularity_params = {}
+
+        logger.info("XXXXX image_name: %s XXXXX"%image_name)
         if image_name is not None:
-            # get docker params
-            docker_params[image_name] = get_docker_params(image_name, image_url,
-                                                          image_mappings, root_work_dir,
-                                                          job_dir,
-                                                          runtime_options=runtime_options)
+            if '_singularity' in job_id and '_singularity' in job_name:
+              # get singularity params
+              singularity_params[image_name] = get_singularity_params(image_name, image_url,
+                                                            image_mappings, root_work_dir,
+                                                            root_cache_dir, job_dir)
+            else:
+              # get docker params
+              docker_params[image_name] = get_docker_params(image_name, image_url,
+                                                            image_mappings, root_work_dir,
+                                                            job_dir,
+                                                            runtime_options=runtime_options)
 
             # get command-line list
-            cmdLineList = get_docker_cmd(
-                docker_params[image_name], cmdLineList)
-            logger.info(" docker cmdLineList: %s" % cmdLineList)
+            if '_singularity' in job_id and '_singularity' in job_name:
+              logger.info(" before get_singularity_cmd(), cmdLineList: %s" % cmdLineList)
+              cmdLineList = get_singularity_cmd(singularity_params[image_name], cmdLineList)
+              logger.info(" after get_singularity_cmd(),  cmdLineList: %s" % cmdLineList)
+            else:
+              cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
+              logger.info(" after get_docker_cmd(),  cmdLineList: %s" % cmdLineList)
 
-        # build docker params for dependency containers
-        for dep_img in job.get('dependency_images', []):
-            docker_params[dep_img['container_image_name']] = \
-                get_docker_params(dep_img['container_image_name'],
-                                  dep_img['container_image_url'],
-                                  dep_img['container_mappings'],
-                                  root_work_dir, job_dir,
-                                  runtime_options=dep_img.get('runtime_options', {}))
+        if not '_singularity' in job_id and not '_singularity' in job_name:
+          # build docker params for dependency containers
+          ### logger.info("XXXXXXXXXXXX before the loop over dep_img XXXXXXXXXXXX")
+          for dep_img in job.get('dependency_images', []):
+              docker_params[dep_img['container_image_name']] = \
+                  get_docker_params(dep_img['container_image_name'],
+                                    dep_img['container_image_url'],
+                                    dep_img['container_mappings'],
+                                    root_work_dir, job_dir,
+                                    runtime_options=dep_img.get('runtime_options', {}))
 
-        # dump docker params to file
-        try:
-            docker_params_file = os.path.join(job_dir, '_docker_params.json')
-            with open(docker_params_file, 'w') as f:
-                json.dump(docker_params, f, indent=2, sort_keys=True)
-        except Exception as e:
-            tb = traceback.format_exc()
-            err = "Failed to dump docker params to file %s: %s\n%s" % (
-                docker_params_file, str(e), tb)
-            raise RuntimeError(err)
+          ### logger.info("XXXXXXXXXXXX after the loop over dep_img XXXXXXXXXXXX")
+
+          # dump docker params to file
+          try:
+              docker_params_file = os.path.join(job_dir, '_docker_params.json')
+              with open(docker_params_file, 'w') as f:
+                  json.dump(docker_params, f, indent=2, sort_keys=True)
+          except Exception as e:
+              tb = traceback.format_exc()
+              err = "Failed to dump docker params to file %s: %s\n%s" % (
+                  docker_params_file, str(e), tb)
+              raise RuntimeError(err)
 
         # make sure command-line list items are string
         cmdLineList = [str(i) for i in cmdLineList]
