@@ -27,6 +27,92 @@ import osaka.main
 # max time to wait for image to load
 IMAGE_LOAD_TIME_MAX = 600
 
+IMAGE_INFO_ = """
+[
+    {
+        "Id": "singularity",
+        "RepoTags": [
+            "singularity"
+        ],
+        "RepoDigests": [
+            "singularity"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "",
+        "Container": "",
+        "ContainerConfig": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "ArgsEscaped": true,
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "DockerVersion": "singularity",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/hello"
+            ],
+            "ArgsEscaped": true,
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 0,
+        "VirtualSize": 0,
+        "GraphDriver": {
+            "Data": {
+                "DeviceId": "",
+                "DeviceName": "",
+                "DeviceSize": ""
+            },
+            "Name": "devicemapper"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                ""
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": ""
+        }
+    }
+]
+"""
+
 
 def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
@@ -133,6 +219,113 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
     return params
 
 
+def get_singularity_params(image_name, image_url, image_mappings, root_work_dir, root_cache_dir, job_dir):
+    """Build singularity params."""
+
+    logger.info("XXXXXX in get_singularity_params() XXXXX")
+
+    # get dirs to mount
+    root_jobs_dir = os.path.join(root_work_dir, 'jobs')
+    logger.info("root_jobs_dir: %s"%root_jobs_dir)
+    root_tasks_dir = os.path.join(root_work_dir, 'tasks')
+    if not os.path.exists(root_tasks_dir):
+      os.makedirs(root_tasks_dir, 0o777)
+    logger.info("root_tasks_dir: %s"%root_tasks_dir)
+    root_workers_dir = os.path.join(root_work_dir, 'workers')
+    logger.info("root_workers_dir: %s"%root_workers_dir)
+    root_cache_dir = os.path.join(root_cache_dir, 'cache')
+    logger.info("root_cache_dir: %s"%root_cache_dir)
+
+    image_file_basename = os.path.basename(image_url)
+    logger.info("image_file_basename: %s"%image_file_basename)
+
+    ### sandbox_basename = image_file_basename.replace('.tar.gz', '').encode('ascii', 'ignore')
+    sandbox_basename = image_file_basename.replace('.tar.gz', '')
+    logger.info("sandbox_basename: %s"%sandbox_basename)
+    sandbox_dir = os.path.join(root_cache_dir, sandbox_basename)
+    logger.info("sandbox_dir: %s"%sandbox_dir)
+
+    # how to avoid this hardcoded sandbox info?
+    ### sand_box = "/data/work/cache/data/data/singularity/sandbox/container-hello_world_master-2019-03-21-c1a943f9577c.simg"
+
+    # singularity params dict
+    params = {
+        "image_name": image_name,
+        "image_url": image_url,
+        "uid": os.getuid(),
+        "gid": os.getgid(),
+        "working_dir": job_dir,
+        "sandbox_dir": sandbox_dir,
+        "mount_dir": '/'+sandbox_basename,
+        "volumes": [
+            ( root_jobs_dir, root_jobs_dir ),
+            ( root_tasks_dir, root_tasks_dir ),
+            ( root_workers_dir, root_workers_dir ),
+            ( root_cache_dir, "{}:ro".format(root_cache_dir) )
+        ]
+    }
+
+    # add default image mappings
+    celery_cfg_file = os.environ.get('HYSDS_CELERY_CFG',
+                                     os.path.join(os.path.dirname(app.conf.__file__),
+                                                  "celeryconfig.py"))
+    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in image_mappings.values():
+        image_mappings[celery_cfg_file] = "celeryconfig.py"
+    logger.info("XXXXXX in get_singularity_params(), celery_cfg_file: {0} XXXXX".format(celery_cfg_file))
+    logger.info("XXXXXX in get_singularity_params(), image_mappings[celery_cfg_file]: {0} XXXXX".format(image_mappings[celery_cfg_file]))
+
+    dsets_cfg_file = os.environ.get('HYSDS_DATASETS_CFG',
+                                    os.path.normpath(os.path.join(os.path.dirname(sys.executable),
+                                                                  '..', 'etc', 'datasets.json')))
+    if dsets_cfg_file not in image_mappings and "datasets.json" not in image_mappings.values():
+        image_mappings[dsets_cfg_file] = "datasets.json"
+
+    # if running on k8s add hosts and resolv.conf; create mount directory
+    blacklist = app.conf.WORKER_MOUNT_BLACKLIST
+    mnt_dir = None
+    on_k8s = int(app.conf.get('K8S', 0))
+    if on_k8s:
+        for f in ("/etc/hosts", "/etc/resolv.conf"):
+            if f not in image_mappings and f not in image_mappings.values():
+                image_mappings[f] = f
+        blacklist = [i for i in blacklist if i != "/etc"]
+        mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
+
+    # add user-defined image mappings
+    logger.info("XXXXXX image_mappings: %s XXXXX" % json.dumps(image_mappings))
+    ### for k, v in image_mappings.iteritems():
+    for k, v in image_mappings.items():
+        k = os.path.expandvars(k)
+        verify_docker_mount(k, blacklist)
+        mode = "ro"
+        if isinstance(v, list):
+            if len(v) > 1: v, mode = v[0:2]
+            elif len(v) == 1: v = v[0]
+            else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
+
+        # kluge: this will be done correctly in PGE job spec
+        if '/home/ops/verdi/etc/settings.conf' in k:
+          k = '/home1/lpan/verdi/etc/settings.conf'
+        if '/home/ops/.aws' in k:
+          k = '/home1/lpan/.aws'
+        if '/home/ops/.netrc' in k:
+          k = '/home1/lpan/.netrc'
+
+        if v.startswith('/'): mnt = v
+        else: # copy to job_dir
+          mnt = '/'+v
+          shutil.copyfile(k, os.path.join(job_dir, v))
+        ### else: mnt = os.path.join(job_dir, v)
+
+        if mnt_dir is not None: k = copy_mount(k, mnt_dir)
+
+        params['volumes'].append(( k, "%s:%s" % (mnt, mode) ))
+        ### params['volumes'].append((k, mnt))
+
+    return params
+
+
+
 @backoff.on_exception(backoff.expo, Exception, max_time=IMAGE_LOAD_TIME_MAX)
 def inspect_image(image):
     return check_output(['docker', 'inspect', image])
@@ -177,6 +370,8 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                     raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
                 logger.info("Downloaded image %s (%s) from %s" %
                             (image_file, image_name, image_url))
+            # for singularity, do not run docker load
+            """
             load_lock = "{}.load.lock".format(image_file)
             try:
                 with atomic_write(load_lock) as f:
@@ -203,6 +398,24 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                     inspect_image(image_name)
                 else:
                     raise
+            """
+            # if singularity, unzip the tar ball into the cache dir
+            ### is_singularity = True
+            is_singularity = False # do not unzip cause it is too expensive on pleiades lustre
+            if is_singularity:
+                logger.info("is_singularity: True, image_file: %s" % image_file)
+                # if sandbox_dir does not already exist, untar the sandbox tarball
+                sandbox_dir = image_file.replace('.tar.gz', '')
+                if not os.path.exists(sandbox_dir) or not os.path.isdir(sandbox_dir):
+                  p = Popen(['tar', '--force-local', '-xvf', image_file], cwd=cache_dir, stderr=PIPE, stdout=PIPE)
+                  stdout, stderr = p.communicate()
+                  logger.info("stdout: %s" % stdout)
+                  logger.info("stderr: %s" % stderr)
+                  if p.returncode != 0:
+                      raise(RuntimeError("Failed to unzip image tar %s (%s): %s" % (image_file, image_name, stderr)))
+                  logger.info("unzipped image tar %s (%s)" % (image_file, image_name))
+                else:
+                  logger.info("sandbox tar ball already unzipped here %s " % sandbox_dir)
         else:
             # pull image from docker hub
             logger.info("Pulling image %s from docker hub" % image_name)
@@ -245,3 +458,58 @@ def get_docker_cmd(params, cmd_line_list):
     docker_cmd.extend([str(i) for i in cmd_line_list])
 
     return docker_cmd
+
+
+def get_base_singularity_cmd(params):
+    """Parse singularity params and build base singularity command line list."""
+
+    # build command
+    ### singularity_cmd_base = [ "/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops" ]
+    # try the latest version 3.5
+    singularity_cmd_base = [ "/nasa/singularity/3.5.3/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+
+    # add volumes
+    for k, v in params['volumes']:
+      singularity_cmd_base.extend(["--bind", "%s:%s" % (k, v)])
+
+    # set work directory and image
+    ### docker_cmd_base.extend(["-w", params['working_dir'], params['image_name']])
+    ### singularity_cmd_base.extend(["--pwd", params['mount_dir'], params['sandbox_dir']])
+
+    singularity_cmd_base.extend(["--pwd", params['working_dir'], params['sandbox_dir']])
+
+    return singularity_cmd_base
+
+
+
+def get_singularity_cmd(params, cmd_line_list):
+    """
+    sample singularity command line:
+    singularity_cmd = ["/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops", "--bind", "/nobackupp14/l
+2019-06-19-82a52bf2bb3b.simg:/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg", "--pwd", "/container-hello_world_master-2019-
+/work/cache/container-hello_world_master-2019-06-19-82a52bf2bb3b.simg", "/home/ops/verdi/ops/hello_world/run_hello_world.sh"]
+    """
+
+    """Pull docker image into local repo and add call to docker in the
+       command line list."""
+
+    # build command
+    singularity_cmd = get_base_singularity_cmd(params)
+
+    # set command
+    singularity_cmd.extend([str(i) for i in cmd_line_list])
+    logger.info("XXXXXX singularity_cmd: %s" % singularity_cmd)
+
+    ### singularity_cmd = ["/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops", "--bind", "/nobackupp
+ter-2019-07-24-b269614f8b4e.simg:/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "--pwd", "/container-hello_world_master-2
+lpan/work/cache/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "/home/ops/verdi/ops/hello_world/run_hello_world.sh"]
+
+    ### logger.info("XXXXXX hardcoded singularity_cmd: %s" % singularity_cmd)
+
+    ### singularity exec --no-home --home /home/ops --bind /nobackupp14/lpan/work/cache/container-hello_world_master-2019-07-24-b269614
+9-07-24-b269614f8b4e.simg --pwd /container-hello_world_master-2019-07-24-b269614f8b4e.simg /nobackupp14/lpan/work/cache/container-hello
+home/ops/verdi/ops/hello_world/run_hello_world.sh
+
+    return singularity_cmd
+
+
