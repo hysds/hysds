@@ -24,6 +24,7 @@ import copy
 import errno
 import shutil
 import traceback
+import shlex
 from glob import glob
 from datetime import datetime
 from subprocess import check_output
@@ -126,7 +127,11 @@ def download_file(url, path, cache=False):
     params = get_download_params(url)
     if cache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
-        hash_dir = os.path.join(app.conf.ROOT_WORK_DIR,
+        # get it from env variable set in the top level shell script (e.g., celery_worker.sh)
+        root_cache_dir = os.environ['HYSDS_ROOT_CACHE_DIR']
+        logger.info("****** in utils.py:download_file(), root_cache_dir: %s" % root_cache_dir)
+        ### hash_dir = os.path.join(app.conf.ROOT_WORK_DIR,
+        hash_dir = os.path.join(root_cache_dir,
                                 'cache', *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
@@ -192,6 +197,65 @@ def disk_space_info(path):
     used = disk.f_frsize * (disk.f_blocks - disk.f_bavail)
     percent_free = math.ceil(float(100) / float(capacity) * free)
     return capacity, free, used, percent_free
+
+
+def lustre_quota_info(userid, lustre_root_dir):
+    """Return lustre quota percentage free."""
+    cmd = 'lfs quota -u %s %s' % (userid, lustre_root_dir)
+    args = shlex.split(cmd)
+    output = check_output(args).decode('utf-8')
+    ### print ('output: ', output)
+    output1 = output.splitlines()
+
+    next_line = False
+    for ln1 in output1:
+      ### print ('ln1: ', ln1)
+      if lustre_root_dir in ln1:
+        ### print (ln1.strip())
+        tk = ln1.strip().split()
+        ### print ('tk: ', tk)
+        if len(tk) > 1:
+          tk[1] = tk[1].replace('*', '')
+          tk[2] = tk[2].replace('*', '')
+          percentage1 = 100 * int(tk[1])*1.0/int(tk[2]) # usage over quota limit
+          ### print (percentage1)
+          tk[5] = tk[5].replace('*', '')
+          tk[6] = tk[6].replace('*', '')
+          percentage2 = 100 * int(tk[5])*1.0/int(tk[6]) # amount of files over quota limit
+          if percentage2 > percentage1:
+            percentage1 = percentage2
+          if percentage1 > 100.:
+            return 0.
+          else:
+            return 100. - percentage1 # free quota percentage
+        else:
+          next_line = True
+      else:
+        if next_line:
+          ### print (ln1.strip())
+          tk = ln1.strip().split()
+          ### print ('tk: ', tk)
+          if len(tk) > 1:
+            tk[0] = tk[0].replace('*', '')
+            ### print ('tk[0]: ', tk[0])
+            tk[1] = tk[1].replace('*', '')
+            ### print ('tk[1]: ', tk[1])
+            percentage1 = 100 * int(tk[0])*1.0/int(tk[1]) # usage over quota limit
+            ### print (percentage1)
+            tk[4] = tk[4].replace('*', '')
+            ### print ('tk[4]: ', tk[4])
+            tk[5] = tk[5].replace('*', '')
+            ### print ('tk[5]: ', tk[5])
+            percentage2 = 100 * int(tk[4])*1.0/int(tk[5]) # amount of files over quota limit
+            if percentage2 > percentage1:
+              percentage1 = percentage2
+
+            if percentage1 > 100.:
+              return 0.
+            else:
+              return 100. - percentage1 # free quota percentage
+
+    return 0.
 
 
 def get_threshold(path, disk_usage):
