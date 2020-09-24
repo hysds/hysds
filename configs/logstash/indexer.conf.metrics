@@ -12,7 +12,7 @@ input {
 
     # add field to distinguish from sdswatch
     add_field => {
-      "@index" => "logstash"
+      "@index" => "logstash-%{+yyyy.MM.dd}"
     }
   }
 
