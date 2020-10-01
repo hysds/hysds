@@ -121,7 +121,8 @@ FACTS_TO_TRACK = (
 RFC_1918_RE = re.compile(r"^(?:10|127|172\.(?:1[6-9]|2[0-9]|3[01])|192\.168)\..*")
 
 # RFC 6598 IPv4 address
-RFC_6598_RE = re.compile(r"^100\.64\..*")
+# HC-280: Updated to support 100.64.x.x-100.127.x.x block
+RFC_6598_RE = re.compile(r"^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\..*")
 
 # job failure rate for job drain detection
 FAILURE_RATE = (
