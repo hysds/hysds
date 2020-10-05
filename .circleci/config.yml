@@ -3,6 +3,9 @@ jobs:
   code-analysis:
     docker:
       - image: cimg/python:3.8
+        auth:
+          username: $DOCKER_USER
+          password: $DOCKER_PASS
     steps:
       - checkout
       - run:
@@ -22,6 +25,9 @@ jobs:
   test:
     docker:
       - image: hysds/pge-base:latest
+        auth:
+          username: $DOCKER_USER
+          password: $DOCKER_PASS
     steps:
       - checkout
       - run:
@@ -38,8 +44,14 @@ workflows:
   version: 2
   pr-checks:
     jobs:
-      - code-analysis
-      - test
+      - code-analysis:
+          context:
+            - docker-hub-creds
+            - git-oauth-token
+      - test:
+          context:
+            - docker-hub-creds
+            - git-oauth-token
   weekly:
     triggers:
       - schedule:
@@ -50,10 +62,16 @@ workflows:
                 - develop
     jobs:
       - test:
+          context:
+            - docker-hub-creds
+            - git-oauth-token
           filters:
             branches:
               only: develop
       - code-analysis:
+          context:
+            - docker-hub-creds
+            - git-oauth-token
           filters:
             branches:
               only: develop
