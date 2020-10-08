@@ -68,8 +68,13 @@ def update_query(job_id, rule):
     if rule.get("query_all", False) is False:
         filts.append({"term": {"_id": job_id}})
 
-    final_query = {"query": {"bool": {"must": filts}}}
-
+    final_query = {
+        "query": {
+            "bool": {
+                "must": filts
+            }
+        }
+    }
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
     return final_query
 
@@ -84,7 +89,13 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     ensure_job_indexed(job_id, alias)  # ensure job is indexed
 
     # get all enabled user rules
-    query = {"query": {"term": {"enabled": True}}}
+    query = {
+        "query": {
+            "term": {
+                "enabled": True
+            }
+        }
+    }
     rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 

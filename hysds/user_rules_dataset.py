@@ -78,8 +78,13 @@ def update_query(_id, system_version, rule):
     if rule.get("query_all", False) is False:
         filts.append({"term": {"_id": _id}})
 
-    final_query = {"query": {"bool": {"must": filts}}}
-
+    final_query = {
+        "query": {
+            "bool": {
+                "must": filts
+            }
+        }
+    }
     logger.info("Final query: %s" % json.dumps(final_query, indent=2))
     return final_query
 
@@ -96,7 +101,13 @@ def evaluate_user_rules_dataset(
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
-    query = {"query": {"term": {"enabled": True}}}
+    query = {
+        "query": {
+            "term": {
+                "enabled": True
+            }
+        }
+    }
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
@@ -124,16 +135,10 @@ def evaluate_user_rules_dataset(
         try:
             result = grq_es.es.search(index=alias, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
-                logger.info(
-                    "Rule '%s' didn't match for %s (%s)"
-                    % (rule_name, objectid, system_version)
-                )
+                logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
                 continue
             doc_res = result["hits"]["hits"][0]
-            logger.info(
-                "Rule '%s' successfully matched for %s (%s)"
-                % (rule_name, objectid, system_version)
-            )
+            logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
         except (ElasticsearchException, Exception) as e:
             logger.error("Failed to query ES")
             logger.error(e)
@@ -144,10 +149,7 @@ def evaluate_user_rules_dataset(
         job_name = "%s-%s" % (job_type, objectid)
 
         queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
-        logger.info(
-            "Trigger task submitted for %s (%s): %s"
-            % (objectid, system_version, job_type)
-        )
+        logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
     return True
 
 
@@ -161,9 +163,7 @@ def queue_dataset_evaluation(info):
         "function": "hysds.user_rules_dataset.evaluate_user_rules_dataset",
         "args": [info["id"], info["system_version"]],
     }
-    hysds.task_worker.run_task.apply_async(
-        (payload,), queue=app.conf.USER_RULES_DATASET_QUEUE
-    )
+    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)
 
 
 @backoff.on_exception(
