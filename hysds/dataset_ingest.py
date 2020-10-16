@@ -365,7 +365,7 @@ def ingest(
                 os.unlink(seed_file)
                 logger.info("Deleted seed file %s." % seed_file)
 
-    # add context
+    # read context
     context_file = os.path.join(local_prod_path, "%s.context.json" % pname)
     if os.path.exists(context_file):
         with open(context_file) as f:
@@ -373,7 +373,6 @@ def ingest(
         logger.info("Loaded context from existing file: %s" % context_file)
     else:
         context = {}
-    metadata["context"] = context
 
     # set metadata and dataset groups in recognizer
     r.setDataset(dataset)
@@ -700,17 +699,16 @@ def ingest(
         update_json["index"] = index
 
     # update GRQ
-    if isinstance(update_json["metadata"], dict) and len(update_json["metadata"]) > 0:
-        # logger.info("update_json: %s" % pformat(update_json))
-        if dry_run:
-            logger.info(
-                "Would've indexed doc at %s: %s"
-                % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
-            )
-        else:
-            res = index_dataset(grq_update_url, update_json)
-            logger.info("res: %s" % res)
-            update_json["grq_index_result"] = res
+    if dry_run:
+        update_json["grq_index_result"] = { "index": index }
+        logger.info(
+            "Would've indexed doc at %s: %s"
+            % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
+        )
+    else:
+        res = index_dataset(grq_update_url, update_json)
+        logger.info("res: %s" % res)
+        update_json["grq_index_result"] = res
 
     # finish if dry run
     if dry_run:
