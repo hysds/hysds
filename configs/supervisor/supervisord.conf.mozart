@@ -162,7 +162,7 @@ startsecs=10
 
 [program:watchdog_worker_timeouts]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
-command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_worker_timeouts.py
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_worker_timeouts.py -t 120
 process_name=%(program_name)s
 priority=1
 numprocs=1
