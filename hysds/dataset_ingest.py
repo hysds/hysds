@@ -699,17 +699,16 @@ def ingest(
         update_json["index"] = index
 
     # update GRQ
-    if isinstance(update_json["metadata"], dict) and len(update_json["metadata"]) > 0:
-        # logger.info("update_json: %s" % pformat(update_json))
-        if dry_run:
-            logger.info(
-                "Would've indexed doc at %s: %s"
-                % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
-            )
-        else:
-            res = index_dataset(grq_update_url, update_json)
-            logger.info("res: %s" % res)
-            update_json["grq_index_result"] = res
+    if dry_run:
+        update_json["grq_index_result"] = { "index": index }
+        logger.info(
+            "Would've indexed doc at %s: %s"
+            % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
+        )
+    else:
+        res = index_dataset(grq_update_url, update_json)
+        logger.info("res: %s" % res)
+        update_json["grq_index_result"] = res
 
     # finish if dry run
     if dry_run:
