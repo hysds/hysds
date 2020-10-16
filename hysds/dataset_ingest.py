@@ -365,7 +365,7 @@ def ingest(
                 os.unlink(seed_file)
                 logger.info("Deleted seed file %s." % seed_file)
 
-    # add context
+    # read context
     context_file = os.path.join(local_prod_path, "%s.context.json" % pname)
     if os.path.exists(context_file):
         with open(context_file) as f:
@@ -373,7 +373,6 @@ def ingest(
         logger.info("Loaded context from existing file: %s" % context_file)
     else:
         context = {}
-    metadata["context"] = context
 
     # set metadata and dataset groups in recognizer
     r.setDataset(dataset)
