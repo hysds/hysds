@@ -242,8 +242,15 @@ def get_singularity_params(image_name, image_url, image_mappings, root_work_dir,
     ### sandbox_basename = image_file_basename.replace('.tar.gz', '').encode('ascii', 'ignore')
     sandbox_basename = image_file_basename.replace('.tar.gz', '')
     logger.info("sandbox_basename: %s"%sandbox_basename)
-    sandbox_dir = os.path.join(root_cache_dir, sandbox_basename)
+    ### sandbox_dir = os.path.join(root_cache_dir, sandbox_basename)
+    sandbox_dir = os.environ.get('SANDBOX_DIR', '/nobackupp12/esi_sar/PGE/container-aria-jpl_ariamh_aria-446_singularity-2020-09-30-b3b9f362af00.simg')
     logger.info("sandbox_dir: %s"%sandbox_dir)
+    dem_dir = os.environ.get('DEM_ROOT')
+    logger.info("dem_dir: %s" % dem_dir)
+    verdi_dir = os.environ.get('VERDI_ROOT')
+    logger.info("verdi_dir: %s" % verdi_dir)
+    home_dir = os.environ.get('HOME')
+    logger.info("home_dir: %s" % home_dir)
 
     # how to avoid this hardcoded sandbox info?
     ### sand_box = "/data/work/cache/data/data/singularity/sandbox/container-hello_world_master-2019-03-21-c1a943f9577c.simg"
@@ -261,7 +268,8 @@ def get_singularity_params(image_name, image_url, image_mappings, root_work_dir,
             ( root_jobs_dir, root_jobs_dir ),
             ( root_tasks_dir, root_tasks_dir ),
             ( root_workers_dir, root_workers_dir ),
-            ( root_cache_dir, "{}:ro".format(root_cache_dir) )
+            ( root_cache_dir, "{}:ro".format(root_cache_dir) ),
+            ( dem_dir, "{}:ro".format(dem_dir) )
         ]
     }
 
@@ -303,13 +311,12 @@ def get_singularity_params(image_name, image_url, image_mappings, root_work_dir,
             elif len(v) == 1: v = v[0]
             else: raise(RuntimeError("Invalid image mapping: %s:%s" % (k, v)))
 
-        # kluge: this will be done correctly in PGE job spec
         if '/home/ops/verdi/etc/settings.conf' in k:
-          k = '/home1/lpan/verdi/etc/settings.conf'
+          k = os.path.join(verdi_dir, 'etc/settings.conf')
         if '/home/ops/.aws' in k:
-          k = '/home1/lpan/.aws'
+          k = os.path.join(verdi_dir, '.aws')
         if '/home/ops/.netrc' in k:
-          k = '/home1/lpan/.netrc'
+          k = os.path.join(home_dir, '.netrc')
 
         if v.startswith('/'): mnt = v
         else: # copy to job_dir
@@ -334,8 +341,18 @@ def inspect_image(image):
 def ensure_image_loaded(image_name, image_url, cache_dir):
     """Pull docker image into local repo."""
 
+    logger.info("XXXXXX in ensure_image_loaded() XXXXX")
+    logger.info("image_name: %s" % image_name)
+    logger.info("image_url: %s" % image_url)
+    logger.info("cache_dir: %s" % cache_dir)
+
     # check if image is in local docker repo
     try:
+        ### image_info = check_output(['docker', 'inspect', image_name])
+        raise ValueError('XXXXXX test pulling image from url XXXX')
+        logger.info("Docker image %s cached in repo" % image_name)
+
+        """
         registry = app.conf.get("CONTAINER_REGISTRY", None)
         # Custom edit to load image from registry
         try:
@@ -355,8 +372,10 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
 
         image_info = check_output(['docker', 'inspect', image_name])
         logger.info("Docker image %s cached in repo" % image_name)
+        """
     except:
-        logger.info("Failed to inspect docker image %s" % image_name)
+        ### logger.info("Failed to inspect docker image %s" % image_name)
+        logger.info("Docker image %s is not used on NASA Pleiades" % image_name)
 
         # pull image from url
         if image_url is not None:
@@ -399,6 +418,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                 else:
                     raise
             """
+
             # if singularity, unzip the tar ball into the cache dir
             ### is_singularity = True
             is_singularity = False # do not unzip cause it is too expensive on pleiades lustre
@@ -418,11 +438,16 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                   logger.info("sandbox tar ball already unzipped here %s " % sandbox_dir)
         else:
             # pull image from docker hub
+            """
             logger.info("Pulling image %s from docker hub" % image_name)
             check_output(['docker', 'pull', image_name])
             logger.info("Pulled image %s from docker hub" % image_name)
-        image_info = check_output(['docker', 'inspect', image_name])
-    logger.info("image info for %s: %s" % (image_name, image_info.decode()))
+            """
+        ### image_info = check_output(['docker', 'inspect', image_name])
+
+    image_info = IMAGE_INFO_
+
+    ### logger.info("image info for %s: %s" % (image_name, image_info.decode()))
     return json.loads(image_info)[0]
 
 
@@ -466,16 +491,25 @@ def get_base_singularity_cmd(params):
     # build command
     ### singularity_cmd_base = [ "/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops" ]
     # try the latest version 3.5
-    singularity_cmd_base = [ "/nasa/singularity/3.5.3/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    ### singularity_cmd_base = [ "/nasa/singularity/3.5.3/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    # try the latest version 3.6.3
+    ### singularity_cmd_base = [ "/nasa/singularity/3.6.3/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    # try the latest version 3.6.4
+    singularity_cmd_base = [ "/nasa/singularity/3.6.4/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
 
     # add volumes
     for k, v in params['volumes']:
-      singularity_cmd_base.extend(["--bind", "%s:%s" % (k, v)])
+      logger.info("XXXXXX k: %s" % k)
+      ### if os.path.isfile(k):
+      if os.path.exists(k):
+        singularity_cmd_base.extend(["--bind", "%s:%s" % (k, v)])
+
+    # bind work dir so --pwd work dir can work
+    singularity_cmd_base.extend(["--bind", "%s:%s" % (params['working_dir'], params['working_dir'])])
 
     # set work directory and image
     ### docker_cmd_base.extend(["-w", params['working_dir'], params['image_name']])
     ### singularity_cmd_base.extend(["--pwd", params['mount_dir'], params['sandbox_dir']])
-
     singularity_cmd_base.extend(["--pwd", params['working_dir'], params['sandbox_dir']])
 
     return singularity_cmd_base
@@ -500,15 +534,11 @@ def get_singularity_cmd(params, cmd_line_list):
     singularity_cmd.extend([str(i) for i in cmd_line_list])
     logger.info("XXXXXX singularity_cmd: %s" % singularity_cmd)
 
-    ### singularity_cmd = ["/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops", "--bind", "/nobackupp
-ter-2019-07-24-b269614f8b4e.simg:/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "--pwd", "/container-hello_world_master-2
-lpan/work/cache/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "/home/ops/verdi/ops/hello_world/run_hello_world.sh"]
+    ### singularity_cmd = ["/nasa/singularity/3.2.0/bin/singularity", "exec", "--no-home", "--home", "/home/ops", "--bind", "/nobackupp ter-2019-07-24-b269614f8b4e.simg:/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "--pwd", "/container-hello_world_master-2 lpan/work/cache/container-hello_world_master-2019-07-24-b269614f8b4e.simg", "/home/ops/verdi/ops/hello_world/run_hello_world.sh"]
 
     ### logger.info("XXXXXX hardcoded singularity_cmd: %s" % singularity_cmd)
 
-    ### singularity exec --no-home --home /home/ops --bind /nobackupp14/lpan/work/cache/container-hello_world_master-2019-07-24-b269614
-9-07-24-b269614f8b4e.simg --pwd /container-hello_world_master-2019-07-24-b269614f8b4e.simg /nobackupp14/lpan/work/cache/container-hello
-home/ops/verdi/ops/hello_world/run_hello_world.sh
+    ### singularity exec --no-home --home /home/ops --bind /nobackupp14/lpan/work/cache/container-hello_world_master-2019-07-24-b269614 9-07-24-b269614f8b4e.simg --pwd /container-hello_world_master-2019-07-24-b269614f8b4e.simg /nobackupp14/lpan/work/cache/container-hello home/ops/verdi/ops/hello_world/run_hello_world.sh
 
     return singularity_cmd
 
