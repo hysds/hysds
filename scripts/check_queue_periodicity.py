@@ -14,11 +14,10 @@ standard_library.install_aliases()
 
 import os
 import getpass
-import requests
 import json
 import socket
+import requests
 from requests.auth import HTTPBasicAuth
-from requests import HTTPError
 
 import logging
 import argparse
@@ -32,11 +31,14 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.header import Header
 from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
+from email.encoders import encode_base64
 
-from hysds_commons.request_utils import get_requests_json_response
 from hysds_commons.log_utils import logger
 from hysds.celery import app
-import hysds.es_util
+
+from hysds.es_util import get_mozart_es
+
+ES = get_mozart_es()
 
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
@@ -54,11 +56,7 @@ HYSDS_QUEUES = (
 )
 
 
-def send_slack_notification(
-    channel_url, subject, text, color=None, subject_link=None, attachment_only=False
-):
-    """Send slack notification."""
-
+def send_slack_notification(channel_url, subject, text, color=None, subject_link=None, attachment_only=False):
     attachment = {
         "title": subject,
         "text": text,
@@ -67,31 +65,29 @@ def send_slack_notification(
         attachment["color"] = color
     if subject_link is not None:
         attachment["subject_link"] = subject_link
-    payload = {"attachments": [attachment]}
+
+    payload = {
+        "attachments": [attachment]
+    }
     if not attachment_only:
         payload["text"] = text
-    r = requests.post(
-        channel_url,
-        data=json.dumps(payload),
-        headers={"Content-Type": "application/json"},
-    )
+
+    headers = {"Content-Type": "application/json"}
+    r = requests.post(channel_url, data=json.dumps(payload), headers=headers)
     r.raise_for_status()
 
 
 def get_hostname():
     """Get hostname."""
-
-    # get hostname
     try:
         return socket.getfqdn()
-    except:
-        # get IP
-        try:
+    except Exception as e:
+        logger.warning(e)
+        try:  # get IP
             return socket.gethostbyname(socket.gethostname())
-        except:
-            raise RuntimeError(
-                "Failed to resolve hostname for full email address. Check system."
-            )
+        except Exception as e:
+            logger.error(e)
+            raise RuntimeError("Failed to resolve hostname for full email address. Please check the system.")
 
 
 def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments=None):
@@ -171,12 +167,13 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
         for fname in attachments:
             part = MIMEBase("application", "octet-stream")
             part.set_payload(attachments[fname])
-            email.encoders.encode_base64(part)
+            encode_base64(part)
             part.add_header("Content-Disposition", 'attachment; filename="%s"' % fname)
             msg.attach(part)
 
     # Send the message via SMTP to docker host
     smtp_url = "smtp://127.0.0.1:25"
+    # TODO: not sure what this is trying to do (need to fix this 'unresolved reference error)
     utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
     smtp = SMTP("127.0.0.1")
     smtp.sendmail(sender, recipients, msg.as_string())
@@ -212,8 +209,6 @@ def do_queue_query(queue_name):
     }
     logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
 
-    # query
-    ES = es_util.get_mozart_es()
     result = ES.search(index="job_status-current", body=json.dumps(query))
     return result
 
@@ -244,47 +239,23 @@ def get_all_queues(rabbitmq_admin_url, user=None, password=None):
     :param password:
     :return: list of queues
     """
-    print("get_all_queues : {}/ {}".format(user, password))
-
+    endpoint = os.path.join(rabbitmq_admin_url, "api/queues")
     try:
         if user and password:
-            data = get_requests_json_response(
-                os.path.join(rabbitmq_admin_url, "api/queues"),
-                auth=HTTPBasicAuth(user, password),
-                verify=False,
-            )
+            data = requests.get(endpoint, auth=HTTPBasicAuth(user, password), verify=False)
         else:
-            data = get_requests_json_response(
-                os.path.join(rabbitmq_admin_url, "api/queues"), verify=False
-            )
-    except HTTPError as e:
+            data = requests.get(endpoint, verify=False)
+    except requests.HTTPError as e:
         if e.response.status_code == 401:
-            logger.error(
-                "Failed to authenticate to {}. Ensure credentials are set in .netrc.".format(
-                    rabbitmq_admin_url
-                )
-            )
+            logger.error("Failed to authenticate {}. Ensure credentials are set in .netrc.".format(rabbitmq_admin_url))
         raise
 
+    results = []
     for obj in data:
-        if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES:
-            if obj["name"] == "Recommended Queues":
-                continue
-
-            if obj["name"] == "factotum-job_worker-scihub_throttled":
-                print(obj["name"])
-                print(obj)
-                print(json.dumps(obj, indent=2, sort_keys=True))
-                break
-
-    return [
-        obj
-        for obj in data
-        if not obj["name"].startswith("celery")
-        and obj["name"] not in HYSDS_QUEUES
-        and obj["name"] != "Recommended Queues"
-        and obj["messages_ready"] > 0
-    ]
+        if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES \
+                and obj["name"] != "Recommended Queues" and obj["messages_ready"] > 0:
+            results.append(obj)
+    return results
 
 
 def check_queue_execution(
