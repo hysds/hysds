@@ -495,7 +495,9 @@ def get_base_singularity_cmd(params):
     # try the latest version 3.6.3
     ### singularity_cmd_base = [ "/nasa/singularity/3.6.3/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
     # try the latest version 3.6.4
-    singularity_cmd_base = [ "/nasa/singularity/3.6.4/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    ### singularity_cmd_base = [ "/nasa/singularity/3.6.4/bin/singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
+    # use module load singularity to get singularity without worrying about its installation details
+    singularity_cmd_base = [ "singularity", "exec", "--userns", "--no-home", "--home", "/home/ops" ]
 
     # add volumes
     for k, v in params['volumes']:
