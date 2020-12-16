@@ -737,6 +737,7 @@ def run_job(job, queue_when_finished=True):
 
     # get job id
     job_id = job['job_id']
+    job_name = job['name']
 
     # get cache dir
     cache_dir = "cache"
