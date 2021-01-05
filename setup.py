@@ -23,7 +23,7 @@ setup(
         "lxml>=3.4.0",
         "httplib2>=0.9",
         "gevent>=1.0.1",
-        "psutil>=2.1.3",
+        "psutil>=5.8.0",
         "filechunkio>=1.6.0",
         "boto>=2.38.0",
         # TODO: remove msgpack pin once logstash is updated to 7.1.1
