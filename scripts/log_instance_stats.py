@@ -76,7 +76,7 @@ def daemon(redis_url, redis_key, interval):
             "disk_io": psutil.disk_io_counters()._asdict(),
             "net_io": psutil.net_io_counters()._asdict(),
         }
-        for device, mnt_point, fs_type, fs_opts, max_file, max_path in psutil.disk_partitions():
+        for device, mnt_point, fs_type, fs_opts, max_file, max_path, *other in psutil.disk_partitions():
             disk_info = {
                 "device": device,
                 "mount_point": mnt_point,
