@@ -1250,6 +1250,11 @@ def run_job(job, queue_when_finished=True):
                 pge_metrics.get("download", [])
             )
 
+            # append product staging metrics
+            job["job_info"]["metrics"]["products_staged"].extend(
+                pge_metrics.get("upload", [])
+            )
+
         # add prov associations
         if len(job["job_info"]["metrics"]["inputs_localized"]) > 0:
             context["_prov"]["wasDerivedFrom"] = [
