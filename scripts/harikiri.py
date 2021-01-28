@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 HySDS inactivity daemon to perform scale down of auto scaling group/spot fleet
-request and perform self-termination (harikiri) of the instance. If a keep-alive 
+request and perform self-termination (harikiri) of the instance. If a keep-alive
 signal file exists at <root_work_dir>/.harikiri, then self-termination is bypassed
 until it is removed.
 """
@@ -12,9 +12,7 @@ from __future__ import absolute_import
 from builtins import str
 from future import standard_library
 
-standard_library.install_aliases()
 import os
-import sys
 import time
 import re
 import json
@@ -29,8 +27,10 @@ from subprocess import call
 from datetime import datetime
 from pprint import pformat
 import boto3
+import yaml
 from botocore.exceptions import ClientError
 
+standard_library.install_aliases()
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -41,6 +41,10 @@ DAY_DIR_RE = re.compile(r"jobs/\d{4}/\d{2}/\d{2}/\d{2}/\d{2}$")
 NO_JOBS_TIMER = None
 
 KEEP_ALIVE = False
+
+# have yaml parse regular expressions
+yaml.SafeLoader.add_constructor(u'tag:yaml.org,2002:python/regexp',
+                                lambda l, n: re.compile(l.construct_scalar(n)))
 
 
 def log_event(url, event_type, event_status, event, tags):
@@ -94,7 +98,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             if logger is not None:
                 try:
                     print((log_event(logger, "harikiri", "keep_alive_unset", {}, [])))
-                except:
+                except Exception:
                     pass
             logging.info("Keep-alive removed.")
 
@@ -279,14 +283,14 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     try:
         logging.info("Stopping all docker containers.")
         os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
-    except:
+    except Exception:
         pass
 
     # shutdown supervisord
     try:
         logging.info("Stopping supervisord.")
         call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
-    except:
+    except Exception:
         pass
 
     # let supervisord shutdown its processes
@@ -313,7 +317,7 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     if logger is not None:
         try:
             print((log_event(logger, "harikiri", "shutdown", {}, [])))
-        except:
+        except Exception:
             pass
     time.sleep(60)
 
@@ -345,23 +349,52 @@ def harikiri(root_work, inactivity_secs, check_interval, logger=None):
 
 
 if __name__ == "__main__":
+    # Initialize arguments
+    root_work_dir = None
+    logger = None
+    inactivity = None
+    check = None
+
+    # Parse the configuration file if there was one
+    conf_parser = argparse.ArgumentParser(description=__doc__, add_help=False)
+    conf_parser.add_argument(
+        "-f",
+        "--file",
+        type=str,
+        default=None,
+        help="Configuration file. Anything specified on the command-line takes precedence."
+    )
+    args, remaining_argv = conf_parser.parse_known_args()
+    config_args = dict()
+    if args.file:
+        with open(args.file, "r") as file:
+            config_params = yaml.safe_load(args.file)
+            root_work_dir = config_params.get("root_work_dir", None)
+            logger = config_params.get("logger", None)
+            inactivity = config_params.get("inactivity", None)
+            check = config_params.get("check", None)
+
+    # Parse the rest of the arguments
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "root_work_dir", help="root HySDS work directory, e.g. /data/work"
+        "root_work_dir",
+        nargs="?",
+        default=None,
+        help="root HySDS work directory, e.g. /data/work",
     )
     parser.add_argument(
         "-i",
         "--inactivity",
         type=int,
-        default=600,
-        help="inactivity threshold in seconds",
+        default=None,
+        help="inactivity threshold in seconds. Default is 600.",
     )
     parser.add_argument(
         "-c",
         "--check",
         type=int,
-        default=60,
-        help="check for inactivity every N seconds",
+        default=None,
+        help="check for inactivity every N seconds. Default is 60.",
     )
     parser.add_argument(
         "-l",
@@ -369,7 +402,22 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="enable event logging; specify Mozart REST API,"
-        + " e.g. https://192.168.0.1/mozart/api/v0.1",
+             + " e.g. https://192.168.0.1/mozart/api/v0.1",
     )
-    args = parser.parse_args()
-    harikiri(args.root_work_dir, args.inactivity, args.check, args.logger)
+    args = parser.parse_args(remaining_argv)
+    if args.root_work_dir:
+        root_work_dir = args.root_work_dir
+    if args.logger:
+        logger = args.logger
+    if args.inactivity:
+        inactivity = args.inactivity
+    if args.check:
+        check = args.check
+
+    # Set the default values for inactivity and check here
+    if inactivity is None:
+        inactivity = 600
+    if check is None:
+        check = 60
+
+    harikiri(root_work_dir, inactivity, check, logger)
