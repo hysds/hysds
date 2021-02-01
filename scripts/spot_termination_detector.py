@@ -140,7 +140,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "mozart_rest_url",
-        help="Mozart REST API," + " e.g. https://192.168.0.1/mozart/api/v0.1",
+        nargs="?",
+        default=None,
+        help="Mozart REST API," + " e.g. https://192.168.0.1/mozart/api/v0.1"
     )
     parser.add_argument(
         "-c",
