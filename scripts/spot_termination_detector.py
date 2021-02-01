@@ -132,8 +132,8 @@ if __name__ == "__main__":
     args, remaining_argv = conf_parser.parse_known_args()
     config_args = dict()
     if args.file:
-        with open(args.file, "r") as file:
-            config_params = yaml.safe_load(args.file)
+        with open(args.file, "r") as f:
+            config_params = yaml.safe_load(f)
             mozart_rest_url = config_params.get("mozart_rest_url", None)
             check = config_params.get("check", None)
 

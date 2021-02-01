@@ -367,8 +367,8 @@ if __name__ == "__main__":
     args, remaining_argv = conf_parser.parse_known_args()
     config_args = dict()
     if args.file:
-        with open(args.file, "r") as file:
-            config_params = yaml.safe_load(args.file)
+        with open(args.file, "r") as f:
+            config_params = yaml.safe_load(f)
             root_work_dir = config_params.get("root_work_dir", None)
             logger = config_params.get("logger", None)
             inactivity = config_params.get("inactivity", None)
