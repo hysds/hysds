@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from builtins import str
 from future import standard_library
 
-standard_library.install_aliases()
 import os
 import sys
 import time
@@ -20,12 +19,17 @@ import socket
 import requests
 import logging
 import argparse
-import traceback
+import yaml
 from subprocess import call
 
+standard_library.install_aliases()
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
+
+# have yaml parse regular expressions
+yaml.SafeLoader.add_constructor(u'tag:yaml.org,2002:python/regexp',
+                                lambda l, n: re.compile(l.construct_scalar(n)))
 
 
 def log_event(url, event_type, event_status, event, tags):
@@ -62,22 +66,9 @@ def graceful_shutdown(url, term_time):
     """Gracefully shutdown supervisord, detach from AutoScale group or spot fleet,
     and shutdown."""
 
-    # stop docker containers
-    try:
-        logging.info("Stopping all docker containers.")
-        os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
-    except:
-        pass
-
-    # shutdown supervisord
-    try:
-        logging.info("Stopping supervisord.")
-        call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
-    except:
-        pass
-
     # log marked_for_termination
     try:
+        logging.info("Begin logging a 'marked_for_termination' event.")
         print(
             (
                 log_event(
@@ -89,7 +80,22 @@ def graceful_shutdown(url, term_time):
                 )
             )
         )
-    except:
+        logging.info("Finished logging a 'marked_for_termination' event. Termination time: {}".format(term_time))
+    except Exception:
+        pass
+
+    # stop docker containers
+    try:
+        logging.info("Stopping all docker containers.")
+        os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
+    except Exception:
+        pass
+
+    # shutdown supervisord
+    try:
+        logging.info("Stopping supervisord.")
+        call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
+    except Exception:
         pass
 
     # die
@@ -111,17 +117,46 @@ def daemon(url, check_interval):
 
 
 if __name__ == "__main__":
+    mozart_rest_url = None
+    check = None
+
+    # Parse the configuration file if there was one
+    conf_parser = argparse.ArgumentParser(description=__doc__, add_help=False)
+    conf_parser.add_argument(
+        "-f",
+        "--file",
+        type=str,
+        default=None,
+        help="Configuration file. Anything specified on the command-line takes precedence."
+    )
+    args, remaining_argv = conf_parser.parse_known_args()
+    config_args = dict()
+    if args.file:
+        with open(args.file, "r") as f:
+            config_params = yaml.safe_load(f)
+            mozart_rest_url = config_params.get("mozart_rest_url", None)
+            check = config_params.get("check", None)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "mozart_rest_url",
-        help="Mozart REST API," + " e.g. https://192.168.0.1/mozart/api/v0.1",
+        nargs="?",
+        default=None,
+        help="Mozart REST API," + " e.g. https://192.168.0.1/mozart/api/v0.1"
     )
     parser.add_argument(
         "-c",
         "--check",
         type=int,
-        default=60,
+        default=None,
         help="check for spot termination notice every N seconds",
     )
-    args = parser.parse_args()
-    daemon(args.mozart_rest_url, args.check)
+    args = parser.parse_args(remaining_argv)
+    if args.check:
+        check = args.check
+
+    # Set default value for check if not defined in the config file or command line
+    if check is None:
+        check = 60
+
+    daemon(mozart_rest_url, check)

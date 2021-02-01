@@ -46,6 +46,7 @@ setup(
         "pytest",
         "tabulate>=0.8.6",
         "aws-requests-auth==0.4.2",
+        "pyyaml"
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
