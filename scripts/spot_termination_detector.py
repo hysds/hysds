@@ -55,7 +55,7 @@ def check_spot_termination():
     """Check if instance is marked for spot termination."""
 
     r = requests.get("http://169.254.169.254/latest/meta-data/spot/termination-time")
-    # logging.info("got status code: %d" % r.status_code)
+    logging.info("check_spot_termination response status code: %d" % r.status_code)
     if r.status_code == 200:
         return r.content.decode()
     else:
