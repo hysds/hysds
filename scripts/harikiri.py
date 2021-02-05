@@ -88,7 +88,8 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             if logger is not None:
                 try:
                     print((log_event(logger, "harikiri", "keep_alive_set", {}, [])))
-                except:
+                except Exception as e:
+                    logging.warning("Exception occurred while logging harikiri keep_alive_set: {}".format(str(e)))
                     pass
         logging.info("Keep-alive exists.")
         return
@@ -98,7 +99,8 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             if logger is not None:
                 try:
                     print((log_event(logger, "harikiri", "keep_alive_unset", {}, [])))
-                except Exception:
+                except Exception as e:
+                    logging.warning("Exception occurred while logging harikiri keep_alive_unset: {}".format(str(e)))
                     pass
             logging.info("Keep-alive removed.")
 
@@ -283,14 +285,16 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     try:
         logging.info("Stopping all docker containers.")
         os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
-    except Exception:
+    except Exception as e:
+        logging.warning("Exception occurred while stopping docker containers: {}".format(str(e)))
         pass
 
     # shutdown supervisord
     try:
         logging.info("Stopping supervisord.")
         call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
-    except Exception:
+    except Exception as e:
+        logging.warning("Exception occurred while stopping supervisord: {}".format(str(e)))
         pass
 
     # let supervisord shutdown its processes
@@ -317,7 +321,8 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     if logger is not None:
         try:
             print((log_event(logger, "harikiri", "shutdown", {}, [])))
-        except Exception:
+        except Exception as e:
+            logging.warning("Exception occurred while logging harikiri shutdown: {}".format(str(e)))
             pass
     time.sleep(60)
 

@@ -55,7 +55,7 @@ def check_spot_termination():
     """Check if instance is marked for spot termination."""
 
     r = requests.get("http://169.254.169.254/latest/meta-data/spot/termination-time")
-    # logging.info("got status code: %d" % r.status_code)
+    logging.info("check_spot_termination response status code: %d" % r.status_code)
     if r.status_code == 200:
         return r.content.decode()
     else:
@@ -81,31 +81,34 @@ def graceful_shutdown(url, term_time):
             )
         )
         logging.info("Finished logging a 'marked_for_termination' event. Termination time: {}".format(term_time))
-    except Exception:
+    except Exception as e:
+        logging.warning("Exception occurred while logging the 'marked_for_termination' event: {}".format(str(e)))
         pass
 
     # stop docker containers
     try:
         logging.info("Stopping all docker containers.")
         os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
-    except Exception:
+    except Exception as e:
+        logging.warning("Exception occurred while stopping docker containers: {}".format(str(e)))
         pass
 
     # shutdown supervisord
     try:
         logging.info("Stopping supervisord.")
         call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
-    except Exception:
+    except Exception as e:
+        logging.warning("Exception occurred while stopping supervisord: {}".format(str(e)))
         pass
 
     # die
     sys.exit(0)
 
 
-def daemon(url, check_interval):
+def spot_termination_detector(url, check_interval):
     """Check for spot termination notice."""
 
-    logging.info("configuration:")
+    logging.info("spot_termination_detector configuration:")
     logging.info("mozart_rest_url=%s" % url)
     logging.info("check=%d" % check_interval)
 
@@ -159,4 +162,4 @@ if __name__ == "__main__":
     if check is None:
         check = 60
 
-    daemon(mozart_rest_url, check)
+    spot_termination_detector(mozart_rest_url, check)
