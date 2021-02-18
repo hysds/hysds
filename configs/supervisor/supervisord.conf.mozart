@@ -51,7 +51,7 @@ startsecs=10
 
 [program:process_events_tasks]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q process_events_tasks -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q process_events_tasks -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=1
@@ -66,7 +66,7 @@ startsecs=10
 directory={{ OPS_HOME }}/mozart/ops/hysds
 environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_datasets.json",
             HYSDS_JOB_CREATORS_DIR="{{ OPS_HOME }}/mozart/etc/job_creators"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q dataset_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q dataset_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=32
@@ -81,7 +81,7 @@ startsecs=10
 directory={{ OPS_HOME }}/mozart/ops/hysds
 environment=HYSDS_ORCHESTRATOR_CFG="{{ OPS_HOME }}/mozart/etc/orchestrator_jobs.json",
             HYSDS_JOB_CREATORS_DIR="{{ OPS_HOME }}/mozart/etc/job_creators"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q jobs_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q jobs_processed -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=32

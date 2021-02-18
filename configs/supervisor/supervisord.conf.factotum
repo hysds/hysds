@@ -37,7 +37,7 @@ startsecs=10
 
 [program:on_demand_job]
 directory={{ OPS_HOME }}/verdi/ops/hysds
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q on_demand_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=4
@@ -50,7 +50,7 @@ startsecs=10
 
 [program:on_demand_dataset]
 directory={{ OPS_HOME }}/verdi/ops/hysds
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q on_demand_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q on_demand_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=4
@@ -63,7 +63,7 @@ startsecs=10
 
 [program:user_rules_job]
 directory={{ OPS_HOME }}/verdi/ops/hysds
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q user_rules_job -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=64
@@ -76,7 +76,7 @@ startsecs=10
 
 [program:user_rules_dataset]
 directory={{ OPS_HOME }}/verdi/ops/hysds
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q user_rules_dataset -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=64
@@ -89,7 +89,7 @@ startsecs=10
 
 [program:user_rules_trigger]
 directory={{ OPS_HOME }}/verdi/ops/hysds
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q user_rules_trigger -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q user_rules_trigger -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=32
@@ -104,7 +104,7 @@ startsecs=10
 directory={{ OPS_HOME }}/verdi/ops/hysds
 environment=HYSDS_WORKER_CFG="{{ OPS_HOME }}/verdi/etc/workers/job_worker.json.import_prov_es",
             HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q import_prov_es -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q import_prov_es -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=1
@@ -119,7 +119,7 @@ startsecs=10
 directory={{ OPS_HOME }}/verdi/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
             HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q system-jobs-queue -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q system-jobs-queue -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=32
@@ -134,7 +134,7 @@ startsecs=10
 directory={{ OPS_HOME }}/verdi/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
             HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q factotum-job_worker-small -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q factotum-job_worker-small -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=1
@@ -149,7 +149,7 @@ startsecs=10
 directory={{ OPS_HOME }}/verdi/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
             HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
-command=celery worker --app=hysds --concurrency=1 --loglevel=INFO -Q factotum-job_worker-large -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
+command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q factotum-job_worker-large -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
 numprocs=1
