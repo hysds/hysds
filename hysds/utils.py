@@ -35,7 +35,7 @@ from atomicwrites import atomic_write
 from bisect import insort
 
 import hysds
-from hysds.log_utils import logger, log_prov_es
+from hysds.log_utils import logger, log_prov_es, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es
 
@@ -343,14 +343,23 @@ def get_payload_hash(payload):
     ).hexdigest()
 
 
+def no_dedup_job():
+    return None
+
+
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
+)
+@backoff.on_exception(
+    backoff.expo, ValueError, max_tries=8, max_value=32, giveup=no_dedup_job
 )
 def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
     Return job IDs with matching dedup key defined in states
     'job-queued', 'job-started', 'job-completed', by default.
     """
+
+    hash_exists_in_redis = payload_hash_exists(dedup_key)
 
     # get states
     if states is None:
@@ -396,7 +405,13 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     j = r.json()
     logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
-        return None
+        if hash_exists_in_redis is True:
+            raise ValueError("Could not find any jobs with the following query: {}".format(json.dumps(query,
+                                                                                                      indent=2)))
+        elif hash_exists_in_redis is False:
+            return None
+        else:
+            raise RuntimeError("Could not determine if payload hash already exists in REDIS: {}".format(dedup_key))
     else:
         hit = j["hits"]["hits"][0]
         logger.info(
@@ -407,6 +422,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
             "status": hit["_source"]["status"][0],
             "query_timestamp": datetime.utcnow().isoformat(),
         }
+
 
 
 @backoff.on_exception(
