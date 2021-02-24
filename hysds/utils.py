@@ -361,6 +361,10 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
 
     hash_exists_in_redis = payload_hash_exists(dedup_key)
+    if hash_exists_in_redis is True:
+        logger.info("Payload hash already exists in REDIS: {}".format(dedup_key))
+    elif hash_exists_in_redis is False:
+        logger.info("Payload hash does not exist in REDIS: {}".format(dedup_key))
 
     # get states
     if states is None:
