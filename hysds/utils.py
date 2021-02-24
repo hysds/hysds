@@ -343,7 +343,7 @@ def get_payload_hash(payload):
     ).hexdigest()
 
 
-def no_dedup_job():
+def no_dedup_job(e):
     return None
 
 
