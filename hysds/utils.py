@@ -344,6 +344,7 @@ def get_payload_hash(payload):
 
 
 def no_dedup_job(e):
+    logger.info("Giving up: {}".format(str(e)))
     return None
 
 
