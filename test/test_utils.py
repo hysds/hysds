@@ -589,7 +589,7 @@ class TestPublishDataset(unittest.TestCase):
 
         self.assertTrue(hysds.utils.publish_datasets(self.job, job_context))
 
-        # assert called args
+        # assert that ingest function was called with force=True
         ingest_mock.assert_called_with(
             'AOI_sacramento_valley',
             self.datasets_cfg_file,
