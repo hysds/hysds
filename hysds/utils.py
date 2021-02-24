@@ -47,6 +47,12 @@ grq_es = get_grq_es()
 DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
 
 
+class NoDedupJobFoundException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super(NoDedupJobFoundException, self).__init__(message)
+
+
 def get_module(m):
     """Import module and return."""
 
@@ -352,7 +358,7 @@ def no_dedup_job(details):
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
 @backoff.on_exception(
-    backoff.expo, ValueError, max_tries=8, max_value=32, on_giveup=no_dedup_job
+    backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
 )
 def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
@@ -411,7 +417,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
-            raise ValueError("Could not find any dedup jobs with the following query: {}".format(
+            raise NoDedupJobFoundException("Could not find any dedup jobs with the following query: {}".format(
                 json.dumps(query, indent=2)))
         elif hash_exists_in_redis is False:
             return None
