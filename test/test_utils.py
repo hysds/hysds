@@ -484,3 +484,118 @@ class TestUtils(unittest.TestCase):
         size = hysds.utils.get_disk_usage(self.tmp_dir2)
         self.assertTrue(size == self.get_disk_usage(self.tmp_dir2))
         shutil.rmtree(self.tmp_dir2)
+
+
+class TestPublishDataset(unittest.TestCase):
+    def setUp(self):
+        self.job_dir = tempfile.mkdtemp(prefix="job-")
+        logging.info("self.job_dir: {}".format(self.job_dir))
+
+        self.datasets_cfg_file = os.path.join(self.job_dir, 'datasets.json')
+        shutil.copy(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                '..', 'configs', 'datasets', 'datasets.json'),
+            self.datasets_cfg_file
+        )
+
+        self.examples_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "examples"
+        )
+        self.prod_dir = os.path.join(self.job_dir, "AOI_sacramento_valley")
+        shutil.copytree(
+            os.path.join(self.examples_dir, "AOI_sacramento_valley"),
+            self.prod_dir
+        )
+
+        self.job = {
+            "job_info": {
+                "status": 0,
+                "pid": 123,
+                "job_dir": self.job_dir,
+                "time_start": "1976-12-17T00:00:00.000Z",
+                "datasets_cfg_file": self.datasets_cfg_file,
+                "metrics": {
+                    "product_provenance": {},
+                    "products_staged": [],
+                }
+            }
+        }
+
+        self.metrics = {
+            "ipath": "my_project::data/area_of_interest"
+        }
+
+        self.prod_json = {
+            "id": "AOI_sacramento_valley",
+            "urls": [
+                "https://mydav.example.com/repository/products/area_of_interest/2.0/AOI_sacramento_valley"
+            ],
+            "browse_urls": [
+                "http://mydav.example.com/public/browse/area_of_interest/2.0/AOI_sacramento_valley"
+            ],
+            "dataset": "area_of_interest",
+            "ipath": "my_project::data/area_of_interest",
+            "system_version": "2.0",
+            "dataset_level": "",
+            "dataset_type": "",
+            "grq_index_result": {
+                "index": "grq_v01_area_of_interest"
+            }
+        }
+
+    def tearDown(self):
+        umock.patch.stopall()
+        shutil.rmtree(self.job_dir)
+
+    def test_publish_dataset(self):
+        import hysds.utils
+
+        job_context = {}
+        job_context_file = os.path.join(self.job_dir, "_context.json")
+        with open(job_context_file, 'w') as f:
+            json.dump(job_context, f, indent=2, sort_keys=True)
+        self.job["job_info"]["context_file"] = job_context_file
+
+        # Mocked data
+        ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
+        ingest_mock.return_value = (self.metrics, self.prod_json)
+
+        self.assertTrue(hysds.utils.publish_datasets(self.job, job_context))
+
+        # assert called args
+        ingest_mock.assert_called_with(
+            'AOI_sacramento_valley',
+            self.datasets_cfg_file,
+            umock.ANY,
+            umock.ANY,
+            self.prod_dir,
+            self.job_dir,
+            force=False
+        )
+
+    def test_force_ingest(self):
+        import hysds.utils
+
+        job_context = {'_force_ingest': True}
+        job_context_file = os.path.join(self.job_dir, "_context.json")
+        with open(job_context_file, 'w') as f:
+            json.dump(job_context, f, indent=2, sort_keys=True)
+        self.job["job_info"]["context_file"] = job_context_file
+
+        # Mocked data
+        ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
+        ingest_mock.return_value = (self.metrics, self.prod_json)
+
+        self.assertTrue(hysds.utils.publish_datasets(self.job, job_context))
+
+        # assert called args
+        ingest_mock.assert_called_with(
+            'AOI_sacramento_valley',
+            self.datasets_cfg_file,
+            umock.ANY,
+            umock.ANY,
+            self.prod_dir,
+            self.job_dir,
+            force=True
+        )
