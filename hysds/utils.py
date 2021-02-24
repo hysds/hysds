@@ -343,8 +343,8 @@ def get_payload_hash(payload):
     ).hexdigest()
 
 
-def no_dedup_job(e):
-    logger.info("Giving up: {}".format(str(e)))
+def no_dedup_job(details):
+    logger.info("Giving up: {}".format(json.dumps(details, indent=2)))
     return None
 
 
@@ -352,7 +352,7 @@ def no_dedup_job(e):
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
 @backoff.on_exception(
-    backoff.expo, ValueError, max_tries=8, max_value=32, giveup=no_dedup_job
+    backoff.expo, ValueError, max_tries=8, max_value=32, on_giveup=no_dedup_job
 )
 def query_dedup_job(dedup_key, filter_id=None, states=None):
     """
@@ -407,8 +407,8 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
-            raise ValueError("Could not find any jobs with the following query: {}".format(json.dumps(query,
-                                                                                                      indent=2)))
+            raise ValueError("Could not find any dedup jobs with the following query: {}".format(
+                json.dumps(query, indent=2)))
         elif hash_exists_in_redis is False:
             return None
         else:
