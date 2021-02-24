@@ -344,7 +344,7 @@ def get_payload_hash(payload):
 
 
 def no_dedup_job(details):
-    logger.info("Giving up: {}".format(json.dumps(details, indent=2)))
+    logger.info("Giving up querying for dedup jobs with args {args} and kwargs {kwargs}".format(**details))
     return None
 
 
