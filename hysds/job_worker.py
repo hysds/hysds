@@ -51,6 +51,7 @@ from hysds.utils import (
     get_func,
     get_short_error,
     query_dedup_job,
+    NoDedupJobFoundException,
     makedirs,
     find_dataset_json,
     find_cache_dir,
@@ -1020,11 +1021,15 @@ def run_job(job, queue_when_finished=True):
     try:
         # do dedup check first
         if dedup is True:
-            dj = query_dedup_job(
-                payload_hash,
-                filter_id=job["task_id"],
-                states=["job-started", "job-completed"],
-            )
+            try:
+                dj = query_dedup_job(
+                    payload_hash,
+                    filter_id=job["task_id"],
+                    states=["job-started", "job-completed"],
+                )
+            except NoDedupJobFoundException as e:
+                logger.info(str(e))
+                dj = None
             if isinstance(dj, dict):
                 error = "verdi worker found duplicate job %s with status %s" % (
                     dj["_id"],
