@@ -39,6 +39,7 @@ from hysds.utils import (
     get_short_error,
     get_payload_hash,
     query_dedup_job,
+    NoDedupJobFoundException
 )
 from hysds.user_rules_dataset import queue_dataset_evaluation
 
@@ -284,7 +285,11 @@ def submit_job(j):
 
     # do dedup
     if dedup is True:
-        dj = query_dedup_job(payload_hash)
+        try:
+            dj = query_dedup_job(payload_hash)
+        except NoDedupJobFoundException as e:
+            logger.info(str(e))
+            dj = None
         if isinstance(dj, dict):
             dedup_msg = "orchestrator found duplicate job %s with status %s" % (
                 dj["_id"],

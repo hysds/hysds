@@ -40,6 +40,7 @@ WORKER_STATUS_POOL = None
 EVENT_STATUS_POOL = None
 SOCKET_POOL = None
 REVOKED_TASK_POOL = None
+PAYLOAD_HASH_POOL = None
 
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
@@ -52,6 +53,9 @@ TASK_WORKER_KEY_TMPL = "hysds-task-worker-%s"
 
 # revoked task key template
 REVOKED_TASK_TMPL = "hysds-revoked-task-%s"
+
+# payload hash key template
+PAYLOAD_HASH_KEY_TMPL = "hysds-payload-hash-%s"
 
 
 def backoff_max_value():
@@ -133,6 +137,14 @@ def set_redis_revoked_task_pool():
             app.conf.REDIS_JOB_STATUS_URL
         )
 
+
+def set_redis_payload_hash_pool():
+    """Set redis connection pool for payload hash status."""
+    global PAYLOAD_HASH_POOL
+    if PAYLOAD_HASH_POOL is None:
+        PAYLOAD_HASH_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL
+        )
 
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
@@ -592,3 +604,26 @@ def is_revoked(task_id):
     key = REVOKED_TASK_TMPL % task_id
     r = StrictRedis(connection_pool=REVOKED_TASK_POOL)
     return False if r.get(key) is None else True
+
+
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def payload_hash_exists(payload_hash):
+    """Return True if the given payload hash exists. Otherwise False."""
+
+    set_redis_payload_hash_pool()
+    global PAYLOAD_HASH_POOL
+
+    # retrieve value
+    key = PAYLOAD_HASH_KEY_TMPL % payload_hash
+    r = StrictRedis(connection_pool=PAYLOAD_HASH_POOL)
+    # According to the REDIS set function, a return value of "True" means that the hash does not exist and it was
+    # able to store it successfully. Otherwise, a "None" value is returned, meaning the key/value already exists.
+    status = r.set(key, payload_hash, ex=app.conf.HYSDS_JOB_STATUS_EXPIRES, nx=True)
+    if status is None:
+        return True
+    elif status is True:
+        return False
+    else:
+        return None
