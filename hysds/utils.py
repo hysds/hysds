@@ -583,6 +583,12 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
     shutil.copy(context_file, prod_context_file)
 
+    # force ingest? (i.e. disable no-clobber)
+    ingest_kwargs = { "force": False }
+    if ctx.get("_force_ingest", False):
+        logger.info("Flag _force_ingest set to True.")
+        ingest_kwargs["force"] = True
+
     # upload
     tx_t1 = datetime.utcnow()
     metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(
@@ -593,7 +599,8 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
             app.conf.DATASET_PROCESSED_QUEUE,
             prod_dir,
             job_dir,
-        )
+        ),
+        **ingest_kwargs
     )
     tx_t2 = datetime.utcnow()
     tx_dur = (tx_t2 - tx_t1).total_seconds()
