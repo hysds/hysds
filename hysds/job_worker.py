@@ -1026,6 +1026,7 @@ def run_job(job, queue_when_finished=True):
                     payload_hash,
                     filter_id=job["task_id"],
                     states=["job-started", "job-completed"],
+                    is_worker=True
                 )
             except NoDedupJobFoundException as e:
                 logger.info(str(e))

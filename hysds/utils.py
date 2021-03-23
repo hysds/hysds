@@ -360,7 +360,7 @@ def no_dedup_job(details):
 @backoff.on_exception(
     backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
 )
-def query_dedup_job(dedup_key, filter_id=None, states=None):
+def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     """
     Return job IDs with matching dedup key defined in states
     'job-queued', 'job-started', 'job-completed', by default.
@@ -417,8 +417,11 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
-            raise NoDedupJobFoundException("Could not find any dedup jobs with the following query: {}".format(
-                json.dumps(query, indent=2)))
+            if is_worker:
+                return None
+            else:
+                raise NoDedupJobFoundException("Could not find any dedup jobs with the following query: {}".format(
+                    json.dumps(query, indent=2)))
         elif hash_exists_in_redis is False:
             return None
         else:
@@ -430,7 +433,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
         )
         return {
             "_id": hit["_id"],
-            "status": hit["_source"]["status"][0],
+            "status": hit["_source"]["status"],
             "query_timestamp": datetime.utcnow().isoformat(),
         }
 
