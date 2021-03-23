@@ -35,7 +35,7 @@ from atomicwrites import atomic_write
 from bisect import insort
 
 import hysds
-from hysds.log_utils import logger, log_prov_es
+from hysds.log_utils import logger, log_prov_es, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es
 
@@ -45,6 +45,12 @@ grq_es = get_grq_es()
 
 # disk usage setting converter
 DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
+
+
+class NoDedupJobFoundException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super(NoDedupJobFoundException, self).__init__(message)
 
 
 def get_module(m):
@@ -343,14 +349,28 @@ def get_payload_hash(payload):
     ).hexdigest()
 
 
+def no_dedup_job(details):
+    logger.info("Giving up querying for dedup jobs with args {args} and kwargs {kwargs}".format(**details))
+    return None
+
+
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
-def query_dedup_job(dedup_key, filter_id=None, states=None):
+@backoff.on_exception(
+    backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
+)
+def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     """
     Return job IDs with matching dedup key defined in states
     'job-queued', 'job-started', 'job-completed', by default.
     """
+
+    hash_exists_in_redis = payload_hash_exists(dedup_key)
+    if hash_exists_in_redis is True:
+        logger.info("Payload hash already exists in REDIS: {}".format(dedup_key))
+    elif hash_exists_in_redis is False:
+        logger.info("Payload hash does not exist in REDIS: {}".format(dedup_key))
 
     # get states
     if states is None:
@@ -396,7 +416,16 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
     j = r.json()
     logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
-        return None
+        if hash_exists_in_redis is True:
+            if is_worker:
+                return None
+            else:
+                raise NoDedupJobFoundException("Could not find any dedup jobs with the following query: {}".format(
+                    json.dumps(query, indent=2)))
+        elif hash_exists_in_redis is False:
+            return None
+        else:
+            raise RuntimeError("Could not determine if payload hash already exists in REDIS: {}".format(dedup_key))
     else:
         hit = j["hits"]["hits"][0]
         logger.info(
@@ -404,9 +433,10 @@ def query_dedup_job(dedup_key, filter_id=None, states=None):
         )
         return {
             "_id": hit["_id"],
-            "status": hit["_source"]["status"][0],
+            "status": hit["_source"]["status"],
             "query_timestamp": datetime.utcnow().isoformat(),
         }
+
 
 
 @backoff.on_exception(
@@ -556,6 +586,12 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
     shutil.copy(context_file, prod_context_file)
 
+    # force ingest? (i.e. disable no-clobber)
+    ingest_kwargs = { "force": False }
+    if ctx.get("_force_ingest", False):
+        logger.info("Flag _force_ingest set to True.")
+        ingest_kwargs["force"] = True
+
     # upload
     tx_t1 = datetime.utcnow()
     metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(
@@ -566,7 +602,8 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
             app.conf.DATASET_PROCESSED_QUEUE,
             prod_dir,
             job_dir,
-        )
+        ),
+        **ingest_kwargs
     )
     tx_t2 = datetime.utcnow()
     tx_dur = (tx_t2 - tx_t1).total_seconds()
