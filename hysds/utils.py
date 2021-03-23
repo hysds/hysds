@@ -433,7 +433,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         )
         return {
             "_id": hit["_id"],
-            "status": hit["_source"]["status"][0],
+            "status": hit["_source"]["status"],
             "query_timestamp": datetime.utcnow().isoformat(),
         }
 
