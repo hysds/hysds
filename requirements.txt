@@ -104,7 +104,7 @@ python-ldap==3.2.0
 python-magic==0.4.15
 PyYAML==5.2
 redis==3.3.11
-rsa==3.4.2
+rsa==4.1
 s3transfer==0.3.0
 service-identity==18.1.0
 Shapely==1.5.15
