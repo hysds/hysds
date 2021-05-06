@@ -135,6 +135,7 @@ startsecs=10
 
 [program:watchdog_job_timeouts]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+environment=PYTHONHTTPSVERIFY=0
 command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_job_timeouts.py
 process_name=%(program_name)s
 priority=1
