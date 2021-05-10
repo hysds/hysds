@@ -30,7 +30,7 @@ docutils==0.15.2
 easywebdav==1.2.0
 elasticsearch>=7.0.0,<8.0.0
 elasticsearch-dsl>=7.0.0,<8.0.0
-eventlet==0.25.1
+eventlet>=0.31.0
 Fabric3==1.14.post1
 filechunkio==1.6
 Flask==1.1.1
