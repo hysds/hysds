@@ -15,7 +15,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1",
-        "celery>=4.4.0,<5.0.0",
+        "celery>=5.0.5,<6.0.0",
         "requests>=2.20.0",
         "flower>=0.8.2",
         "eventlet>=0.17.2",
@@ -26,8 +26,6 @@ setup(
         "psutil>=5.8.0",
         "filechunkio>=1.6.0",
         "boto>=2.38.0",
-        # TODO: remove msgpack pin once logstash is updated to 7.1.1
-        # https://hysds-core.atlassian.net/browse/HC-168
         "msgpack>=1.0.0",
         "awscli>=1.17.1",
         "boto3>=1.11.1",

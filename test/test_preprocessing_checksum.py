@@ -6,9 +6,7 @@ import hashlib
 import copy
 import pytest
 
-sys.path.insert(0, os.path.join(os.getcwd(), "hysds"))
-
-from utils import (
+from hysds.utils import (
     hashlib_mapper,
     calculate_checksum_from_localized_file,
     read_checksum_file,
