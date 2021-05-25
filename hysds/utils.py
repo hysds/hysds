@@ -809,7 +809,11 @@ def triage(job, ctx):
                     shutil.copy(f, dst)
             except Exception as e:
                 tb = traceback.format_exc()
-                logger.error("Skipping copying of {}. Got exception: {}\n{}".format(f, str(e), tb))
+                logger.error(
+                    "Skipping copying of {}. Got exception: {}\n{}".format(
+                        f, str(e), tb
+                    )
+                )
 
     # publish
     prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
