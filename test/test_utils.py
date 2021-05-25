@@ -421,6 +421,84 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_met_filename, umock.ANY)
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
+    def test_triage_invalid_path(self):
+        import hysds.utils
+
+        # Test case data
+        job = {
+            "task_id": "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
+            "job_info": {
+                "id": "boogaloo",
+                "status": 1,
+                "job_dir": self.job_dir,
+                "time_start": "0001-01-01T00:00:00.000Z",
+                "context_file": "electric",
+                "datasets_cfg_file": "more/configuration",
+                "metrics": {"product_provenance": dict(), "products_staged": list()},
+            },
+        }
+
+        job_context = {
+            "_triage_disabled": False,
+            "_triage_additional_globs": ["sub_dir", "sub_dir2/"],
+        }
+
+        # create job and context json
+        with open(os.path.join(self.job_dir, "_job.json"), "w") as f:
+            json.dump(job, f)
+        with open(os.path.join(self.job_dir, "_context.json"), "w") as f:
+            json.dump(job_context, f)
+
+        # create log file
+        log_file = os.path.join(self.job_dir, "test.log")
+        with open(log_file, "w") as f:
+            f.write("this is a log line")
+
+        # create subdirectory with non-existent referent
+        sub_dir = os.path.join(self.job_dir, "sub_dir")
+        os.symlink('/some_non_existent_dir', sub_dir)
+
+        # create another subdirectory with inaccessible permissions
+        sub_dir2 = os.path.join(self.job_dir, "sub_dir2")
+        os.makedirs(sub_dir2)
+        os.chmod(sub_dir2, 0o000)
+
+        # Mocked data
+        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock.return_value = {}
+
+        # Expectations
+        expected_triage_dataset = (
+            self.job_dir + "/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972"
+        )
+        expected_triage_dataset_filename = (
+            expected_triage_dataset
+            + "/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
+        )
+        expected_triage_met_filename = (
+            expected_triage_dataset
+            + "/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
+        )
+        expected_triage_json_filename = self.job_dir + "/_triaged.json"
+        expected_triage_log_file1 = expected_triage_dataset + "/test.log"
+        expected_triage_subdir1 = expected_triage_dataset + "/sub_dir"
+        expected_triage_subdir2 = expected_triage_dataset + "/sub_dir2"
+
+        # Test execution
+        try:
+            result = hysds.utils.triage(job, job_context)
+        finally:
+            os.chmod(sub_dir2, 0o755)
+
+        # Assertions
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(expected_triage_dataset_filename))
+        self.assertTrue(os.path.exists(expected_triage_met_filename))
+        self.assertTrue(os.path.exists(expected_triage_json_filename))
+        self.assertTrue(os.path.exists(expected_triage_log_file1))
+        self.assertFalse(os.path.exists(expected_triage_subdir1))
+        self.assertFalse(os.path.exists(expected_triage_subdir2))
+
 
 class TestUtils(unittest.TestCase):
     def setUp(self):
