@@ -43,6 +43,7 @@ from hysds.log_utils import (
     log_custom_event,
 )
 from hysds.recognize import Recognizer
+from hysds.orchestrator import do_submit_job
 
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
@@ -80,7 +81,7 @@ def queue_dataset(dataset, update_json, queue_name):
     """Add dataset type and URL to queue."""
 
     payload = {"job_type": "dataset:%s" % dataset, "payload": update_json}
-    hysds.orchestrator.do_submit_job(payload, queue_name)
+    do_submit_job(payload, queue_name)
 
 
 def get_remote_dav(url):
