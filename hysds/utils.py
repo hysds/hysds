@@ -802,10 +802,18 @@ def triage(job, ctx):
             dst = os.path.join(triage_dir, os.path.basename(f))
             if os.path.exists(dst):
                 dst = "{}.{}Z".format(dst, datetime.utcnow().isoformat("T"))
-            if os.path.isdir(f):
-                shutil.copytree(f, dst)
-            else:
-                shutil.copy(f, dst)
+            try:
+                if os.path.isdir(f):
+                    shutil.copytree(f, dst)
+                else:
+                    shutil.copy(f, dst)
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.error(
+                    "Skipping copying of {}. Got exception: {}\n{}".format(
+                        f, str(e), tb
+                    )
+                )
 
     # publish
     prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
