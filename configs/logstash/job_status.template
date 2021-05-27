@@ -31,6 +31,10 @@
       },
       "job": {
         "properties": {
+          "command": {
+            "type": "object",
+            "enabled": false
+          },
           "container_image_name": {
             "type": "keyword",
             "ignore_above": 256,
