@@ -32,35 +32,8 @@
       "job": {
         "properties": {
           "command": {
-            "properties": {
-              "path": {
-                "type": "keyword",
-                "ignore_above": 256,
-                "copy_to": [
-                  "text_fields"
-                ]
-              },
-              "options": {
-                "type": "keyword",
-                "ignore_malformed": true,
-                "ignore_above": 256,
-                "copy_to": [
-                  "text_fields"
-                ]
-              },
-              "arguments": {
-                "type": "keyword",
-                "ignore_malformed": true,
-                "ignore_above": 256,
-                "copy_to": [
-                  "text_fields"
-                ]
-              },
-              "env": {
-                "type": "object",
-                "enabled": false
-              }
-            }
+            "type": "object",
+            "enabled": false
           },
           "container_image_name": {
             "type": "keyword",
