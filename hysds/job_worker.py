@@ -1457,16 +1457,16 @@ def run_job(job, queue_when_finished=True):
 
     # close up job execution
     try:
+        # transition running file to done file
+        os.rename(job_running_file, job_done_file)
+        with open(job_done_file, "w") as f:
+            f.write("%sZ\n" % datetime.utcnow().isoformat())
+
         # log job info metrics
         log_job_info(job)
 
         # log final job status
         log_job_status(job_status_json)
-
-        # transition running file to done file and queue finished job
-        os.rename(job_running_file, job_done_file)
-        with open(job_done_file, "w") as f:
-            f.write("%sZ\n" % datetime.utcnow().isoformat())
 
         # queue job finished for user rules processing
         if queue_when_finished is True:
