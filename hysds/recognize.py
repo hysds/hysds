@@ -116,6 +116,14 @@ class Recognizer(object):
 
         self.group_dict["met"] = met
 
+    def getIpath(self):
+        """Generate and return the ipath."""
+
+        if self.recognized is None:
+            return None
+        else:
+            return self.currentIpath.format(**self.group_dict)
+
     def getId(self):
         """Generate and return the id."""
 
