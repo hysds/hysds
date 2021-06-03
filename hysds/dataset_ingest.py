@@ -310,9 +310,6 @@ def ingest(
     # recognize
     r = Recognizer(dsets_file, local_prod_path, objectid, version)
 
-    # get ipath
-    ipath = r.currentIpath
-
     # get extractor
     extractor = r.getMetadataExtractor()
     if extractor is not None:
@@ -378,6 +375,9 @@ def ingest(
     # set metadata and dataset groups in recognizer
     r.setDataset(dataset)
     r.setMetadata(metadata)
+
+    # get ipath
+    ipath = r.getIpath()
 
     # get level
     level = r.getLevel()
