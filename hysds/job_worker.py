@@ -1445,8 +1445,8 @@ def run_job(job, queue_when_finished=True):
         with open(alt_msg_file) as f:
             msgs = f.readlines()
             logger.info("Got alternate info message: %s" % msgs)
-        for m in msgs:
-            msg.append(get_short_error(m))
+            for m in msgs:
+                msg.append(get_short_error(m))
 
         job_status_json["msg"] = msg
 
