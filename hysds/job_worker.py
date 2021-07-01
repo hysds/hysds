@@ -1439,12 +1439,16 @@ def run_job(job, queue_when_finished=True):
         }
 
     # overwrite message if _alt_msg.txt was dumped
+    msg = list()
     alt_msg_file = os.path.join(job_dir, "_alt_msg.txt")
     if os.path.exists(alt_msg_file):
         with open(alt_msg_file) as f:
-            msg = f.read()
-            logger.info("Got alternate info message: %s" % msg)
-        job_status_json["msg"] = get_short_error(msg)
+            msgs = f.readlines()
+            logger.info("Got alternate info message: %s" % msgs)
+        for m in msgs:
+            msg.append(get_short_error(m))
+
+        job_status_json["msg"] = msg
 
     # overwrite msg_details if _alt_msg_details.txt was dumped
     alt_msg_details_file = os.path.join(job_dir, "_alt_msg_details.txt")
@@ -1504,7 +1508,7 @@ def run_job(job, queue_when_finished=True):
             "celery_hostname": run_job.request.hostname,
         }
         if msg:
-            job_status_json["msg"] = get_short_error(msg)
+            job_status_json["msg"] = msg
         if msg_details:
             job_status_json["msg_details"] = msg_details
 
