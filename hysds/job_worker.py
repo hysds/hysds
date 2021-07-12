@@ -1451,6 +1451,7 @@ def run_job(job, queue_when_finished=True):
         job_status_json["msg"] = msg
 
     # overwrite msg_details if _alt_msg_details.txt was dumped
+    msg_details = None
     alt_msg_details_file = os.path.join(job_dir, "_alt_msg_details.txt")
     if os.path.exists(alt_msg_details_file):
         with open(alt_msg_details_file) as f:
