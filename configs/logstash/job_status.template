@@ -29,6 +29,20 @@
         "type": "object",
         "enabled": false
       },
+      "msg": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
+      "msg_details": {
+        "type": "keyword",
+        "ignore_above": 256,
+        "copy_to": [
+          "text_fields"
+        ]
+      },
       "job": {
         "properties": {
           "command": {
