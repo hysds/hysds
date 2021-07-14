@@ -49,6 +49,8 @@ def get_waiting_job_count(queue, user="guest", password="guest"):
     backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
 )
 def describe_asg(client, asg):
+    """Backoff wrapper for describe_auto_scaling_groups()."""
+
     return client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
 
 
@@ -67,6 +69,8 @@ def get_desired_capacity_max(asg):
     backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
 )
 def set_desired_capacity(client, asg, desired):
+    """Backoff wrapper for set_desired_capacity()."""
+
     return client.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
 
 
@@ -82,6 +86,8 @@ def bootstrap_asg(asg, desired):
     backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
 )
 def put_metric_data(client, metric_name, metric_ns, asg, queue, metric):
+    """Backoff wrapper for put_metric_data()."""
+
     client.put_metric_data(
         Namespace=metric_ns,
         MetricData=[
