@@ -3,7 +3,7 @@ result_backend = "redis://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}
 
 task_serializer = "msgpack"
 result_serializer = "msgpack"
-accept_content = ["msgpack"]
+accept_content = ["msgpack", "json"]
 
 task_acks_late = True
 result_expires = 86400
