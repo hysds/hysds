@@ -283,9 +283,9 @@ def graceful_shutdown(id, logger=None):
         with open("/home/ops/verdi/etc/settings.yaml") as f:
             yml = yaml.safe_load(f)
         venue = yml["VENUE"]
-        queue_name = venue + ("-harikiri-queue")
+        queue_name = venue + ("-harikiri-queue.fifo")
         # Get the queue. This returns an SQS.Queue instance
-        queue = sqs.get_queue_by_name(QueueName=queue_name)
+        queue = sqs.get_queue_by_name(QueueName=queue_name, MessageGroupId="harikiri")
 
         # Create a new message, message body is the instance id
         response = queue.send_message(MessageBody=id)
