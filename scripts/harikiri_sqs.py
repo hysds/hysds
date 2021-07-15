@@ -285,10 +285,10 @@ def graceful_shutdown(id, logger=None):
         venue = yml["VENUE"]
         queue_name = venue + ("-harikiri-queue.fifo")
         # Get the queue. This returns an SQS.Queue instance
-        queue = sqs.get_queue_by_name(QueueName=queue_name, MessageGroupId="harikiri")
+        queue = sqs.get_queue_by_name(QueueName=queue_name)
 
         # Create a new message, message body is the instance id
-        response = queue.send_message(MessageBody=id)
+        response = queue.send_message(MessageBody=id, MessageGroupId="harikiri")
         logging.info("SQS Queue Message Response: {}".format(json.dumps(response)))
     except Exception as e:
         logging.error("Got exception in calling queue: {}\n{}".format(str(e), traceback.format_exc()))
