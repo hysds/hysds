@@ -14,7 +14,9 @@ import traceback
 import logging
 import argparse
 import boto3
+import botocore
 import requests
+import backoff
 
 from hysds.celery import app
 
@@ -43,30 +45,49 @@ def get_waiting_job_count(queue, user="guest", password="guest"):
         return 0
 
 
+@backoff.on_exception(
+    backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
+)
+def describe_asg(client, asg):
+    """Backoff wrapper for describe_auto_scaling_groups()."""
+
+    return client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
+
+
 def get_desired_capacity_max(asg):
     """Get current value of ASG's desired capacity and max size."""
 
     c = boto3.client("autoscaling")
-    r = c.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])
+    r = describe_asg(c, asg)
     groups = r["AutoScalingGroups"]
     if len(groups) == 0:
         raise RuntimeError("Autoscaling group {} not found.".format(asg))
     return groups[0]["DesiredCapacity"], groups[0]["MaxSize"]
 
 
+@backoff.on_exception(
+    backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
+)
+def set_desired_capacity(client, asg, desired):
+    """Backoff wrapper for set_desired_capacity()."""
+
+    return client.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
+
+
 def bootstrap_asg(asg, desired):
     """Bootstrap ASG's desired capacity."""
 
     c = boto3.client("autoscaling")
-    r = c.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
+    r = set_desired_capacity(c, asg, desired)
     return desired
 
 
-def submit_metric(queue, asg, metric, metric_ns):
-    """Submit EC2 custom metric data."""
+@backoff.on_exception(
+    backoff.expo, botocore.exceptions.ClientError, max_tries=8, max_value=64
+)
+def put_metric_data(client, metric_name, metric_ns, asg, queue, metric):
+    """Backoff wrapper for put_metric_data()."""
 
-    metric_name = "JobsWaitingPerInstance-%s" % (asg)
-    client = boto3.client("cloudwatch")
     client.put_metric_data(
         Namespace=metric_ns,
         MetricData=[
@@ -80,6 +101,14 @@ def submit_metric(queue, asg, metric, metric_ns):
             }
         ],
     )
+
+
+def submit_metric(queue, asg, metric, metric_ns):
+    """Submit EC2 custom metric data."""
+
+    metric_name = "JobsWaitingPerInstance-%s" % (asg)
+    client = boto3.client("cloudwatch")
+    put_metric_data(client, metric_name, metric_ns, asg, queue, metric)
     logging.info(
         "updated target tracking metric for %s queue and ASG %s as metric %s:%s: %s"
         % (queue, asg, metric_ns, metric_name, metric)
