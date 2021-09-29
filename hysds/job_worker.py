@@ -472,21 +472,18 @@ def run_job(job, queue_when_finished=True):
     if is_revoked(run_job.request.id):
         app.control.revoke(run_job.request.id, terminate=True)
 
-    # get payload id
-    payload_id = job["job_info"]["job_payload"]["payload_task_id"]
-
-    # get payload hash
-    payload_hash = job["job_info"]["payload_hash"]
-
-    # get dedup flag
-    dedup = job["job_info"]["dedup"]
+    payload_id = job["job_info"]["job_payload"]["payload_task_id"]  # get payload id
+    payload_hash = job["job_info"]["payload_hash"]  # get payload hash
+    dedup = job["job_info"]["dedup"]  # get dedup flag
 
     # job status json
     job_status_json = {}
 
     # write celery task id and delivery info
+    # TODO: leave this here
     job["task_id"] = run_job.request.id
     job["delivery_info"] = run_job.request.delivery_info
+    job["celery_hostname"] = run_job.request.hostname  # TODO: add this here to use in the class
 
     # get context
     context = job.get("context", {})
@@ -524,6 +521,8 @@ def run_job(job, queue_when_finished=True):
     # redelivered job dedup
     if redelivered_job_dup(job):
         logger.info("Encountered duplicate redelivered job:%s" % json.dumps(job))
+        # TODO: not sure if returning something here does anything, unless we use log_job_status
+        #   i guess we can return True/False instead
         return {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -583,10 +582,8 @@ def run_job(job, queue_when_finished=True):
     # get worker config
     worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
     if worker_cfg_file is None and cmd_payload is None:
-        error = (
-            "Environment variable HYSDS_WORKER_CFG is not set or "
-            + "job has no command payload."
-        )
+        error = "Environment variable HYSDS_WORKER_CFG is not set or job has no command payload."
+
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -1040,7 +1037,7 @@ def run_job(job, queue_when_finished=True):
                 raise JobDedupedError(error)
 
         # set status to job-started
-        job["job_info"]["time_start"] = time_start_iso
+        job["job_info"]["time_start"] = time_start_iso  # TODO: this is where the job is starting
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -1111,7 +1108,7 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        docker_params = {}
+        docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
         if image_name is not None:
             # get docker params
             docker_params[image_name] = get_docker_params(

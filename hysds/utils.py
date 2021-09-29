@@ -240,7 +240,7 @@ def makedirs(dir, mode=0o777):
         if e.errno == errno.EEXIST and os.path.isdir(dir):
             pass
         else:
-            raise
+            raise  # TODO: raise a more specific error here
 
 
 def validateDirectory(dir, mode=0o755, noExceptionRaise=False):
@@ -354,12 +354,8 @@ def no_dedup_job(details):
     return None
 
 
-@backoff.on_exception(
-    backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
-)
-@backoff.on_exception(
-    backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
-)
+@backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32)
+@backoff.on_exception(backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job)
 def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     """
     Return job IDs with matching dedup key defined in states
