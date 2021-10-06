@@ -28,8 +28,8 @@ decorator==4.4.1
 dnspython==1.16.0
 docutils==0.15.2
 easywebdav==1.2.0
-elasticsearch>=7.0.0,<8.0.0
-elasticsearch-dsl>=7.0.0,<8.0.0
+elasticsearch>=7.0.0,<7.14.0
+elasticsearch-dsl>=7.0.0,<=7.4.0
 eventlet>=0.31.0
 Fabric3==1.14.post1
 filechunkio==1.6
