@@ -466,7 +466,13 @@ def fail_job(job_status_json, jd_file):
 
 @app.task
 def run_job(job, queue_when_finished=True):
-    """Function to execute a job."""
+    """
+    Function to execute a job
+
+    :param job:
+    :param queue_when_finished:
+    :return:
+    """
 
     # if revoked?
     if is_revoked(run_job.request.id):
@@ -712,7 +718,7 @@ def run_job(job, queue_when_finished=True):
         work_cfgs[cfg["type"]] = cfg
 
     # other settings
-    if run_job.request.delivery_info is None:
+    if run_job.request.delivery_info is None:  # TODO: this code can be removed
         job_queue = None
     else:
         job_queue = run_job.request.delivery_info["routing_key"]
@@ -856,6 +862,8 @@ def run_job(job, queue_when_finished=True):
     # get job's .done file
     job_done_file = os.path.join(job_dir, ".done")
 
+    # TODO: use {**dict_a, **dict_b} instead
+    #   move this to constructor (maybe) or put this into a method (call it add_metrics or something)
     # add info for traceability and metrics
     job["job_info"].update(
         {
@@ -890,7 +898,7 @@ def run_job(job, queue_when_finished=True):
         }
         fail_job(job_status_json, jd_file)
 
-    # get availability zone, instance id and type
+    # get availability zone, instance id and type TODO: is this needed? (the urls are hard coded and ignored when errors)
     for md_url, md_name in (
         (AZ_INFO, "ec2_placement_availability_zone"),
         (INS_ID_INFO, "ec2_instance_id"),

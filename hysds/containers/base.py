@@ -9,16 +9,25 @@ from builtins import open
 from builtins import int
 from builtins import str
 from future import standard_library
+standard_library.install_aliases()
 
 import os
+import sys
 import time
-import shutil
-import traceback
-import json
 import socket
+import json
+import traceback
+import types
+import requests
+import shutil
 import re
-from subprocess import check_output, CalledProcessError
+import shlex
 import signal
+from datetime import datetime
+from itertools import compress
+from subprocess import check_output, CalledProcessError
+from celery.exceptions import SoftTimeLimitExceeded
+from celery.signals import task_revoked
 
 from hysds.log_utils import (
     logger,
@@ -79,29 +88,16 @@ class ContainerBase:
 
     # facts to store
     FACTS_TO_TRACK = (
-        "architecture",
-        "domain",
-        "ec2_instance_id",
-        "ec2_instance_type",
-        "ec2_placement_availability_zone",
-        "ec2_public_hostname",
+        "architecture", "domain",
+        "ec2_instance_id", "ec2_instance_type", "ec2_placement_availability_zone", "ec2_public_hostname",
         "ec2_public_ipv4",
-        "fqdn",
-        "hardwaremodel",
-        "hostname",
-        "ipaddress",
-        "ipaddress_eth0",
+        "fqdn", "hardwaremodel", "hostname",
+        "ipaddress", "ipaddress_eth0",
         "is_virtual",
-        "memoryfree",
-        "memorysize",
-        "memorytotal",
-        "operatingsystem",
-        "operatingsystemrelease",
-        "osfamily",
-        "physicalprocessorcount",
-        "processorcount",
-        "swapfree",
-        "swapsize",
+        "memoryfree", "memorysize", "memorytotal",
+        "operatingsystem", "operatingsystemrelease", "osfamily",
+        "physicalprocessorcount", "processorcount",
+        "swapfree", "swapsize",
         "uptime",
         "virtual",
     )
@@ -115,6 +111,12 @@ class ContainerBase:
         15: "terminated",
     }
 
+    JOB_QUEUED = "job-queued"
+    JOB_FAILED = "job-failed"
+    JOB_STARTED = "job-started"
+    JOB_COMPLETED = "job-completed"
+    JOB_DEDUPLICATED = "job-deduped"
+
     def __init__(self, job, **kwargs):
         """
         TODO: pay attention to signal handling
@@ -122,6 +124,7 @@ class ContainerBase:
         :param kwargs: additional information to pass into job_json
         """
         self.job = job
+        self.job_id = job["job_id"]
         self.task_id = job["task_id"]  # run_job.request.id
         self.delivery_info = job["delivery_info"]  # run_job.request.delivery_info
 
@@ -137,7 +140,7 @@ class ContainerBase:
             "payload_id": self.payload_id,
             "payload_hash": self.payload_hash,
             "dedup": self.dedup,
-            "status": "job-failed",
+            "status": self.JOB_FAILED,
             "job": job,
             "context": self.context,
             "celery_hostname": self.celery_hostname,
@@ -146,8 +149,8 @@ class ContainerBase:
         self.cmd_payload = self.job.get("params", {}).get("_command", None)  # get command payload
         logger.info("_command:%s" % self.cmd_payload)
 
-        self.du_payload = self.job.get("params", {}).get("_disk_usage", None)  # get disk usage requirement
-        logger.info("_disk_usage:%s" % self.du_payload)
+        self.disk_usage_payload = self.job.get("params", {}).get("_disk_usage", None)  # get disk usage requirement
+        logger.info("_disk_usage:%s" % self.disk_usage_payload)
 
         # get dependency images
         self.dependency_images = self.job.get("params", {}).get("job_specification", {}).get("dependency_images", [])
@@ -156,8 +159,25 @@ class ContainerBase:
         self.workers_dir = os.path.join(app.conf.ROOT_WORK_DIR, "workers")  # directory where all PGEs are located
         self.job_drain_file = os.path.join(self.workers_dir, "%s.failures.json" % self.celery_hostname)
 
-    def add_task_metadata(self):
-        pass
+        self.worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
+        self.worker_cfg = {}  # will be populated in validate_worker_config()
+        self.work_cfgs = {}
+
+        self.root_work_dir = None  # root directory: /data/work/
+        self.cache_dir = None  # cache directory, ex. /data/work/cache/
+        self.jobs_dir = None  # directory of all jobs, ex. /data/work/jobs/
+        self.job_dir = None  # directory of the current job
+        self.tasks_dir = None  # directory of tasks, ex. /data/work/tasks/
+
+        self.web_dav_port = None
+        self.web_dav_url = None
+
+        self.time_start = None  # job execution times
+        self.time_end = None
+        self.time_start_iso = None
+
+        self.cmd_start = None  # command execution times
+        self.cmd_end = None
 
     def get_facts(self):
         """Return facts about worker instance."""
@@ -238,19 +258,16 @@ class ContainerBase:
     def cleanup_old_tasks(work_path, tasks_path, percent_free, threshold=10.0):
         """
         If free disk space is below percent threshold, start cleaning out old tasks.
+        walks down os.walk(tasks_path)
+            dont do anything if .done file is found
+            clean the directory with shutil.rm(), then checks the work_path space usage afterwards
+        rinse and repeat until percentage free > threshold
         :param work_path: str, path of work dir (ex. /data/work/...), used to track how much space is left on worker
         :param tasks_path: str, path of tasks (ex. /data/work/tasks/... ?)
         :param percent_free: float
         :param threshold: float (default 10.0)
         :return: float, percentage free space left
         """
-
-        # TODO: how the job works (i think)
-        #   walks down os.walk(tasks_path)
-        #       dont do anything if .done file is found
-        #       clean the directory with shutil.rm(), then checks the work_path space usage afterwards
-        #   rinse and repeat until percentage free >= threshold
-
         if percent_free <= threshold:
             logger.info("Searching for old task dirs to clean out to %02.2f%% free disk space." % threshold)
             for root, dirs, files in os.walk(tasks_path, followlinks=True):
@@ -260,11 +277,9 @@ class ContainerBase:
                 logger.info("Cleaning out old task dir %s" % root)
                 shutil.rmtree(root, ignore_errors=True)
                 capacity, free, used, percent_free = disk_space_info(work_path)
-                if percent_free <= threshold:
-                    continue
-                logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)
-                return percent_free
-            # TODO: maybe some duplicated logic here?
+                if percent_free > threshold:
+                    logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)
+                    return percent_free
             if percent_free <= threshold:
                 logger.warning("Failed to free up disk space to %02.2f%%." % threshold)
         return percent_free
@@ -356,22 +371,16 @@ class ContainerBase:
         """
         # log initial disk stats
         capacity, free, used, percent_free = disk_space_info(work_path)
-        logger.info(
-            "Free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
-            % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3)
-        )
+        logger.info("Free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
+                    % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3))
         logger.info("Configured free disk space threshold for this job type is %02.2f%%." % threshold)
 
-        # cleanup needed?
         if percent_free > threshold:
             logger.info("No cleanup needed.")
             return
 
-        # cleanup tasks
-        percent_free = cls.cleanup_old_tasks(work_path, tasks_path, percent_free, threshold)
-
-        # cleanup jobs with zero exit code
-        percent_free = cls.cleanup_old_jobs(work_path, jobs_path, percent_free, threshold, True)
+        percent_free = cls.cleanup_old_tasks(work_path, tasks_path, percent_free, threshold)  # cleanup tasks
+        percent_free = cls.cleanup_old_jobs(work_path, jobs_path, percent_free, threshold, True)  # cleanup success jobs
 
         # cleanup jobs with non-zero exit codes if free disk space not met
         if percent_free <= threshold:
@@ -383,10 +392,8 @@ class ContainerBase:
 
         # log final disk stats
         capacity, free, used, percent_free = disk_space_info(work_path)
-        logger.info(
-            "Final free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
-            % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3)
-        )
+        logger.info("Final free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
+                    % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3))
 
     @staticmethod
     def shutdown_worker(celery_hostname):
@@ -405,7 +412,7 @@ class ContainerBase:
                 os.unlink(self.job_drain_file)
             except:
                 pass
-        elif status == "job-failed":
+        elif status == self.JOB_FAILED:
             if os.path.exists(self.job_drain_file):
                 with open(self.job_drain_file) as f:
                     jd = json.load(f)
@@ -479,8 +486,16 @@ class ContainerBase:
         else:
             return False
 
-    def fail_job(self):
-        """Log failed job, detect/handle job drain and raise error."""
+    def fail_job(self, error):
+        """
+        Log failed job, detect/handle job drain and raise error.
+        :param error: str
+        :return: None, raise WorkerExecutionError
+        """
+        self.job_status_json["status"] = self.JOB_FAILED
+        self.job_status_json["error"] = error
+        self.job_status_json["short_error"] = get_short_error(error)
+        self.job_status_json["traceback"] = error
 
         def_err = "Unspecified worker execution error."
         log_job_status(self.job_status_json)
@@ -496,7 +511,7 @@ class ContainerBase:
 
     def signal_handler(self, signum, frame):
         """
-        when a signal error occurs, this function will log the job to redis -> logstash -> es
+        when a signal error occurs, this function will log the job status
         https://docs.python.org/3/library/signal.html#signal.signal
         :param signum: signal type, ex. signal.SIGINT
         :param frame: current stack frame (None or a frame object)
@@ -511,12 +526,16 @@ class ContainerBase:
         raise WorkerExecutionError(error, self.job_status_json)
 
     def set_signal_handlers(self):
+        """
+        attaches the signal_handler() method (to the main thread) when any signals are raised
+        https://docs.python.org/3/library/signal.html#signal.signal
+        """
         signal_list = [signal.SIGHUP, signal.SIGINT, signal.SIGQUIT, signal.SIGABRT, signal.SIGTERM]
         for s in signal_list:
             signal.signal(s, self.signal_handler)
 
     def make_work_dir(self):
-        """make work directory"""
+        """make work directory, ex. /data/work/..."""
         try:
             makedirs(self.workers_dir)
         except Exception as e:
@@ -524,30 +543,101 @@ class ContainerBase:
             self.job_status_json["error"] = error
             self.job_status_json["short_error"] = get_short_error(error)
             self.job_status_json["traceback"] = traceback.format_exc()
-
             log_job_status(self.job_status_json)
             raise WorkerExecutionError(error, self.job_status_json)
 
+    def validate_datasets_config(self):
+        """Get datasets config"""
+
+        datasets_cfg_file = os.environ.get("HYSDS_DATASETS_CFG", None)
+        if datasets_cfg_file is None:
+            error = "Environment variable HYSDS_DATASETS_CFG is not set."
+            self.fail_job(error)
+
+        logger.info("HYSDS_DATASETS_CFG:%s" % datasets_cfg_file)
+        if not os.path.exists(datasets_cfg_file):
+            error = "Datasets configuration %s doesn't exist." % datasets_cfg_file
+            self.fail_job(error)
+
     def validate_worker_config(self):
-        worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
-
-        if worker_cfg_file is None and self.cmd_payload is None:  # TODO: figure out where to put cmd payload
+        """
+        set and validate the worker_cfg (worker config) dictionary
+        TODO: whenever we fail a job, should we exit out of the function, maybe return False
+        """
+        if self.worker_cfg_file is not None:
             error = "Environment variable HYSDS_WORKER_CFG is not set or job has no command payload."
+            if not os.path.exists(self.worker_cfg_file) or self.cmd_payload is None:
+                self.fail_job(error)
+            else:
+                try:
+                    with open(self.worker_cfg_file) as f:
+                        self.worker_cfg = json.load(f)
+                except (FileNotFoundError, json.JSONDecodeError, Exception):
+                    self.fail_job(error)
+        else:  # build worker config on-the-fly for command payload
+            cmd_payload_list = shlex.split(self.cmd_payload)
+            self.worker_cfg = {
+                "configs": [{
+                    "type": self.job["type"],
+                    "command": {
+                        "path": cmd_payload_list[0],
+                        "options": [],
+                        "arguments": cmd_payload_list[1:],
+                        "env": [],
+                    },
+                    "dependency_images": self.dependency_images,
+                }]
+            }
 
-            self.fail_job()
-            self.job_status_json["status"] = "job-failed"
-            self.job_status_json["error"] = error
-            self.job_status_json["short_error"] = get_short_error(error)
-            self.job_status_json["traceback"] = error
+        if "HYSDS_ROOT_WORK_DIR" in os.environ:
+            self.worker_cfg["root_work_dir"] = os.environ["HYSDS_ROOT_WORK_DIR"]
+        if "HYSDS_WEBDAV_PORT" in os.environ:
+            self.worker_cfg["webdav_port"] = os.environ["HYSDS_WEBDAV_PORT"]
+        if "HYSDS_WEBDAV_URL" in os.environ:
+            self.worker_cfg["webdav_url"] = os.environ["HYSDS_WEBDAV_URL"]
+        if self.disk_usage_payload is not None:
+            self.worker_cfg["configs"][0]["disk_usage"] = self.disk_usage_payload
 
-    # # TODO: guess its not needed here, can move this to job_worker.py
-    # @app.task
-    # def run_job(self, job, queue_when_finished=True):
-    #     """
-    #     Executes a job
-    #     TODO: original function is very big, will need to break up into smaller manageable functions
-    #     :param job: Dict[any], job metadata ex: {"job_info": {"job_payload": {"payload_task_id": { ... }}}}
-    #     :param queue_when_finished: Boolean, will queue the job for user rules evaluation when completed
-    #         TODO: i think this can be moved to a class variable(?) since its used only once in the OG run_job function
-    #     :return:
-    #     """
+        # structure of work_cfgs: { <job.type>: { ... }, <job.type>: { ... }, ... }
+        self.work_cfgs = {cfg["type"]: cfg for cfg in self.worker_cfg["configs"]}
+        if self.job["type"] not in self.work_cfgs:
+            error = "No work configuration for type '%s'." % self.job["type"]
+            self.fail_job(error)
+
+        self.root_work_dir = self.worker_cfg.get("root_work_dir", app.conf.ROOT_WORK_DIR)
+        self.tasks_dir = os.path.join(self.root_work_dir, "tasks")
+
+        self.web_dav_port = str(self.worker_cfg.get("webdav_port", app.conf.WEBDAV_PORT))
+        self.web_dav_url = self.worker_cfg.get("webdav_url", app.conf.get("WEBDAV_URL"))
+
+        command = self.work_cfgs[self.job["type"]]["command"]
+        self.job["command"] = command
+
+    def make_cache_dir(self):
+        self.cache_dir = os.path.join(self.root_work_dir, "cache")
+        try:
+            makedirs(self.cache_dir)
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)
+
+    def make_job_dir(self):
+        """Set the job directory vaiable and create the job directory for the PGE"""
+        self.jobs_dir = os.path.join(self.root_work_dir, "jobs")
+
+        yr, mo, dy, hr, mi, se, wd, y, z = time.gmtime()
+        self.job_dir = os.path.join(
+            self.root_work_dir,
+            self.jobs_dir,
+            "%04d" % yr,
+            "%02d" % mo,
+            "%02d" % dy,
+            "%02d" % hr,
+            "%02d" % mi,
+            self.job_id,
+        )
+        try:
+            makedirs(self.job_dir)
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)

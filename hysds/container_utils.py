@@ -54,9 +54,7 @@ def copy_mount(path, mnt_dir):
     return os.path.join(mnt_dir, os.path.basename(path))
 
 
-def get_docker_params(
-    image_name, image_url, image_mappings, root_work_dir, job_dir, runtime_options=None
-):
+def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir, runtime_options=None):
     """Build docker params."""
 
     # get dirs to mount
