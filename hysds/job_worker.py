@@ -81,6 +81,7 @@ SIG_NAMES = {
     15: "terminated",
 }
 
+# TODO: maybe move this to a separate class (http://169.254.169.254 is only used for AWS and Azure)
 # instance metadata urls
 AZ_INFO = "http://169.254.169.254/latest/meta-data/placement/availability-zone"
 INS_TYPE_INFO = "http://169.254.169.254/latest/meta-data/instance-type"
@@ -898,7 +899,8 @@ def run_job(job, queue_when_finished=True):
         }
         fail_job(job_status_json, jd_file)
 
-    # get availability zone, instance id and type TODO: is this needed? (the urls are hard coded and ignored when errors)
+    # get availability zone, instance id and type
+    #   TODO: is this needed? (the urls are hard coded and ignored when errors) maybe this can be generalized soe
     for md_url, md_name in (
         (AZ_INFO, "ec2_placement_availability_zone"),
         (INS_ID_INFO, "ec2_instance_id"),

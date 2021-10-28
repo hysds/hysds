@@ -123,9 +123,10 @@ class ContainerBase:
         :param job: Dict[any], job json from submit_job
         :param kwargs: additional information to pass into job_json
         """
-        self.job = job
-        self.job_id = job["job_id"]
-        self.task_id = job["task_id"]  # run_job.request.id
+        self.job = job  # dict type
+        self.job_type = job["type"]  # str type
+        self.job_id = job["job_id"]  # str type
+        self.task_id = job["task_id"]  # str type: run_job.request.id
         self.delivery_info = job["delivery_info"]  # run_job.request.delivery_info
 
         self.payload_id = job["job_info"]["job_payload"]["payload_task_id"]  # get payload id
@@ -133,6 +134,8 @@ class ContainerBase:
         self.celery_hostname = job["celery_hostname"]
         self.dedup = job["job_info"]["dedup"]  # get dedup flag
         self.context = job.get("context", {})  # get context
+
+        self.time_split = time.gmtime()
 
         self.job_status_json = {
             "uuid": job["task_id"],
@@ -149,15 +152,15 @@ class ContainerBase:
         self.cmd_payload = self.job.get("params", {}).get("_command", None)  # get command payload
         logger.info("_command:%s" % self.cmd_payload)
 
-        self.disk_usage_payload = self.job.get("params", {}).get("_disk_usage", None)  # get disk usage requirement
-        logger.info("_disk_usage:%s" % self.disk_usage_payload)
+        self.du_payload = self.job.get("params", {}).get("_disk_usage", None)  # get disk usage requirement
+        logger.info("_disk_usage:%s" % self.du_payload)
 
         # get dependency images
         self.dependency_images = self.job.get("params", {}).get("job_specification", {}).get("dependency_images", [])
         logger.info("dependency_images:%s" % json.dumps(self.dependency_images))
 
         self.workers_dir = os.path.join(app.conf.ROOT_WORK_DIR, "workers")  # directory where all PGEs are located
-        self.job_drain_file = os.path.join(self.workers_dir, "%s.failures.json" % self.celery_hostname)
+        self.jd_file = os.path.join(self.workers_dir, "%s.failures.json" % self.celery_hostname)
 
         self.worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
         self.worker_cfg = {}  # will be populated in validate_worker_config()
@@ -168,9 +171,10 @@ class ContainerBase:
         self.jobs_dir = None  # directory of all jobs, ex. /data/work/jobs/
         self.job_dir = None  # directory of the current job
         self.tasks_dir = None  # directory of tasks, ex. /data/work/tasks/
+        self.jd_file = None  # <hostname>.failure.json file
 
-        self.web_dav_port = None
-        self.web_dav_url = None
+        self.webdav_port = None
+        self.webdav_url = None
 
         self.time_start = None  # job execution times
         self.time_end = None
@@ -178,6 +182,11 @@ class ContainerBase:
 
         self.cmd_start = None  # command execution times
         self.cmd_end = None
+
+        self.container_image_name = None  # values are found in work configs
+        self.container_image_url = None
+        self.container_mappings = {}
+        self.runtime_options = {}
 
     def get_facts(self):
         """Return facts about worker instance."""
@@ -406,15 +415,15 @@ class ContainerBase:
         :return: Boolean
         """
         status = self.job_status_json["status"]
-        if status in ("job-completed", "job-deduped") and os.path.exists(self.job_drain_file):
-            logger.info("Clearing job drain detector: %s" % self.job_drain_file)
+        if status in ("job-completed", "job-deduped") and os.path.exists(self.jd_file):
+            logger.info("Clearing job drain detector: %s" % self.jd_file)
             try:
-                os.unlink(self.job_drain_file)
+                os.unlink(self.jd_file)
             except:
                 pass
         elif status == self.JOB_FAILED:
-            if os.path.exists(self.job_drain_file):
-                with open(self.job_drain_file) as f:
+            if os.path.exists(self.jd_file):
+                with open(self.jd_file) as f:
                     jd = json.load(f)
 
                 pid = os.getpid()
@@ -424,15 +433,15 @@ class ContainerBase:
                         "starttime": time.time(),
                         "pid": pid
                     }
-                logger.info("Loaded job drain detector: %s" % self.job_drain_file)
+                logger.info("Loaded job drain detector: %s" % self.jd_file)
                 logger.info("Initial job drain detector payload: %s" % json.dumps(jd))
                 logger.info("Incrementing failure count")
                 jd["count"] += 1
 
-                with open(self.job_drain_file, "w") as f:
+                with open(self.jd_file, "w") as f:
                     json.dump(jd, f, indent=2, sort_keys=True)
 
-                logger.info("Updated job drain detector: %s" % self.job_drain_file)
+                logger.info("Updated job drain detector: %s" % self.jd_file)
                 fn = time.time()
                 diff = fn - jd["starttime"]
                 rate = jd["count"] / diff
@@ -452,9 +461,9 @@ class ContainerBase:
                     "starttime": time.time(),
                     "pid": os.getpid()
                 }
-                with open(self.job_drain_file, "w") as f:
+                with open(self.jd_file, "w") as f:
                     json.dump(jd, f, indent=2, sort_keys=True)
-                logger.info("Created job drain detector: %s" % self.job_drain_file)
+                logger.info("Created job drain detector: %s" % self.jd_file)
                 logger.info("Job drain detector payload: %s" % json.dumps(jd))
         return False
 
@@ -502,7 +511,7 @@ class ContainerBase:
         if self.job_drain_detected():
             log_custom_event("worker_anomaly", "job_drain", self.job_status_json)
             try:
-                os.unlink(self.job_drain_file)
+                os.unlink(self.jd_file)
             except:
                 pass
             self.shutdown_worker(self.job_status_json["celery_hostname"])
@@ -553,6 +562,7 @@ class ContainerBase:
         if datasets_cfg_file is None:
             error = "Environment variable HYSDS_DATASETS_CFG is not set."
             self.fail_job(error)
+        self.job["job_info"]["datasets_cfg_file"] = datasets_cfg_file
 
         logger.info("HYSDS_DATASETS_CFG:%s" % datasets_cfg_file)
         if not os.path.exists(datasets_cfg_file):
@@ -578,7 +588,7 @@ class ContainerBase:
             cmd_payload_list = shlex.split(self.cmd_payload)
             self.worker_cfg = {
                 "configs": [{
-                    "type": self.job["type"],
+                    "type": self.job_type,
                     "command": {
                         "path": cmd_payload_list[0],
                         "options": [],
@@ -595,22 +605,22 @@ class ContainerBase:
             self.worker_cfg["webdav_port"] = os.environ["HYSDS_WEBDAV_PORT"]
         if "HYSDS_WEBDAV_URL" in os.environ:
             self.worker_cfg["webdav_url"] = os.environ["HYSDS_WEBDAV_URL"]
-        if self.disk_usage_payload is not None:
-            self.worker_cfg["configs"][0]["disk_usage"] = self.disk_usage_payload
+        if self.du_payload is not None:
+            self.worker_cfg["configs"][0]["disk_usage"] = self.du_payload
 
         # structure of work_cfgs: { <job.type>: { ... }, <job.type>: { ... }, ... }
         self.work_cfgs = {cfg["type"]: cfg for cfg in self.worker_cfg["configs"]}
-        if self.job["type"] not in self.work_cfgs:
-            error = "No work configuration for type '%s'." % self.job["type"]
+        if self.job_type not in self.work_cfgs:
+            error = "No work configuration for type '%s'." % self.job_type
             self.fail_job(error)
 
         self.root_work_dir = self.worker_cfg.get("root_work_dir", app.conf.ROOT_WORK_DIR)
         self.tasks_dir = os.path.join(self.root_work_dir, "tasks")
 
-        self.web_dav_port = str(self.worker_cfg.get("webdav_port", app.conf.WEBDAV_PORT))
-        self.web_dav_url = self.worker_cfg.get("webdav_url", app.conf.get("WEBDAV_URL"))
+        self.webdav_port = str(self.worker_cfg.get("webdav_port", app.conf.WEBDAV_PORT))
+        self.webdav_url = self.worker_cfg.get("webdav_url", app.conf.get("WEBDAV_URL"))
 
-        command = self.work_cfgs[self.job["type"]]["command"]
+        command = self.work_cfgs[self.job_type]["command"]
         self.job["command"] = command
 
     def make_cache_dir(self):
@@ -622,10 +632,12 @@ class ContainerBase:
             self.fail_job(error)
 
     def make_job_dir(self):
-        """Set the job directory vaiable and create the job directory for the PGE"""
+        """
+        Set the job directory variable and create the job directory for the PGE
+        Update the job_info dictionary with the job directory and metrics
+        """
         self.jobs_dir = os.path.join(self.root_work_dir, "jobs")
-
-        yr, mo, dy, hr, mi, se, wd, y, z = time.gmtime()
+        yr, mo, dy, hr, mi, se, wd, y, z = self.time_split
         self.job_dir = os.path.join(
             self.root_work_dir,
             self.jobs_dir,
@@ -641,3 +653,191 @@ class ContainerBase:
         except Exception as e:
             error = str(e)
             self.fail_job(error)
+
+        self.job["job_info"].update(
+            {
+                "job_dir": self.job_dir,
+                "metrics": {
+                    "inputs_localized": [],
+                    "products_staged": [],
+                    "job_dir_size": 0,
+                    "usage_stats": [],
+                },
+            }
+        )
+
+    def create_job_running_file(self):
+        """Create the .running file in the job directory"""
+        job_running_file = os.path.join(self.job_dir, ".running")
+        try:
+            with open(job_running_file, "w") as f:
+                f.write("%sZ\n" % datetime.utcnow().isoformat())
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)
+
+    def retrieve_facts(self):
+        # get worker instance facts
+        try:
+            facts = self.get_facts()
+            self.job["job_info"]["facts"] = facts  # add facts and IP info to job info
+            self.job["job_info"]["execute_node"] = facts["hysds_execute_node"]
+            self.job["job_info"]["public_ip"] = facts["hysds_public_ip"]
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)
+
+        # get availability zone, instance id and type
+        # TODO: maybe this can be separated into a different class (since its difference between AWS GCP and Azure)
+        # for md_url, md_name in (
+        #         (AZ_INFO, "ec2_placement_availability_zone"),
+        #         (INS_ID_INFO, "ec2_instance_id"),
+        #         (INS_TYPE_INFO, "ec2_instance_type"),
+        # ):
+        #     try:
+        #         r = requests.get(md_url, timeout=1)
+        #         if r.status_code == 200:
+        #             facts[md_name] = r.content.decode()
+        #     except:
+        #         pass
+
+    def set_webdav_url(self):
+        """
+        add webdav url to job dir
+        """
+        if self.webdav_url is None:
+            self.webdav_url = "http://%s:%s" % (self.job["job_info"]["public_ip"], self.webdav_port)
+
+        yr, mo, dy, hr, mi, se, wd, y, z = self.time_split
+        self.job["job_info"]["job_url"] = os.path.join(
+            self.webdav_url,
+            self.jobs_dir,
+            "%04d" % yr,
+            "%02d" % mo,
+            "%02d" % dy,
+            "%02d" % hr,
+            "%02d" % mi,
+            self.job_id,
+        )
+
+    def set_container_info(self):
+        """
+        Set or overwrite container image name, url and mappings if defined in work config
+        """
+        self.container_image_name = self.work_cfgs[self.job_type].get("container_image_name", None)
+        self.container_image_url = self.work_cfgs[self.job_type].get("container_image_url", None)
+        self.container_mappings = self.work_cfgs[self.job_type].get("container_mappings", {})
+        self.runtime_options = self.work_cfgs[self.job_type].get("runtime_options", {})
+
+        if self.container_image_name is not None and self.container_image_url is not None:
+            self.job["container_image_name"] = self.container_image_name
+            self.job["container_image_url"] = self.container_image_url
+            self.job["container_mappings"] = self.container_mappings
+            self.job["runtime_options"] = self.runtime_options
+            logger.info("Setting image %s (%s) from worker cfg" % (self.container_image_name, self.container_image_url))
+            logger.info("Using container mappings: %s" % self.container_mappings)
+            logger.info("Using runtime options: %s" % self.runtime_options)
+
+        # TODO: work on this part
+        # set or overwrite dependency images
+        dep_imgs = self.work_cfgs[self.job_type].get("dependency_images", [])
+        if len(dep_imgs) > 0:
+            self.job["dependency_images"] = dep_imgs
+            logger.info("Setting dependency_images from worker configuration: %s" % self.job["dependency_images"])
+
+    def write_context_file(self):
+        """write empty context to file"""
+        try:
+            if len(self.context) > 0:
+                self.context = {"context": self.context}
+            self.context.update(self.job["params"])
+            self.context["job_priority"] = self.job.get("priority", None)
+            self.context["container_image_name"] = self.job.get("container_image_name", None)
+            self.context["container_image_url"] = self.job.get("container_image_url", None)
+            self.context["container_mappings"] = self.job.get("container_mappings", {})
+            self.context["runtime_options"] = self.job.get("runtime_options", {})
+            self.context["_prov"] = {"wasGeneratedBy": "task_id:{}".format(self.job["task_id"])}
+            context_file = os.path.join(self.job_dir, "_context.json")
+
+            with open(context_file, "w") as f:
+                json.dump(self.context, f, indent=2, sort_keys=True)
+
+            self.job["job_info"]["context_file"] = context_file
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)
+
+    def write_job_json_file(self):
+        try:
+            job_file = os.path.join(self.job_dir, "_job.json")
+            with open(job_file, "w") as f:
+                json.dump(self.job, f, indent=2, sort_keys=True)
+        except Exception as e:
+            error = str(e)
+            self.fail_job(error)
+
+    def run_pre_processor_steps(self):
+        """
+        :return:
+        """
+        pass
+
+    def check_job_dedup(self):
+        """
+        do dedup check first
+        :return:
+        """
+        if self.dedup is True:
+            try:
+                dj = query_dedup_job(self.payload_hash, filter_id=self.task_id, states=["job-started", "job-completed"],
+                                     is_worker=True)
+            except NoDedupJobFoundException as e:
+                logger.info(str(e))
+                dj = None
+
+            if isinstance(dj, dict):
+                error = "verdi worker found duplicate job %s with status %s" % (dj["_id"], dj["status"])
+                # dedupJob = dj["_id"]
+                raise JobDedupedError(error)
+
+    def run_pre_job_steps_name_in_progress(self):
+        """
+        runs all the pre pre processor steps
+        from the run_job function
+        :return:
+        """
+        self.set_signal_handlers()
+
+        if self.redelivered_job_dup() is True:
+            logger.info("Encountered duplicate redelivered job:%s" % json.dumps(self.job))
+            # return {
+            #     "uuid": self.task_id,
+            #     "job_id": self.job_id,
+            #     "payload_id": self.payload_id,
+            #     "payload_hash": self.payload_hash,
+            #     "dedup": self.dedup,
+            #     "status": "job-deduped",
+            #     "celery_hostname": self.celery_hostname,
+            # }
+            return
+
+        log_task_worker(self.task_id, self.celery_hostname)
+        self.make_work_dir()
+        self.validate_worker_config()
+        self.make_cache_dir()
+
+        disk_usage = self.work_cfgs[self.job_type].get("disk_usage", self.du_payload)
+        threshold = 10.0 if disk_usage is None else get_threshold(self.root_work_dir, disk_usage)
+        self.cleanup(self.root_work_dir, self.jobs_dir, self.tasks_dir, self.cache_dir, threshold=threshold)
+
+        self.make_job_dir()
+        self.create_job_running_file()
+
+        self.get_facts()
+
+        self.set_webdav_url()
+        self.set_container_info()
+        self.write_context_file()
+        self.write_job_json_file()
+
+        self.check_job_dedup()

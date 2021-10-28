@@ -87,3 +87,5 @@ def run_job(job, queue_when_finished=True):
 
     workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, "workers")  # get workers dir
     worker.make_work_dir()
+
+    worker.run_pre_job_steps_name_in_progress()  # runs most or all the previous steps
