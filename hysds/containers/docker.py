@@ -1,29 +1,11 @@
-import os
-import sys
-import json
 import backoff
-import shutil
-from datetime import datetime
 from subprocess import check_output, Popen, PIPE
-from atomicwrites import atomic_write
-from tempfile import mkdtemp
-
-from hysds.log_utils import logger
-from hysds.celery import app
-
-import osaka.main
-
 
 from .base import Base
 
 
 class Docker(Base):
     IMAGE_LOAD_TIME_MAX = 60
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        docker_sock = "/var/run/docker.sock"
-        self.params['volumes'].insert(0, (docker_sock, docker_sock))
 
     @staticmethod
     @backoff.on_exception(backoff.expo, Exception, max_time=IMAGE_LOAD_TIME_MAX)
@@ -44,35 +26,54 @@ class Docker(Base):
         return check_output(["docker", "pull", image])
 
     @staticmethod
-    def tag_image(image):
+    def tag_image(registry_url, image):
         """
         run "docker tag <image>" command
+        :param registry_url;
         :param image: str; docker image name
         """
-        return check_output(["docker", "tag", image])
+        return check_output(["docker", "tag", registry_url, image])
 
-    def get_base_cmd(self):
+    def create_base_cmd(self, params):
         """Parse docker params and build base docker command line list."""
 
-        # build command
         docker_cmd_base = [
             "docker",
             "run",
             "--init",
             "--rm",
             "-u",
-            "%s:%s" % (self.params["uid"], self.params["gid"]),
+            "%s:%s" % (params["uid"], params["gid"]),
         ]
 
         # add runtime options
-        for k, v in self.params["runtime_options"].items():
+        for k, v in params["runtime_options"].items():
             docker_cmd_base.extend(["--{}".format(k), v])
 
         # add volumes
-        for k, v in self.params["volumes"]:
+        for k, v in params["volumes"]:
             docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
 
         # set work directory and image
-        docker_cmd_base.extend(["-w", self.params["working_dir"], self.params["image_name"]])
+        docker_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])
 
         return docker_cmd_base
+
+    @classmethod
+    def create_container_params(cls, image_name, image_url, image_mappings, root_work_dir, job_dir,
+                                runtime_options=None):
+        """
+        Builds docker params
+        :param image_name:
+        :param image_url:
+        :param image_mappings:
+        :param root_work_dir:
+        :param job_dir:
+        :param runtime_options:
+        :return:
+        """
+        params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
+                                                 runtime_options)
+        docker_sock = "/var/run/docker.sock"
+        params['volumes'].append((docker_sock, docker_sock))
+        return params

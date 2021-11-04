@@ -13,12 +13,10 @@ from future import standard_library
 
 standard_library.install_aliases()
 import os
-import sys
 import time
 import socket
 import json
 import traceback
-import types
 import requests
 import shutil
 import re
@@ -30,7 +28,7 @@ from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
 
-import hysds
+# import hysds
 from hysds.celery import app
 from hysds.log_utils import (
     logger,
@@ -53,12 +51,14 @@ from hysds.utils import (
     query_dedup_job,
     NoDedupJobFoundException,
     makedirs,
-    find_dataset_json,
+    # find_dataset_json,
     find_cache_dir,
 )
-from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
+# from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
+
+from hysds.containers.docker import Docker
 
 
 # built-in pre-processors
@@ -1066,16 +1066,14 @@ def run_job(job, queue_when_finished=True):
         image_url = job.get("container_image_url", None)
         image_mappings = job.get("container_mappings", {})
         runtime_options = job.get("runtime_options", {})
+
         if image_name is not None:
-            image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            image_info = Docker.ensure_image_loaded(image_name, image_url, cache_dir_abs)
             job["container_image_id"] = image_info["Id"]
             context["container_image_id"] = job["container_image_id"]
         for i, dep_img in enumerate(job.get("dependency_images", [])):
-            dep_image_info = ensure_image_loaded(
-                dep_img["container_image_name"],
-                dep_img["container_image_url"],
-                cache_dir_abs,
-            )
+            dep_image_info = Docker.ensure_image_loaded(dep_img["container_image_name"], dep_img["container_image_url"],
+                                                        cache_dir_abs)
             dep_img["container_image_id"] = dep_image_info["Id"]
             ctx_dep_img = context["job_specification"]["dependency_images"][i]
             ctx_dep_img["container_image_id"] = dep_img["container_image_id"]
@@ -1101,27 +1099,26 @@ def run_job(job, queue_when_finished=True):
             pre_processor_sigs.append(func(job, context))
 
         # run real-time monitor
-        cmdLineList = [job["command"]["path"]]
+        cmd_line_list = [job["command"]["path"]]
         for opt in job["command"]["options"]:
-            cmdLineList.append(opt)
+            cmd_line_list.append(opt)
         for arg in job["command"]["arguments"]:
             matchArg = re.search(r"^\$(\w+)$", arg)
             if matchArg:
                 arg = job["params"][matchArg.group(1)]
             if isinstance(arg, (list, tuple)):
-                cmdLineList.extend(arg)
+                cmd_line_list.extend(arg)
             else:
-                cmdLineList.append(arg)
+                cmd_line_list.append(arg)
         execEnv = dict(os.environ)
         for env in job["command"]["env"]:
             execEnv[env["key"]] = env["value"]
-        logger.info(" cmdLineList: %s" % cmdLineList)
+        logger.info(" cmd_line_list: %s" % cmd_line_list)
 
         # check if job needs to run in a container
         docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
         if image_name is not None:
-            # get docker params
-            docker_params[image_name] = get_docker_params(
+            docker_params[image_name] = Docker.create_container_params(
                 image_name,
                 image_url,
                 image_mappings,
@@ -1131,12 +1128,13 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
-            logger.info(" docker cmdLineList: %s" % cmdLineList)
+            cmd_line_list = Docker.create_container_cmd(image_name, cmd_line_list)
+            logger.info(" docker cmd_line_list: %s" % cmd_line_list)
 
         # build docker params for dependency containers
         for dep_img in job.get("dependency_images", []):
-            docker_params[dep_img["container_image_name"]] = get_docker_params(
+            dependency_image_name = dep_img["container_image_name"]
+            docker_params[dependency_image_name] = Docker.create_container_params(
                 dep_img["container_image_name"],
                 dep_img["container_image_url"],
                 dep_img["container_mappings"],
@@ -1145,9 +1143,8 @@ def run_job(job, queue_when_finished=True):
                 runtime_options=dep_img.get("runtime_options", {}),
             )
 
-        # dump docker params to file
+        docker_params_file = os.path.join(job_dir, "_docker_params.json")  # dump docker params to file
         try:
-            docker_params_file = os.path.join(job_dir, "_docker_params.json")
             with open(docker_params_file, "w") as f:
                 json.dump(docker_params, f, indent=2, sort_keys=True)
         except Exception as e:
@@ -1160,9 +1157,9 @@ def run_job(job, queue_when_finished=True):
             raise RuntimeError(err)
 
         # make sure command-line list items are string
-        cmdLineList = [str(i) for i in cmdLineList]
-        cmdLine = " ".join(cmdLineList)
-        logger.info(" cmdLine: %s" % cmdLine)
+        cmd_line_list = [str(i) for i in cmd_line_list]
+        cmd_line = " ".join(cmd_line_list)
+        logger.info(" cmd_line: %s" % cmd_line)
 
         # dump run script for rerun
         run_script = os.path.join(job_dir, "_run.sh")
@@ -1175,7 +1172,7 @@ def run_job(job, queue_when_finished=True):
             # dump job env for execution
             for env in job["command"]["env"]:
                 f.write("export %s=%s\n" % (env["key"], env["value"]))
-            f.write("\n%s\n" % cmdLine)
+            f.write("\n%s\n" % cmd_line)
         try:
             os.chmod(run_script, 0o755)
         except:
@@ -1192,7 +1189,7 @@ def run_job(job, queue_when_finished=True):
 
             # use pymonitoredrunner by default
             monitoredRunner = MonitoredRunner(
-                cmdLineList, job_dir, execEnv, app.conf.PYMONITOREDRUNNER_CFG, job_id
+                cmd_line_list, job_dir, execEnv, app.conf.PYMONITOREDRUNNER_CFG, job_id
             )
             monitoredRunner.start()
 
