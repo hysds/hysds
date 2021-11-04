@@ -59,7 +59,7 @@ from hysds.container_utils import ensure_image_loaded, get_docker_params, get_do
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
 
-from .base import ContainerBase, WorkerExecutionError
+from .base import Worker, WorkerExecutionError
 
 
 @app.task
@@ -74,7 +74,7 @@ def run_job(job, queue_when_finished=True):
     job["delivery_info"] = run_job.request.delivery_info
     job["celery_hostname"] = run_job.request.hostname  # TODO: add this here to use in the class
 
-    worker = ContainerBase(job)  # TODO: use a factory instead
+    worker = Worker(job)  # TODO: use a factory instead
 
     if app.conf.HYSDS_HANDLE_SIGNALS:
         worker.set_signal_handlers()

@@ -72,9 +72,7 @@ def get_func(f):
         try:
             return getattr(mod, func_name)
         except AttributeError:
-            logger.error(
-                'Failed to get function "%s" from module "%s".' % (func_name, mod_name)
-            )
+            logger.error('Failed to get function "%s" from module "%s".' % (func_name, mod_name))
             raise
     else:
         try:
