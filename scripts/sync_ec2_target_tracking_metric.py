@@ -25,8 +25,8 @@ log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 
-def get_waiting_job_count(queue, user="guest", password="guest"):
-    """Return number of jobs waiting."""
+def get_total_job_count(queue, user="guest", password="guest"):
+    """Return total number of jobs for a queue."""
 
     # get rabbitmq admin api host
     host = (
@@ -35,12 +35,12 @@ def get_waiting_job_count(queue, user="guest", password="guest"):
         .get("hostname", "localhost")
     )
 
-    # get number of jobs waiting (ready)
+    # get total number of jobs
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
     r = requests.get(url, auth=(user, password))
     # r.raise_for_status()
     if r.status_code == 200:
-        return r.json()["messages_ready"]
+        return r.json()["messages"]
     else:
         return 0
 
@@ -106,7 +106,7 @@ def put_metric_data(client, metric_name, metric_ns, asg, queue, metric):
 def submit_metric(queue, asg, metric, metric_ns):
     """Submit EC2 custom metric data."""
 
-    metric_name = "JobsWaitingPerInstance-%s" % (asg)
+    metric_name = "JobsPerInstance-%s" % (asg)
     client = boto3.client("cloudwatch")
     put_metric_data(client, metric_name, metric_ns, asg, queue, metric)
     logging.info(
@@ -116,15 +116,15 @@ def submit_metric(queue, asg, metric, metric_ns):
 
 
 def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
-    """Submit EC2 custom metric for jobs waiting to be run."""
+    """Submit EC2 custom metric for the ratio of jobs to workers."""
 
     logging.info("queue: %s" % queue)
     logging.info("interval: %d" % interval)
     logging.info("namespace: %s" % namespace)
     while True:
         try:
-            job_count = float(get_waiting_job_count(queue, user, password))
-            logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
+            job_count = float(get_total_job_count(queue, user, password))
+            logging.info("jobs_total for %s queue: %s" % (queue, job_count))
             desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
@@ -143,7 +143,7 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
 
 
 if __name__ == "__main__":
-    desc = "Sync EC2 custom metric for number of jobs waiting to be run for a queue."
+    desc = "Sync EC2 custom metric for ratio of jobs to workers for a queue."
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("queue", help="HySDS job queue to monitor")
     parser.add_argument("asg", help="Autoscaling group name")
