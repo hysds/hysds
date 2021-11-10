@@ -120,7 +120,7 @@ def submit_metric(queue, asg, metric, metric_ns, total_jobs=False):
 
 
 def daemon(queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False):
-    """Submit EC2 custom metric for the ratio of jobs to workers."""
+    """Submit EC2 custom metric for an ASG's target tracking policy."""
 
     logging.info("queue: %s" % queue)
     logging.info("interval: %d" % interval)
