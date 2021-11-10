@@ -72,7 +72,9 @@ def get_desired_capacity_max(asg):
 def set_desired_capacity(client, asg, desired):
     """Backoff wrapper for set_desired_capacity()."""
 
-    return client.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
+    return client.set_desired_capacity(
+        AutoScalingGroupName=asg, DesiredCapacity=int(desired)
+    )
 
 
 def bootstrap_asg(asg, desired):
@@ -119,7 +121,9 @@ def submit_metric(queue, asg, metric, metric_ns, total_jobs=False):
     )
 
 
-def daemon(queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False):
+def daemon(
+    queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False
+):
     """Submit EC2 custom metric for an ASG's target tracking policy."""
 
     logging.info("queue: %s" % queue)
@@ -135,7 +139,11 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest", tota
             desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
-                    desired_capacity = float(bootstrap_asg(asg, max_size if job_count > max_size else job_count))
+                    desired_capacity = float(
+                        bootstrap_asg(
+                            asg, max_size if job_count > max_size else job_count
+                        )
+                    )
                     logging.info(
                         "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
                     )
@@ -162,9 +170,19 @@ if __name__ == "__main__":
     )
     parser.add_argument("-u", "--user", default="guest", help="rabbitmq user")
     parser.add_argument("-p", "--password", default="guest", help="rabbitmq password")
-    parser.add_argument("-t", "--total_jobs", action="store_true",
-                        help="use total job count instead of waiting job count (default)")
+    parser.add_argument(
+        "-t",
+        "--total_jobs",
+        action="store_true",
+        help="use total job count instead of waiting job count (default)",
+    )
     args = parser.parse_args()
     daemon(
-        args.queue, args.asg, args.interval, args.namespace, args.user, args.password, args.total_jobs
+        args.queue,
+        args.asg,
+        args.interval,
+        args.namespace,
+        args.user,
+        args.password,
+        args.total_jobs,
     )
