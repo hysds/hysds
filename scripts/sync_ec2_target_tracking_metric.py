@@ -36,7 +36,7 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
         .get("hostname", "localhost")
     )
 
-    # get total number of jobs
+    # get number of jobs
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
     r = requests.get(url, auth=(user, password))
     # r.raise_for_status()
