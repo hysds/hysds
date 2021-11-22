@@ -63,14 +63,15 @@ class Base:
         """
         raise RuntimeError("method 'create_base_cmd' must be defined in the derived class")
 
-    def create_container_cmd(self, cmd_line_list):
+    def create_container_cmd(self, params, cmd_line_list):
         """
         builds the final command which will run in the container
             ex. [ "docker", "run", "--init", "--rm", "-u", "0:0", "python", "foo.py", "args" ]
+        :param params: Dict[str, any]
         :param cmd_line_list: List[str]
         :return:
         """
-        docker_cmd = self.create_base_cmd()  # build command
+        docker_cmd = self.create_base_cmd(params)  # build command
         docker_cmd.extend([str(i) for i in cmd_line_list])  # set command
         return docker_cmd
 
@@ -107,7 +108,8 @@ class Base:
         logger.info("Copied container mount {} to {}.".format(path, mnt_path))
         return os.path.join(mnt_dir, os.path.basename(path))
 
-    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
+    @classmethod
+    def create_container_params(cls, image_name, image_url, image_mappings, root_work_dir, job_dir,
                                 runtime_options=None):
         """
         Build container params for runtime.
@@ -163,7 +165,7 @@ class Base:
         # add user-defined image mappings
         for k, v in list(image_mappings.items()):
             k = os.path.expandvars(k)
-            self.verify_container_mount(k, blacklist)
+            cls.verify_container_mount(k, blacklist)
 
             mode = "ro"
             if isinstance(v, list):
@@ -178,7 +180,7 @@ class Base:
             else:
                 mnt = os.path.join(job_dir, v)
             if mnt_dir is not None:
-                k = self.copy_mount(k, mnt_dir)
+                k = cls.copy_mount(k, mnt_dir)
             params["volumes"].append((k, "%s:%s" % (mnt, mode)))
 
         # add runtime resources

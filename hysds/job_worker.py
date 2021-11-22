@@ -58,7 +58,7 @@ from hysds.utils import (
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
 
-from hysds.containers.docker import Docker
+from hysds.containers.factory import container_engine_factory
 
 
 # built-in pre-processors
@@ -1067,13 +1067,16 @@ def run_job(job, queue_when_finished=True):
         image_mappings = job.get("container_mappings", {})
         runtime_options = job.get("runtime_options", {})
 
+        container_engine = container_engine_factory("docker")
+
         if image_name is not None:
-            image_info = Docker.ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
             job["container_image_id"] = image_info["Id"]
             context["container_image_id"] = job["container_image_id"]
         for i, dep_img in enumerate(job.get("dependency_images", [])):
-            dep_image_info = Docker.ensure_image_loaded(dep_img["container_image_name"], dep_img["container_image_url"],
-                                                        cache_dir_abs)
+            dep_image_info = container_engine.ensure_image_loaded(dep_img["container_image_name"],
+                                                                  dep_img["container_image_url"],
+                                                                  cache_dir_abs)
             dep_img["container_image_id"] = dep_image_info["Id"]
             ctx_dep_img = context["job_specification"]["dependency_images"][i]
             ctx_dep_img["container_image_id"] = dep_img["container_image_id"]
@@ -1118,7 +1121,7 @@ def run_job(job, queue_when_finished=True):
         # check if job needs to run in a container
         docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
         if image_name is not None:
-            docker_params[image_name] = Docker.create_container_params(
+            docker_params[image_name] = container_engine.create_container_params(
                 image_name,
                 image_url,
                 image_mappings,
@@ -1128,13 +1131,13 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmd_line_list = Docker.create_container_cmd(image_name, cmd_line_list)
+            cmd_line_list = container_engine.create_container_cmd(image_name, cmd_line_list)
             logger.info(" docker cmd_line_list: %s" % cmd_line_list)
 
         # build docker params for dependency containers
         for dep_img in job.get("dependency_images", []):
             dependency_image_name = dep_img["container_image_name"]
-            docker_params[dependency_image_name] = Docker.create_container_params(
+            docker_params[dependency_image_name] = container_engine.create_container_params(
                 dep_img["container_image_name"],
                 dep_img["container_image_url"],
                 dep_img["container_mappings"],
@@ -1268,8 +1271,7 @@ def run_job(job, queue_when_finished=True):
         # add prov associations
         if len(job["job_info"]["metrics"]["inputs_localized"]) > 0:
             context["_prov"]["wasDerivedFrom"] = [
-                "url:{}".format(i["url"])
-                for i in job["job_info"]["metrics"]["inputs_localized"]
+                "url:{}".format(i["url"]) for i in job["job_info"]["metrics"]["inputs_localized"]
             ]
 
             # update context file with prov associations

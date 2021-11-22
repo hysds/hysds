@@ -1,14 +1,13 @@
 import backoff
-from subprocess import check_output, Popen, PIPE
+from subprocess import check_output  # Popen, PIPE
 
 from .base import Base
 
 
 class Docker(Base):
-    IMAGE_LOAD_TIME_MAX = 60
 
     @staticmethod
-    @backoff.on_exception(backoff.expo, Exception, max_time=IMAGE_LOAD_TIME_MAX)
+    @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
     def inspect_image(image):
         """
         inspect the container image; ex. docker inspect <image>
@@ -35,7 +34,12 @@ class Docker(Base):
         return check_output(["docker", "tag", registry_url, image])
 
     def create_base_cmd(self, params):
-        """Parse docker params and build base docker command line list."""
+        """
+        Parse docker params and build base docker command line list
+        params input must have "uid" and "gid" key
+        :param params: Dict[str, any]
+        :return: List[str]
+        """
 
         docker_cmd_base = [
             "docker",
@@ -75,5 +79,5 @@ class Docker(Base):
         params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
                                                  runtime_options)
         docker_sock = "/var/run/docker.sock"
-        params['volumes'].append((docker_sock, docker_sock))
+        params['volumes'].insert(0, (docker_sock, docker_sock, ))
         return params
