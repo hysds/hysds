@@ -1,11 +1,11 @@
 import backoff
 from subprocess import check_output  # Popen, PIPE
 
-from .base import Base
+# from .base import Base
+from hysds.containers.base import Base
 
 
 class Docker(Base):
-
     @staticmethod
     @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
     def inspect_image(image):
@@ -47,7 +47,7 @@ class Docker(Base):
             "--init",
             "--rm",
             "-u",
-            "%s:%s" % (params["uid"], params["gid"]),
+            "{}:{}".format(params["uid"], params["gid"]),
         ]
 
         # add runtime options
