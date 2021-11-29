@@ -47,7 +47,7 @@ class Docker(Base):
             "--init",
             "--rm",
             "-u",
-            "{}:{}".format(params["uid"], params["gid"]),
+            "%s:%s" % (params["uid"], params["gid"]),
         ]
 
         # add runtime options

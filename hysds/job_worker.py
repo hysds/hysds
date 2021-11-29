@@ -490,7 +490,6 @@ def run_job(job, queue_when_finished=True):
     # TODO: leave this here
     job["task_id"] = run_job.request.id
     job["delivery_info"] = run_job.request.delivery_info
-    job["celery_hostname"] = run_job.request.hostname  # TODO: add this here to use in the class
 
     # get context
     context = job.get("context", {})
@@ -1131,7 +1130,7 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmd_line_list = container_engine.create_container_cmd(image_name, cmd_line_list)
+            cmd_line_list = container_engine.create_container_cmd(docker_params[image_name], cmd_line_list)
             logger.info(" docker cmd_line_list: %s" % cmd_line_list)
 
         # build docker params for dependency containers
