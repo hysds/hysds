@@ -117,7 +117,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
                 logging.info("%s: no .done file found. Not jobless yet." % job_dir)
                 return False
             t = os.path.getmtime(done_file)
-            done_dt = datetime.fromtimestamp(t)
+            done_dt = datetime.utcfromtimestamp(t)
             age = (datetime.utcnow() - done_dt).total_seconds()
             if most_recent is None or age < most_recent:
                 most_recent = age

@@ -25,8 +25,9 @@ log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 
-def get_waiting_job_count(queue, user="guest", password="guest"):
-    """Return number of jobs waiting."""
+def get_job_count(queue, user="guest", password="guest", total_jobs=False):
+    """Return number of waiting jobs for a queue. If total_jobs is set 
+       to True, then the total number of jobs for a queue is returned."""
 
     # get rabbitmq admin api host
     host = (
@@ -35,12 +36,12 @@ def get_waiting_job_count(queue, user="guest", password="guest"):
         .get("hostname", "localhost")
     )
 
-    # get number of jobs waiting (ready)
+    # get number of jobs
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
     r = requests.get(url, auth=(user, password))
     # r.raise_for_status()
     if r.status_code == 200:
-        return r.json()["messages_ready"]
+        return r.json()["messages" if total_jobs else "messages_ready"]
     else:
         return 0
 
@@ -71,7 +72,9 @@ def get_desired_capacity_max(asg):
 def set_desired_capacity(client, asg, desired):
     """Backoff wrapper for set_desired_capacity()."""
 
-    return client.set_desired_capacity(AutoScalingGroupName=asg, DesiredCapacity=int(desired))
+    return client.set_desired_capacity(
+        AutoScalingGroupName=asg, DesiredCapacity=int(desired)
+    )
 
 
 def bootstrap_asg(asg, desired):
@@ -103,10 +106,13 @@ def put_metric_data(client, metric_name, metric_ns, asg, queue, metric):
     )
 
 
-def submit_metric(queue, asg, metric, metric_ns):
+def submit_metric(queue, asg, metric, metric_ns, total_jobs=False):
     """Submit EC2 custom metric data."""
 
-    metric_name = "JobsWaitingPerInstance-%s" % (asg)
+    if total_jobs:
+        metric_name = "JobsPerInstance-%s" % (asg)
+    else:
+        metric_name = "JobsWaitingPerInstance-%s" % (asg)
     client = boto3.client("cloudwatch")
     put_metric_data(client, metric_name, metric_ns, asg, queue, metric)
     logging.info(
@@ -115,27 +121,36 @@ def submit_metric(queue, asg, metric, metric_ns):
     )
 
 
-def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
-    """Submit EC2 custom metric for jobs waiting to be run."""
+def daemon(
+    queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False
+):
+    """Submit EC2 custom metric for an ASG's target tracking policy."""
 
     logging.info("queue: %s" % queue)
     logging.info("interval: %d" % interval)
     logging.info("namespace: %s" % namespace)
     while True:
         try:
-            job_count = float(get_waiting_job_count(queue, user, password))
-            logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
+            job_count = float(get_job_count(queue, user, password, total_jobs))
+            if total_jobs:
+                logging.info("jobs_total for %s queue: %s" % (queue, job_count))
+            else:
+                logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
             desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
-                    desired_capacity = float(bootstrap_asg(asg, max_size if job_count > max_size else job_count))
+                    desired_capacity = float(
+                        bootstrap_asg(
+                            asg, max_size if job_count > max_size else job_count
+                        )
+                    )
                     logging.info(
                         "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
                     )
                 else:
                     desired_capacity = 1.0
             metric = job_count / desired_capacity
-            submit_metric(queue, asg, metric, namespace)
+            submit_metric(queue, asg, metric, namespace, total_jobs)
         except Exception as e:
             logging.error("Got error: %s" % e)
             logging.error(traceback.format_exc())
@@ -143,7 +158,7 @@ def daemon(queue, asg, interval, namespace, user="guest", password="guest"):
 
 
 if __name__ == "__main__":
-    desc = "Sync EC2 custom metric for number of jobs waiting to be run for a queue."
+    desc = "Sync EC2 custom metric to drive target tracking autoscaling policy."
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("queue", help="HySDS job queue to monitor")
     parser.add_argument("asg", help="Autoscaling group name")
@@ -155,7 +170,19 @@ if __name__ == "__main__":
     )
     parser.add_argument("-u", "--user", default="guest", help="rabbitmq user")
     parser.add_argument("-p", "--password", default="guest", help="rabbitmq password")
+    parser.add_argument(
+        "-t",
+        "--total_jobs",
+        action="store_true",
+        help="use total job count instead of waiting job count (default)",
+    )
     args = parser.parse_args()
     daemon(
-        args.queue, args.asg, args.interval, args.namespace, args.user, args.password
+        args.queue,
+        args.asg,
+        args.interval,
+        args.namespace,
+        args.user,
+        args.password,
+        args.total_jobs,
     )
