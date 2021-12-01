@@ -1101,21 +1101,21 @@ def run_job(job, queue_when_finished=True):
             pre_processor_sigs.append(func(job, context))
 
         # run real-time monitor
-        cmd_line_list = [job["command"]["path"]]
+        cmdLineList = [job["command"]["path"]]
         for opt in job["command"]["options"]:
-            cmd_line_list.append(opt)
+            cmdLineList.append(opt)
         for arg in job["command"]["arguments"]:
             matchArg = re.search(r"^\$(\w+)$", arg)
             if matchArg:
                 arg = job["params"][matchArg.group(1)]
             if isinstance(arg, (list, tuple)):
-                cmd_line_list.extend(arg)
+                cmdLineList.extend(arg)
             else:
-                cmd_line_list.append(arg)
+                cmdLineList.append(arg)
         execEnv = dict(os.environ)
         for env in job["command"]["env"]:
             execEnv[env["key"]] = env["value"]
-        logger.info(" cmd_line_list: %s" % cmd_line_list)
+        logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
         docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
@@ -1130,8 +1130,8 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmd_line_list = container_engine.create_container_cmd(docker_params[image_name], cmd_line_list)
-            logger.info(" docker cmd_line_list: %s" % cmd_line_list)
+            cmdLineList = container_engine.create_container_cmd(docker_params[image_name], cmdLineList)
+            logger.info(" docker cmdLineList: %s" % cmdLineList)
 
         # build docker params for dependency containers
         for dep_img in job.get("dependency_images", []):
@@ -1159,9 +1159,9 @@ def run_job(job, queue_when_finished=True):
             raise RuntimeError(err)
 
         # make sure command-line list items are string
-        cmd_line_list = [str(i) for i in cmd_line_list]
-        cmd_line = " ".join(cmd_line_list)
-        logger.info(" cmd_line: %s" % cmd_line)
+        cmdLineList = [str(i) for i in cmdLineList]
+        cmdLine = " ".join(cmdLineList)
+        logger.info(" cmdLine: %s" % cmdLine)
 
         # dump run script for rerun
         run_script = os.path.join(job_dir, "_run.sh")
@@ -1174,7 +1174,7 @@ def run_job(job, queue_when_finished=True):
             # dump job env for execution
             for env in job["command"]["env"]:
                 f.write("export %s=%s\n" % (env["key"], env["value"]))
-            f.write("\n%s\n" % cmd_line)
+            f.write("\n%s\n" % cmdLine)
         try:
             os.chmod(run_script, 0o755)
         except:
@@ -1191,7 +1191,7 @@ def run_job(job, queue_when_finished=True):
 
             # use pymonitoredrunner by default
             monitoredRunner = MonitoredRunner(
-                cmd_line_list, job_dir, execEnv, app.conf.PYMONITOREDRUNNER_CFG, job_id
+                cmdLineList, job_dir, execEnv, app.conf.PYMONITOREDRUNNER_CFG, job_id
             )
             monitoredRunner.start()
 
