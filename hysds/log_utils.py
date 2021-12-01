@@ -10,13 +10,13 @@ from future import standard_library
 
 standard_library.install_aliases()
 import os
-import re
+# import re
 import json
-import copy
+# import copy
 import socket
 import msgpack
-import traceback
-import types
+# import traceback
+# import types
 import backoff
 from datetime import datetime
 from uuid import uuid4
@@ -146,6 +146,7 @@ def set_redis_payload_hash_pool():
             app.conf.REDIS_JOB_STATUS_URL
         )
 
+
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
@@ -175,7 +176,9 @@ def log_task_worker(task_id, worker):
     r.setex(TASK_WORKER_KEY_TMPL % task_id, app.conf.HYSDS_JOB_STATUS_EXPIRES, worker)
 
 
-@backoff.on_exception(backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def get_task_worker(task_id):
     """Retrieve task worker by task ID from redis."""
 
@@ -188,7 +191,9 @@ def get_task_worker(task_id):
     return res.decode() if hasattr(res, "decode") else res
 
 
-@backoff.on_exception(backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def get_worker_status(worker):
     """Retrieve worker status by worker ID from redis."""
 
@@ -201,7 +206,9 @@ def get_worker_status(worker):
     return res.decode() if hasattr(res, "decode") else res
 
 
-@backoff.on_exception(backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def get_job_status(task_id):
     """Retrieve job status by task ID from redis."""
 

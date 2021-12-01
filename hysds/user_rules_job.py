@@ -138,7 +138,9 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     return True
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_finished_job(_id):
     """Queue job id for user_rules_job evaluation."""
     payload = {
@@ -149,7 +151,9 @@ def queue_finished_job(_id):
     hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 
 
-@backoff.on_exception(backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value)
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
 def queue_job_trigger(doc_res, rule):
     """Trigger job rule execution."""
     payload = {

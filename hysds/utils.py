@@ -352,8 +352,12 @@ def no_dedup_job(details):
     return None
 
 
-@backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32)
-@backoff.on_exception(backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job)
+@backoff.on_exception(
+    backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
+)
+@backoff.on_exception(
+    backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
+)
 def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     """
     Return job IDs with matching dedup key defined in states
