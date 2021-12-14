@@ -1,14 +1,13 @@
 import backoff
-from subprocess import check_output  # Popen, PIPE
+from subprocess import check_output,  Popen, PIPE
 
 # from .base import Base
 from hysds.containers.base import Base
 
 
 class Docker(Base):
-    @staticmethod
-    @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
-    def inspect_image(image):
+    @classmethod
+    def inspect_image(cls, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -16,22 +15,41 @@ class Docker(Base):
         """
         return check_output(["docker", "inspect", image])
 
-    @staticmethod
-    def pull_image(image):
+    @classmethod
+    @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
+    def inspect_image_with_backoff(cls, image):
+        """
+        inspect the container image; ex. docker inspect <image>
+        :param image: str
+        :return: byte str
+        """
+        return cls.inspect_image(image)
+
+    @classmethod
+    def pull_image(cls, image):
         """
         run "docker pull <image>" command
         :param image: str; docker image name
         """
         return check_output(["docker", "pull", image])
 
-    @staticmethod
-    def tag_image(registry_url, image):
+    @classmethod
+    def tag_image(cls, registry_url, image):
         """
         run "docker tag <image>" command
         :param registry_url;
         :param image: str; docker image name
         """
         return check_output(["docker", "tag", registry_url, image])
+
+    @classmethod
+    def load_image(cls, image_file):
+        """
+        Loads image into the container engine, ex. "docker load -i <image_file>"
+        :param image_file: str, file location of docker image
+        :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
+        """
+        return Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
 
     def create_base_cmd(self, params):
         """

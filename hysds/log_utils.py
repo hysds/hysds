@@ -10,13 +10,13 @@ from future import standard_library
 
 standard_library.install_aliases()
 import os
-# import re
+import re
 import json
-# import copy
+import copy
 import socket
 import msgpack
-# import traceback
-# import types
+import traceback
+import types
 import backoff
 from datetime import datetime
 from uuid import uuid4

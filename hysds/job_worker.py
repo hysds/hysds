@@ -28,7 +28,7 @@ from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
 
-# import hysds
+import hysds  # TODO: may fix some cyclical import issues, will need to test more
 from hysds.celery import app
 from hysds.log_utils import (
     logger,

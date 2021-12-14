@@ -14,7 +14,7 @@ import sys
 import json
 import shutil
 from datetime import datetime
-from subprocess import Popen, PIPE
+# from subprocess import Popen, PIPE
 from atomicwrites import atomic_write
 from tempfile import mkdtemp
 
@@ -27,8 +27,8 @@ import osaka.main
 class Base:
     IMAGE_LOAD_TIME_MAX = 60
 
-    @staticmethod
-    def inspect_image(image):
+    @classmethod
+    def inspect_image(cls, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -36,8 +36,17 @@ class Base:
         """
         raise RuntimeError("method 'inspect_image' must be defined in the derived class")
 
-    @staticmethod
-    def pull_image(image):
+    @classmethod
+    def inspect_image_with_backoff(cls, image):
+        """
+        inspect the container image; ex. docker inspect <image>
+        :param image: str
+        :return: str/byte
+        """
+        raise RuntimeError("method 'inspect_image' must be defined in the derived class")
+
+    @classmethod
+    def pull_image(cls, image):
         """
         Pulls image, ex. run the 'docker pull <image>' command
         :param image:
@@ -45,8 +54,8 @@ class Base:
         """
         raise RuntimeError("method 'pull_image' must be defined in the derived class")
 
-    @staticmethod
-    def tag_image(registry_url, image):
+    @classmethod
+    def tag_image(cls, registry_url, image):
         """
         Tags your image, ex. 'docker tag <image>' command
         :param registry_url: str
@@ -54,6 +63,16 @@ class Base:
         :return: str/byte
         """
         raise RuntimeError("method 'tag_image' must be defined in the derived class")
+
+    @classmethod
+    def load_image(cls, image_file):
+        """
+        Loads image into the container engine, ex. "docker load -i <image_file>"
+        :param image_file: str, file location of docker image
+        :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
+        """
+        # Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
+        raise RuntimeError("method 'load_image' must be defined in the derived class")
 
     def create_base_cmd(self, params):
         """
@@ -75,8 +94,8 @@ class Base:
         docker_cmd.extend([str(i) for i in cmd_line_list])  # set command
         return docker_cmd
 
-    @staticmethod
-    def verify_container_mount(mount, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
+    @classmethod
+    def verify_container_mount(cls, mount, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
         """
         Verify host mount directory, ex. /data/work/...
         :param mount:
@@ -90,8 +109,8 @@ class Base:
                 raise RuntimeError("Cannot mount %s: %s is blacklisted" % (mount, k))
         return True
 
-    @staticmethod
-    def copy_mount(path, mnt_dir):
+    @classmethod
+    def copy_mount(cls, path, mnt_dir):
         """
         Copy path to a directory to be used for mounting into container. Return this path.
         :param path: str
@@ -154,7 +173,7 @@ class Base:
         # if running on k8s add hosts and resolv.conf; create mount directory
         blacklist = app.conf.WORKER_MOUNT_BLACKLIST
         mnt_dir = None
-        on_k8s = int(app.conf.get("K8S", 0))
+        on_k8s = int(app.conf.get("K8S", 0))  # TODO: may look into this for K8 integration
         if on_k8s:
             for f in ("/etc/hosts", "/etc/resolv.conf"):
                 if f not in image_mappings and f not in list(image_mappings.values()):
@@ -233,11 +252,14 @@ class Base:
                     with atomic_write(load_lock) as f:
                         f.write("%sZ\n" % datetime.utcnow().isoformat())
                     logger.info("Loading image %s (%s)" % (image_file, image_name))
-                    p = Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
+                    p = cls.load_image(image_file)
                     stdout, stderr = p.communicate()
                     if p.returncode != 0:
-                        raise RuntimeError("Failed to load image {} ({}): {}".format(image_file, image_name,
-                                                                                     stderr.decode()))
+                        raise RuntimeError(
+                            "Failed to load image {} ({}): {}".format(
+                                image_file, image_name, stderr.decode()
+                            )
+                        )
                     logger.info("Loaded image %s (%s)" % (image_file, image_name))
                     try:
                         os.unlink(image_file)
@@ -250,7 +272,7 @@ class Base:
                 except OSError as e:
                     if e.errno == 17:
                         logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
-                        cls.inspect_image(image_name)
+                        cls.inspect_image_with_backoff(image_name)
                     else:
                         raise
             else:

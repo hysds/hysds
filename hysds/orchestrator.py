@@ -434,8 +434,6 @@ def submit_job(j):
             log_job_status(job_status_json)
 
             # submit job
-            # TODO: determine which "Container" to run it in (docker, podman, singularity, etc.)
-            #   or maybe we can have the run_job function determine it (so we dont have to change anything here)
             res = run_job.apply_async(
                 (job_json,),
                 queue=queue,
