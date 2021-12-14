@@ -81,7 +81,6 @@ SIG_NAMES = {
     15: "terminated",
 }
 
-# TODO: maybe move this to a separate class (http://169.254.169.254 is only used for AWS and Azure)
 # instance metadata urls
 AZ_INFO = "http://169.254.169.254/latest/meta-data/placement/availability-zone"
 INS_TYPE_INFO = "http://169.254.169.254/latest/meta-data/instance-type"
@@ -484,10 +483,9 @@ def run_job(job, queue_when_finished=True):
     dedup = job["job_info"]["dedup"]  # get dedup flag
 
     # job status json
-    job_status_json = {}
+    job_status_json = {}  # TODO: maybe remove this, its re-defined later
 
     # write celery task id and delivery info
-    # TODO: leave this here
     job["task_id"] = run_job.request.id
     job["delivery_info"] = run_job.request.delivery_info
 
@@ -862,8 +860,6 @@ def run_job(job, queue_when_finished=True):
     # get job's .done file
     job_done_file = os.path.join(job_dir, ".done")
 
-    # TODO: use {**dict_a, **dict_b} instead
-    #   move this to constructor (maybe) or put this into a method (call it add_metrics or something)
     # add info for traceability and metrics
     job["job_info"].update(
         {
