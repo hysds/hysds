@@ -227,7 +227,7 @@ class Base:
                     logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
                     registry_url = os.path.join(registry, image_name)
                     logger.info("docker pull {}".format(registry_url))
-                    cls.pull_image(image_name)
+                    cls.pull_image(registry_url)
                     logger.info("docker tag {} {}".format(registry_url, image_name))
                     cls.tag_image(registry_url, image_name)
             except Exception as e:
