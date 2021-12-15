@@ -1,13 +1,12 @@
 import backoff
 from subprocess import check_output,  Popen, PIPE
 
-# from .base import Base
 from hysds.containers.base import Base
 
 
 class Docker(Base):
-    @classmethod
-    def inspect_image(cls, image):
+    @staticmethod
+    def inspect_image(image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -25,16 +24,16 @@ class Docker(Base):
         """
         return cls.inspect_image(image)
 
-    @classmethod
-    def pull_image(cls, image):
+    @staticmethod
+    def pull_image(image):
         """
         run "docker pull <image>" command
         :param image: str; docker image name
         """
         return check_output(["docker", "pull", image])
 
-    @classmethod
-    def tag_image(cls, registry_url, image):
+    @staticmethod
+    def tag_image(registry_url, image):
         """
         run "docker tag <image>" command
         :param registry_url;
@@ -42,8 +41,8 @@ class Docker(Base):
         """
         return check_output(["docker", "tag", registry_url, image])
 
-    @classmethod
-    def load_image(cls, image_file):
+    @staticmethod
+    def load_image(image_file):
         """
         Loads image into the container engine, ex. "docker load -i <image_file>"
         :param image_file: str, file location of docker image
@@ -51,7 +50,8 @@ class Docker(Base):
         """
         return Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
 
-    def create_base_cmd(self, params):
+    @classmethod
+    def create_base_cmd(cls, params):
         """
         Parse docker params and build base docker command line list
         params input must have "uid" and "gid" key

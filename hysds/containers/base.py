@@ -27,8 +27,8 @@ import osaka.main
 class Base:
     IMAGE_LOAD_TIME_MAX = 60
 
-    @classmethod
-    def inspect_image(cls, image):
+    @staticmethod
+    def inspect_image(image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -45,8 +45,8 @@ class Base:
         """
         raise RuntimeError("method 'inspect_image' must be defined in the derived class")
 
-    @classmethod
-    def pull_image(cls, image):
+    @staticmethod
+    def pull_image(image):
         """
         Pulls image, ex. run the 'docker pull <image>' command
         :param image:
@@ -54,8 +54,8 @@ class Base:
         """
         raise RuntimeError("method 'pull_image' must be defined in the derived class")
 
-    @classmethod
-    def tag_image(cls, registry_url, image):
+    @staticmethod
+    def tag_image(registry_url, image):
         """
         Tags your image, ex. 'docker tag <image>' command
         :param registry_url: str
@@ -64,17 +64,17 @@ class Base:
         """
         raise RuntimeError("method 'tag_image' must be defined in the derived class")
 
-    @classmethod
-    def load_image(cls, image_file):
+    @staticmethod
+    def load_image(image_file):
         """
         Loads image into the container engine, ex. "docker load -i <image_file>"
         :param image_file: str, file location of docker image
         :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
         """
-        # Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
         raise RuntimeError("method 'load_image' must be defined in the derived class")
 
-    def create_base_cmd(self, params):
+    @classmethod
+    def create_base_cmd(cls, params):
         """
         Parse docker params and build base docker command line list.
             ex. [ "docker", "run", "--init", "--rm", "-u", ... ]
@@ -82,7 +82,8 @@ class Base:
         """
         raise RuntimeError("method 'create_base_cmd' must be defined in the derived class")
 
-    def create_container_cmd(self, params, cmd_line_list):
+    @classmethod
+    def create_container_cmd(cls, params, cmd_line_list):
         """
         builds the final command which will run in the container
             ex. [ "docker", "run", "--init", "--rm", "-u", "0:0", "python", "foo.py", "args" ]
@@ -90,7 +91,7 @@ class Base:
         :param cmd_line_list: List[str]
         :return:
         """
-        docker_cmd = self.create_base_cmd(params)  # build command
+        docker_cmd = cls.create_base_cmd(params)  # build command
         docker_cmd.extend([str(i) for i in cmd_line_list])  # set command
         return docker_cmd
 
