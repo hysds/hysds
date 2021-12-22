@@ -25,7 +25,7 @@ import osaka.main
 
 
 class Base:
-    IMAGE_LOAD_TIME_MAX = 60
+    IMAGE_LOAD_TIME_MAX = 600
 
     @staticmethod
     def inspect_image(image):
