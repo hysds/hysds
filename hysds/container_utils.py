@@ -29,8 +29,6 @@ import osaka.main
 IMAGE_LOAD_TIME_MAX = 600
 
 
-# TODO: this needs to be separated into a
-
 def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 

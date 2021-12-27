@@ -51,10 +51,8 @@ from hysds.utils import (
     query_dedup_job,
     NoDedupJobFoundException,
     makedirs,
-    # find_dataset_json,
     find_cache_dir,
 )
-# from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
 
@@ -1062,7 +1060,7 @@ def run_job(job, queue_when_finished=True):
         image_mappings = job.get("container_mappings", {})
         runtime_options = job.get("runtime_options", {})
 
-        container_engine = container_engine_factory("docker")
+        container_engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
 
         if image_name is not None:
             image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
