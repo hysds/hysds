@@ -146,6 +146,7 @@ def set_redis_payload_hash_pool():
             app.conf.REDIS_JOB_STATUS_URL
         )
 
+
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
 )

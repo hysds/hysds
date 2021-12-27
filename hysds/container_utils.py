@@ -54,11 +54,17 @@ def copy_mount(path, mnt_dir):
     return os.path.join(mnt_dir, os.path.basename(path))
 
 
-def get_docker_params(
-    image_name, image_url, image_mappings, root_work_dir, job_dir, runtime_options=None
-):
-    """Build docker params."""
-
+def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_dir, runtime_options=None):
+    """
+    Build docker params.
+    :param image_name: str
+    :param image_url: str
+    :param image_mappings: dict
+    :param root_work_dir: str
+    :param job_dir: str
+    :param runtime_options: None/dict
+    :return:
+    """
     # get dirs to mount
     root_jobs_dir = os.path.join(root_work_dir, "jobs")
     root_tasks_dir = os.path.join(root_work_dir, "tasks")
@@ -83,19 +89,13 @@ def get_docker_params(
 
     # add default image mappings
     celery_cfg_file = os.environ.get("HYSDS_CELERY_CFG", app.conf.__file__)
-    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(
-        image_mappings.values()
-    ):
+    if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(image_mappings.values()):
         image_mappings[celery_cfg_file] = "celeryconfig.py"
     dsets_cfg_file = os.environ.get(
         "HYSDS_DATASETS_CFG",
-        os.path.normpath(
-            os.path.join(os.path.dirname(sys.executable), "..", "etc", "datasets.json")
-        ),
+        os.path.normpath(os.path.join(os.path.dirname(sys.executable), "..", "etc", "datasets.json")),
     )
-    if dsets_cfg_file not in image_mappings and "datasets.json" not in list(
-        image_mappings.values()
-    ):
+    if dsets_cfg_file not in image_mappings and "datasets.json" not in list(image_mappings.values()):
         image_mappings[dsets_cfg_file] = "datasets.json"
 
     # if running on k8s add hosts and resolv.conf; create mount directory
@@ -136,9 +136,7 @@ def get_docker_params(
     for k, v in list(runtime_options.items()):
         # validate we have GPUs
         if k == "gpus" and int(os.environ.get("HYSDS_GPU_AVAILABLE", 0)) == 0:
-            logger.warning(
-                "Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option."
-            )
+            logger.warning("Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option")
             continue
         params["runtime_options"][k] = v
 
@@ -159,20 +157,14 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         # Custom edit to load image from registry
         try:
             if registry is not None:
-                logger.info(
-                    "Trying to load docker image {} from registry '{}'".format(
-                        image_name, registry
-                    )
-                )
+                logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
                 registry_url = os.path.join(registry, image_name)
                 logger.info("docker pull {}".format(registry_url))
                 check_output(["docker", "pull", registry_url])
                 logger.info("docker tag {} {}".format(registry_url, image_name))
                 check_output(["docker", "tag", registry_url, image_name])
         except Exception as e:
-            logger.warn(
-                "Unable to load docker image from registry '{}': {}".format(registry, e)
-            )
+            logger.warn("Unable to load docker image from registry '{}': {}".format(registry, e))
 
         image_info = check_output(["docker", "inspect", image_name])
         logger.info("Docker image %s cached in repo" % image_name)
@@ -183,28 +175,18 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         if image_url is not None:
             image_file = os.path.join(cache_dir, os.path.basename(image_url))
             if not os.path.exists(image_file):
-                logger.info(
-                    "Downloading image %s (%s) from %s"
-                    % (image_file, image_name, image_url)
-                )
+                logger.info("Downloading image %s (%s) from %s" % (image_file, image_name, image_url))
                 try:
                     osaka.main.get(image_url, image_file)
                 except Exception as e:
-                    raise RuntimeError(
-                        "Failed to download image {}:\n{}".format(image_url, str(e))
-                    )
-                logger.info(
-                    "Downloaded image %s (%s) from %s"
-                    % (image_file, image_name, image_url)
-                )
+                    raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
+                logger.info("Downloaded image %s (%s) from %s" % (image_file, image_name, image_url))
             load_lock = "{}.load.lock".format(image_file)
             try:
                 with atomic_write(load_lock) as f:
                     f.write("%sZ\n" % datetime.utcnow().isoformat())
                 logger.info("Loading image %s (%s)" % (image_file, image_name))
-                p = Popen(
-                    ["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE
-                )
+                p = Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
                 if p.returncode != 0:
                     raise RuntimeError(
@@ -223,9 +205,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                     pass
             except OSError as e:
                 if e.errno == 17:
-                    logger.info(
-                        "Waiting for image %s (%s) to load" % (image_file, image_name)
-                    )
+                    logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
                     inspect_image(image_name)
                 else:
                     raise

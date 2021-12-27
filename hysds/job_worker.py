@@ -13,12 +13,10 @@ from future import standard_library
 
 standard_library.install_aliases()
 import os
-import sys
 import time
 import socket
 import json
 import traceback
-import types
 import requests
 import shutil
 import re
@@ -30,7 +28,7 @@ from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
 
-import hysds
+import hysds  # TODO: may fix some cyclical import issues, will need to test more
 from hysds.celery import app
 from hysds.log_utils import (
     logger,
@@ -53,12 +51,12 @@ from hysds.utils import (
     query_dedup_job,
     NoDedupJobFoundException,
     makedirs,
-    find_dataset_json,
     find_cache_dir,
 )
-from hysds.container_utils import ensure_image_loaded, get_docker_params, get_docker_cmd
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
+
+from hysds.containers.factory import container_engine_factory
 
 
 # built-in pre-processors
@@ -466,23 +464,24 @@ def fail_job(job_status_json, jd_file):
 
 @app.task
 def run_job(job, queue_when_finished=True):
-    """Function to execute a job."""
+    """
+    Function to execute a job
+
+    :param job:
+    :param queue_when_finished:
+    :return:
+    """
 
     # if revoked?
     if is_revoked(run_job.request.id):
         app.control.revoke(run_job.request.id, terminate=True)
 
-    # get payload id
-    payload_id = job["job_info"]["job_payload"]["payload_task_id"]
-
-    # get payload hash
-    payload_hash = job["job_info"]["payload_hash"]
-
-    # get dedup flag
-    dedup = job["job_info"]["dedup"]
+    payload_id = job["job_info"]["job_payload"]["payload_task_id"]  # get payload id
+    payload_hash = job["job_info"]["payload_hash"]  # get payload hash
+    dedup = job["job_info"]["dedup"]  # get dedup flag
 
     # job status json
-    job_status_json = {}
+    job_status_json = {}  # TODO: maybe remove this, its re-defined later
 
     # write celery task id and delivery info
     job["task_id"] = run_job.request.id
@@ -524,6 +523,8 @@ def run_job(job, queue_when_finished=True):
     # redelivered job dedup
     if redelivered_job_dup(job):
         logger.info("Encountered duplicate redelivered job:%s" % json.dumps(job))
+        # TODO: not sure if returning something here does anything, unless we use log_job_status
+        #   i guess we can return True/False instead
         return {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -583,10 +584,8 @@ def run_job(job, queue_when_finished=True):
     # get worker config
     worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
     if worker_cfg_file is None and cmd_payload is None:
-        error = (
-            "Environment variable HYSDS_WORKER_CFG is not set or "
-            + "job has no command payload."
-        )
+        error = "Environment variable HYSDS_WORKER_CFG is not set or job has no command payload."
+
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -715,7 +714,7 @@ def run_job(job, queue_when_finished=True):
         work_cfgs[cfg["type"]] = cfg
 
     # other settings
-    if run_job.request.delivery_info is None:
+    if run_job.request.delivery_info is None:  # TODO: this code can be removed
         job_queue = None
     else:
         job_queue = run_job.request.delivery_info["routing_key"]
@@ -894,6 +893,7 @@ def run_job(job, queue_when_finished=True):
         fail_job(job_status_json, jd_file)
 
     # get availability zone, instance id and type
+    #   TODO: is this needed? (the urls are hard coded and ignored when errors) maybe this can be generalized soe
     for md_url, md_name in (
         (AZ_INFO, "ec2_placement_availability_zone"),
         (INS_ID_INFO, "ec2_instance_id"),
@@ -1040,7 +1040,7 @@ def run_job(job, queue_when_finished=True):
                 raise JobDedupedError(error)
 
         # set status to job-started
-        job["job_info"]["time_start"] = time_start_iso
+        job["job_info"]["time_start"] = time_start_iso  # TODO: this is where the job is starting
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -1059,16 +1059,17 @@ def run_job(job, queue_when_finished=True):
         image_url = job.get("container_image_url", None)
         image_mappings = job.get("container_mappings", {})
         runtime_options = job.get("runtime_options", {})
+
+        container_engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
+
         if image_name is not None:
-            image_info = ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
             job["container_image_id"] = image_info["Id"]
             context["container_image_id"] = job["container_image_id"]
         for i, dep_img in enumerate(job.get("dependency_images", [])):
-            dep_image_info = ensure_image_loaded(
-                dep_img["container_image_name"],
-                dep_img["container_image_url"],
-                cache_dir_abs,
-            )
+            dep_image_info = container_engine.ensure_image_loaded(dep_img["container_image_name"],
+                                                                  dep_img["container_image_url"],
+                                                                  cache_dir_abs)
             dep_img["container_image_id"] = dep_image_info["Id"]
             ctx_dep_img = context["job_specification"]["dependency_images"][i]
             ctx_dep_img["container_image_id"] = dep_img["container_image_id"]
@@ -1111,10 +1112,9 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        docker_params = {}
+        docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
         if image_name is not None:
-            # get docker params
-            docker_params[image_name] = get_docker_params(
+            docker_params[image_name] = container_engine.create_container_params(
                 image_name,
                 image_url,
                 image_mappings,
@@ -1124,12 +1124,13 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmdLineList = get_docker_cmd(docker_params[image_name], cmdLineList)
+            cmdLineList = container_engine.create_container_cmd(docker_params[image_name], cmdLineList)
             logger.info(" docker cmdLineList: %s" % cmdLineList)
 
         # build docker params for dependency containers
         for dep_img in job.get("dependency_images", []):
-            docker_params[dep_img["container_image_name"]] = get_docker_params(
+            dependency_image_name = dep_img["container_image_name"]
+            docker_params[dependency_image_name] = container_engine.create_container_params(
                 dep_img["container_image_name"],
                 dep_img["container_image_url"],
                 dep_img["container_mappings"],
@@ -1138,9 +1139,8 @@ def run_job(job, queue_when_finished=True):
                 runtime_options=dep_img.get("runtime_options", {}),
             )
 
-        # dump docker params to file
+        docker_params_file = os.path.join(job_dir, "_docker_params.json")  # dump docker params to file
         try:
-            docker_params_file = os.path.join(job_dir, "_docker_params.json")
             with open(docker_params_file, "w") as f:
                 json.dump(docker_params, f, indent=2, sort_keys=True)
         except Exception as e:
@@ -1264,8 +1264,7 @@ def run_job(job, queue_when_finished=True):
         # add prov associations
         if len(job["job_info"]["metrics"]["inputs_localized"]) > 0:
             context["_prov"]["wasDerivedFrom"] = [
-                "url:{}".format(i["url"])
-                for i in job["job_info"]["metrics"]["inputs_localized"]
+                "url:{}".format(i["url"]) for i in job["job_info"]["metrics"]["inputs_localized"]
             ]
 
             # update context file with prov associations
