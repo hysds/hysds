@@ -15,7 +15,10 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1",
-        "celery>=5.1.2,<6.0.0",
+        # TODO: undo this pin once this issues is resolved:
+        # https://github.com/celery/celery/pull/7194#issuecomment-100298885
+        #"celery>=5.1.2,<6.0.0",
+        "celery==5.2.2",
         "requests>=2.20.0",
         "flower>=0.8.2",
         "eventlet>=0.17.2",
