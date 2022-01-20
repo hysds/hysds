@@ -70,7 +70,7 @@ class Podman(Base):
             "run",
             # "--privileged"
             "--init",
-            "--userns=keep-id"
+            "--userns=keep-id",
             "--rm",
             # "-u",
             # "%s:%s" % (params["uid"], params["gid"]),
