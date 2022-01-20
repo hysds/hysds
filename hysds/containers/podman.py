@@ -71,9 +71,10 @@ class Podman(Base):
             # "--privileged"
             "--init",
             "--userns=keep-id",
+            "--entrypoint=/bin/sh",  # TODO: this shouldn't be needed but its a workaround for now
             "--rm",
-            # "-u",
-            # "%s:%s" % (params["uid"], params["gid"]),
+            "-u",
+            "%s:%s" % (params["uid"], params["gid"]),
         ]
 
         # add runtime options
