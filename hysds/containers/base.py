@@ -25,7 +25,8 @@ import osaka.main
 
 
 class Base:
-    IMAGE_LOAD_TIME_MAX = 600
+    # IMAGE_LOAD_TIME_MAX = 600
+    IMAGE_LOAD_TIME_MAX = 200
 
     @staticmethod
     def inspect_image(image):
@@ -226,12 +227,12 @@ class Base:
                 if registry is not None:
                     logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
                     registry_url = os.path.join(registry, image_name)
-                    logger.info("docker pull {}".format(registry_url))
+                    logger.info("pulling image: {}".format(registry_url))
                     cls.pull_image(registry_url)
-                    logger.info("docker tag {} {}".format(registry_url, image_name))
+                    logger.info("tagging image: {} {}".format(registry_url, image_name))
                     cls.tag_image(registry_url, image_name)
             except Exception as e:
-                logger.warn("Unable to load docker image from registry '{}': {}".format(registry, e))
+                logger.warn("Unable to load image from registry '{}': {}".format(registry, e))
 
             image_info = cls.inspect_image(image_name)
             logger.info("Docker image %s cached in repo" % image_name)
@@ -273,7 +274,8 @@ class Base:
                 except OSError as e:
                     if e.errno == 17:
                         logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
-                        cls.inspect_image_with_backoff(image_name)
+                        # cls.inspect_image_with_backoff(image_name)
+                        cls.inspect_image(image_name)
                     else:
                         raise
             else:

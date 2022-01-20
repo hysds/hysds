@@ -52,7 +52,9 @@ class Podman(Base):
         :param image_file: str, file location of podman image
         :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
         """
-        return Popen(["podman", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
+        # bug? change "podman load -i" to "podman load <" https://bugzilla.redhat.com/show_bug.cgi?id=1797599#c2
+        # return Popen(["podman", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
+        return Popen(["podman", "load", "<", image_file], stderr=PIPE, stdout=PIPE)
 
     @classmethod
     def create_base_cmd(cls, params):
@@ -66,10 +68,12 @@ class Podman(Base):
         podman_cmd_base = [
             "podman",
             "run",
+            # "--privileged"
             "--init",
+            "--userns=keep-id"
             "--rm",
-            "-u",
-            "%s:%s" % (params["uid"], params["gid"]),
+            # "-u",
+            # "%s:%s" % (params["uid"], params["gid"]),
         ]
 
         # add runtime options

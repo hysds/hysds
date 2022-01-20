@@ -1293,7 +1293,7 @@ def run_job(job, queue_when_finished=True):
         # log error
         error = str(e)
         tb = traceback.format_exc()
-        logger.info(" Got error: %s\n%s" % (error, tb))
+        logger.info("Got error: %s\n%s" % (error, tb))
 
         # process id
         pid = None
