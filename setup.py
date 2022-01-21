@@ -15,7 +15,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1",
-        "celery>5.1.2,<6.0.0",
+        "celery==5.2.2",
         "requests>=2.20.0",
         "flower>=1.0.0",
         "eventlet>=0.17.2",
@@ -43,7 +43,7 @@ setup(
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "aws-requests-auth==0.4.2",
+        "aws-requests-auth>=0.4.3,<1.0.0",
         "pyyaml"
     ],
     setup_requires=["pytest-runner"],

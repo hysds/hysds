@@ -141,12 +141,12 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_finished_job(id):
+def queue_finished_job(_id):
     """Queue job id for user_rules_job evaluation."""
     payload = {
         "type": "user_rules_job",
         "function": "hysds.user_rules_job.evaluate_user_rules_job",
-        "args": [id],
+        "args": [_id],
     }
     hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 

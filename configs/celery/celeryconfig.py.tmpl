@@ -82,6 +82,7 @@ GRQ_ES_PORT = {{ GRQ_ES_PORT or 9200 }}
 GRQ_ES_PROTOCOL = "{{ GRQ_ES_PROTOCOL or 'http' }}"
 GRQ_ES_URL = '%s://%s:%d' % (GRQ_ES_PROTOCOL, GRQ_ES_HOST, GRQ_ES_PORT)
 
+CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
 
 DATASET_PROCESSED_QUEUE = "dataset_processed"
 USER_RULES_DATASET_QUEUE = "user_rules_dataset"
