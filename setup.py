@@ -15,7 +15,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1",
-        "celery==5.2.2",
+        "celery>=5.2.2,<6.0.0,!=5.2.3",
         "requests>=2.20.0",
         "flower>=1.0.0",
         "eventlet>=0.17.2",
