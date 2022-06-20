@@ -547,7 +547,7 @@ def find_dataset_json(work_dir):
                         % (prod_dir, dataset_file)
                     )
                 else:
-                    yield (dataset_file, prod_dir)
+                    yield dataset_file, prod_dir
 
 
 def publish_dataset(prod_dir, dataset_file, job, ctx):
@@ -680,24 +680,33 @@ def publish_datasets(job, ctx):
 
     # find and publish
     published_prods = []
-    for dataset_file, prod_dir in find_dataset_json(job_dir):
 
-        # skip if marked as localized input
-        signal_file = os.path.join(prod_dir, ".localized")
-        if os.path.exists(signal_file):
-            logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
-            continue
+    dataset_directories = list(find_dataset_json(job_dir))
 
-        # publish
-        prod_json = publish_dataset(prod_dir, dataset_file, job, ctx)
+    if len(dataset_directories) < 2:
+        for dataset_file, prod_dir in dataset_directories:
 
-        # save json for published product
-        published_prods.append(prod_json)
+            # skip if marked as localized input
+            signal_file = os.path.join(prod_dir, ".localized")
+            if os.path.exists(signal_file):
+                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                continue
 
-    # write published products to file
-    pub_prods_file = os.path.join(job_dir, "_datasets.json")
-    with open(pub_prods_file, "w") as f:
-        json.dump(published_prods, f, indent=2, sort_keys=True)
+            # publish
+            prod_json = publish_dataset(prod_dir, dataset_file, job, ctx)
+
+            # save json for published product
+            published_prods.append(prod_json)
+
+        # write published products to file
+        pub_prods_file = os.path.join(job_dir, "_datasets.json")
+        with open(pub_prods_file, "w") as f:
+            json.dump(published_prods, f, indent=2, sort_keys=True)
+    else:
+        # TODO: use new transactional based dataset publish function
+        # TODO: run new code regardless (remove legacy)
+        # multi_publish_dataset_function()
+        pass
 
     # signal run_job() to continue
     return True
