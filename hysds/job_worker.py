@@ -67,8 +67,9 @@ PRE_PROCESSORS = (
 )
 
 # built-in post-processors
-POST_PROCESSORS = ("hysds.utils.publish_datasets",)
-# POST_PROCESSORS = ("hysds.dataset",)
+# POST_PROCESSORS = ("hysds.utils.publish_datasets",)
+# POST_PROCESSORS = ("hysds.dataset_ingest.publish_datasets",)
+POST_PROCESSORS = ("hysds.dataset_ingest_multi.publish_datasets_v2",)
 
 # signal names
 SIG_NAMES = {

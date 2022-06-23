@@ -38,8 +38,9 @@ from bisect import insort
 from tempfile import mkdtemp
 
 import hysds
-from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists
-from hysds.log_utils import logger, log_prov_es, payload_hash_exists, log_custom_event, log_publish_prov_es
+from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
+from hysds.log_utils import logger, log_prov_es, payload_hash_exists, log_custom_event, log_publish_prov_es, \
+    backoff_max_value, backoff_max_tries
 from hysds.celery import app
 from hysds.recognize import Recognizer
 from hysds.orchestrator import do_submit_job
@@ -809,9 +810,13 @@ def rollback_s3():
     pass
 
 
-# TODO: new version of hysds.utils.publish_dataset
-def publish_datasets_2(prod_dirs, dataset_files, job, ctx):
+# TODO: new version of hysds.utils.publish_datasets (old way)
+def publish_datasets_v2(job, ctx):
     """Publish a dataset. Track metrics."""
+
+    # TODO: move line 291-311 from hysds.dataset_ingest.publish_datasets to top of function
+    # TODO: move line 329-331 to bottom of function
+    # TODO: remove prod_dirs and dataset_files from function arguments
 
     # get job info
     job_dir = job["job_info"]["job_dir"]
@@ -819,12 +824,31 @@ def publish_datasets_2(prod_dirs, dataset_files, job, ctx):
     context_file = job["job_info"]["context_file"]
     datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
 
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job["job_info"]["status"]
+    if exit_code != 0:
+        logger.info(
+            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
+        )
+        return True
+
+    # if job command never ran, don't publish anything
+    pid = job["job_info"]["pid"]
+    if pid == 0:
+        logger.info("Job command never ran. Bypassing dataset publishing.")
+        return True
+
+    # find and publish
+    published_prods = []
+
+    dataset_directories = list(find_dataset_json(job_dir))
+
     # time start
     time_start = parse_iso8601(time_start_iso)
 
     prods_ingested_to_obj_store = []
     try:
-        for prod_dir in prod_dirs:
+        for _, prod_dir in dataset_directories:
             # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
             # also overwrite merged PROV-ES JSON file
             prod_id = os.path.basename(prod_dir)
@@ -947,4 +971,11 @@ def publish_datasets_2(prod_dirs, dataset_files, job, ctx):
     except Exception as e:
         for _, _, pub_path_url in prods_ingested_to_obj_store:
             delete_from_object_store(pub_path_url)
-            raise NotAllProductsIngested("Product failed to index to elasticsearch: %s" % traceback.format_exc())
+            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+
+    # write published products to file
+    pub_prods_file = os.path.join(job_dir, "_datasets.json")
+    with open(pub_prods_file, "w") as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
+
+    return True
