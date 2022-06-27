@@ -7,11 +7,11 @@ from future import standard_library
 
 standard_library.install_aliases()
 import os
-import sys
+# import sys
 import argparse
 import logging
 
-import hysds.orchestrator
+# import hysds.orchestrator
 from hysds.celery import app
 from hysds.dataset_ingest import ingest
 

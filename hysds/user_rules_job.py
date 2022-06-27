@@ -75,7 +75,7 @@ def update_query(job_id, rule):
             }
         }
     }
-    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
+    logger.info("Final query: %s" % json.dumps(final_query))
     return final_query
 
 

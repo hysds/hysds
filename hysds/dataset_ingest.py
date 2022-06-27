@@ -201,7 +201,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
     shutil.copy(context_file, prod_context_file)
 
     # force ingest? (i.e. disable no-clobber)
-    ingest_kwargs = { "force": False }
+    ingest_kwargs = {"force": False}
     if ctx.get("_force_ingest", False):
         logger.info("Flag _force_ingest set to True.")
         ingest_kwargs["force"] = True
@@ -307,8 +307,6 @@ def publish_datasets(job, ctx):
 
     # find and publish
     published_prods = []
-
-    # dataset_directories = list(find_dataset_json(job_dir))
 
     for dataset_file, prod_dir in find_dataset_json(job_dir):
 
@@ -872,7 +870,7 @@ def ingest(
 
     # update GRQ
     if dry_run:
-        update_json["grq_index_result"] = { "index": index }
+        update_json["grq_index_result"] = {"index": index}
         logger.info(
             "Would've indexed doc at %s: %s"
             % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
@@ -888,7 +886,7 @@ def ingest(
             shutil.rmtree(publ_ctx_dir)
         except:
             pass
-        return (prod_metrics, update_json)
+        return prod_metrics, update_json
 
     # create PROV-ES JSON file for publish processStep
     prod_prov_es_file = os.path.join(

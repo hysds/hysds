@@ -85,7 +85,7 @@ def update_query(_id, system_version, rule):
             }
         }
     }
-    logger.info("Final query: %s" % json.dumps(final_query, indent=2))
+    logger.info("Final query: %s" % json.dumps(final_query))
     return final_query
 
 

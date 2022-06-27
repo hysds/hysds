@@ -1112,7 +1112,7 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
+        docker_params = {}
         if image_name is not None:
             docker_params[image_name] = container_engine.create_container_params(
                 image_name,
@@ -1420,6 +1420,7 @@ def run_job(job, queue_when_finished=True):
                 "Post-processing steps that didn't signal continuation: %s"
                 % ", ".join(no_cont)
             )
+        logger.info("POST PROCESSORS FINISHED")
     except Exception as e:
         error = str(e)
         job_status_json = {

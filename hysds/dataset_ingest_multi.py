@@ -14,37 +14,27 @@ import os
 import re
 import json
 import requests
-import math
 import backoff
-import hashlib
-import copy
-import errno
 import shutil
 import traceback
 
 from glob import glob
 from datetime import datetime
 from subprocess import check_output
-from urllib.request import urlopen
 
 from io import StringIO
-from lxml.etree import XMLParser, parse, tostring
+from lxml.etree import parse
 from urllib.parse import urlparse
 from importlib import import_module
-from celery.result import AsyncResult
-from atomicwrites import atomic_write
-from bisect import insort
 
 from tempfile import mkdtemp
 
-import hysds
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
-from hysds.log_utils import logger, log_prov_es, payload_hash_exists, log_custom_event, log_publish_prov_es, \
-    backoff_max_value, backoff_max_tries
+from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
+    backoff_max_tries
 from hysds.celery import app
 from hysds.recognize import Recognizer
 from hysds.orchestrator import do_submit_job
-from hysds.es_util import get_grq_es
 
 import osaka.main
 
@@ -228,7 +218,6 @@ def parse_iso8601(t):
 def ingest_to_object_store(
     objectid,
     dsets_file,
-    dataset_processed_queue,
     prod_path,
     job_path,
     dry_run=False,
@@ -237,8 +226,6 @@ def ingest_to_object_store(
     """Run dataset ingest."""
     logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
-    # logger.info("grq_update_url: %s" % grq_update_url)
-    logger.info("dataset_processed_queue: %s" % dataset_processed_queue)
     logger.info("prod_path: %s" % prod_path)
     logger.info("job_path: %s" % job_path)
     logger.info("dry_run: %s" % dry_run)
@@ -419,7 +406,7 @@ def ingest_to_object_store(
                 osaka_params["aws_secret_access_key"] = s3_secret_key
 
         # get pub host and path
-        logger.info("Configured pub host & path: %s" % (pub_path_url))
+        logger.info("Configured pub host & path: %s" % pub_path_url)
 
         # check scheme
         if not osaka.main.supported(pub_path_url):
@@ -542,7 +529,7 @@ def ingest_to_object_store(
                             )
                         else:
                             raise
-                delete_from_object_store(prod_path)  # TODO: maybe nuke it
+                delete_from_object_store(prod_path)
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -579,7 +566,7 @@ def ingest_to_object_store(
                             }
                         },
                     )
-                    delete_from_object_store(prod_path)  # TODO: maybe nuke it
+                    delete_from_object_store(prod_path)
                     write_to_object_store(
                         local_prod_path,
                         pub_path_url,
@@ -699,7 +686,6 @@ def ingest_to_object_store(
         "prov": context.get("_prov", {}),
     }
     update_json.update(dataset)
-    # logger.info("update_json: %s" % pformat(update_json))
 
     # custom index specified?
     index = r.getIndex()
@@ -708,15 +694,15 @@ def ingest_to_object_store(
 
     # update GRQ
     # if dry_run:
-    #     update_json["grq_index_result"] = { "index": index }
+    #     update_json["grq_index_result"] = {"index": index}
     #     logger.info(
-    #         "Would've indexed doc at %s: %s"
-    #         % (grq_update_url, json.dumps(update_json, indent=2, sort_keys=True))
+    #         "Would've indexed doc at: %s"
+    #         % (json.dumps(update_json, indent=2, sort_keys=True))
     #     )
     # else:
-    #     res = index_dataset(grq_update_url, update_json)
-    #     logger.info("res: %s" % res)
-    #     update_json["grq_index_result"] = res
+    #     # res = index_dataset(grq_update_url, update_json)
+    #     # logger.info("res: %s" % res)
+    update_json["grq_index_result"] = {"index": index}
 
     # finish if dry run
     if dry_run:
@@ -724,7 +710,7 @@ def ingest_to_object_store(
             shutil.rmtree(publ_ctx_dir)
         except:
             pass
-        return (prod_metrics, update_json)
+        return prod_metrics, update_json
 
     # create PROV-ES JSON file for publish processStep
     prod_prov_es_file = os.path.join(
@@ -775,10 +761,6 @@ def ingest_to_object_store(
     except:
         pass
 
-    # # queue data dataset
-    # queue_dataset(ipath, update_json, dataset_processed_queue)
-
-    # return dataset metrics and dataset json
     return prod_metrics, update_json, pub_path_url
 
 
@@ -790,33 +772,25 @@ def ingest_to_object_store(
 )
 def bulk_index_dataset(grq_update_url, update_jsons):
     """
-
-    :param grq_update_url:
+    Call GRQ rest API to bulk index datasets to elasticsearch
+    :param grq_update_url:  # GRQ rest API endpoint
     :param update_jsons: List[Dict] list of objects to
-    :return:
+    :return: Dict[any]
     """
-    r = requests.post(
-        grq_update_url, verify=False, data={"dataset_info": json.dumps(update_jsons)}
-    )
+    r = requests.post(grq_update_url, verify=False, json=json.dumps(update_jsons))
+    logger.info(r.text)
     r.raise_for_status()
     return r.json()
 
 
-def rollback_elasticsearch():
-    pass
+def queue_dataset(dataset, update_json, queue_name):
+    """Add dataset type and URL to queue."""
+    payload = {"job_type": "dataset:%s" % dataset, "payload": update_json}
+    do_submit_job(payload, queue_name)
 
 
-def rollback_s3():
-    pass
-
-
-# TODO: new version of hysds.utils.publish_datasets (old way)
 def publish_datasets_v2(job, ctx):
     """Publish a dataset. Track metrics."""
-
-    # TODO: move line 291-311 from hysds.dataset_ingest.publish_datasets to top of function
-    # TODO: move line 329-331 to bottom of function
-    # TODO: remove prod_dirs and dataset_files from function arguments
 
     # get job info
     job_dir = job["job_info"]["job_dir"]
@@ -838,15 +812,12 @@ def publish_datasets_v2(job, ctx):
         logger.info("Job command never ran. Bypassing dataset publishing.")
         return True
 
-    # find and publish
-    published_prods = []
-
     dataset_directories = list(find_dataset_json(job_dir))
 
-    # time start
-    time_start = parse_iso8601(time_start_iso)
+    time_start = parse_iso8601(time_start_iso)  # time start
 
     prods_ingested_to_obj_store = []
+    published_prods = []  # find and publish
     try:
         for _, prod_dir in dataset_directories:
             # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
@@ -872,33 +843,17 @@ def publish_datasets_v2(job, ctx):
             shutil.copy(context_file, prod_context_file)
 
             # force ingest? (i.e. disable no-clobber)
-            ingest_kwargs = { "force": False }
+            ingest_kwargs = {"force": False}
             if ctx.get("_force_ingest", False):
                 logger.info("Flag _force_ingest set to True.")
                 ingest_kwargs["force"] = True
 
             # upload
             tx_t1 = datetime.utcnow()
-            # TODO: use new "ingest" function to write to S3
-            #   wrap this in a try/except? rollback if anything goes wrong
-            #   prod_json will be the ES doc
-            # metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(
-            #     *(
-            #         prod_id,
-            #         datasets_cfg_file,
-            #         app.conf.GRQ_UPDATE_URL,
-            #         app.conf.DATASET_PROCESSED_QUEUE,
-            #         prod_dir,
-            #         job_dir,
-            #     ),
-            #     **ingest_kwargs
-            # )
             metrics, prod_json, pub_path_url = ingest_to_object_store(
                 *(
                     prod_id,
                     datasets_cfg_file,
-                    app.conf.GRQ_UPDATE_URL,
-                    app.conf.DATASET_PROCESSED_QUEUE,
                     prod_dir,
                     job_dir,
                 ),
@@ -957,21 +912,31 @@ def publish_datasets_v2(job, ctx):
 
             prods_ingested_to_obj_store.append((prod_json, product_staged_metadata, pub_path_url))
     except Exception as e:
-        # TODO: un-publish dataset(s)
+        logger.error("Product failed to ingest to data store: %s" % traceback.format_exc())
         for _, _, pub_path_url in prods_ingested_to_obj_store:
             delete_from_object_store(pub_path_url)
-            raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
+        raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
 
-    # TODO: handle dataset ingest to elasticsearch here
-    try:
-        prod_jsons = []
-        for _, _, prod_json in prods_ingested_to_obj_store:
-            prod_jsons.append(prod_json)
-        bulk_index_dataset(app.conf.GRQ_UPDATE_URL, prod_jsons)
-    except Exception as e:
-        for _, _, pub_path_url in prods_ingested_to_obj_store:
-            delete_from_object_store(pub_path_url)
+    if len(prods_ingested_to_obj_store) > 0:
+        try:
+            prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
+            logger.info(f"publishing datasets to Elasticsearch: {prod_jsons}")
+            bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
+            published_prods.extend(prod_jsons)
+        except Exception as e:
+            logger.error("datasets failed to publish to Elasticsearch, deleting from object store")
+            for _, _, pub_path_url in prods_ingested_to_obj_store:
+                delete_from_object_store(pub_path_url)
             raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+
+        if "products_staged" not in job["job_info"]["metrics"]:
+            job["job_info"]["metrics"]["products_staged"] = []
+
+        for prod_json, metadata, _ in prods_ingested_to_obj_store:
+            ipath = prod_json["ipath"]
+            queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
+            job["job_info"]["metrics"]["products_staged"].append(metadata)
+    logger.info("queued %d datasets to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
 
     # write published products to file
     pub_prods_file = os.path.join(job_dir, "_datasets.json")
