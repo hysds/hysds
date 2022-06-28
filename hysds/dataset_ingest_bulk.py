@@ -789,7 +789,7 @@ def queue_dataset(dataset, update_json, queue_name):
     do_submit_job(payload, queue_name)
 
 
-def publish_datasets_v2(job, ctx):
+def publish_datasets(job, ctx):
     """Publish a dataset. Track metrics."""
 
     # get job info
