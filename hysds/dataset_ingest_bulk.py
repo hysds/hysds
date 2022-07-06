@@ -927,7 +927,7 @@ def publish_datasets(job, ctx):
             logger.error("datasets failed to publish to Elasticsearch, deleting from object store")
             for _, _, pub_path_url in prods_ingested_to_obj_store:
                 delete_from_object_store(pub_path_url)
-            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+            raise NotAllProductsIngested("Products failed to index to elasticsearch")
 
         if "products_staged" not in job["job_info"]["metrics"]:
             job["job_info"]["metrics"]["products_staged"] = []
