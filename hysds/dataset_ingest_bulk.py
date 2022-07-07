@@ -380,6 +380,8 @@ def ingest_to_object_store(
     # set product metrics
     prod_metrics = {"ipath": ipath, "path": local_prod_path}
 
+    osaka_params = {}  # set osaka params
+
     # publish dataset
     if r.publishConfigured():
         logger.info("Dataset publish is configured.")
@@ -393,9 +395,6 @@ def ingest_to_object_store(
         # get S3 profile name and api keys for dataset publishing
         s3_secret_key, s3_access_key = r.getS3Keys()
         s3_profile = r.getS3Profile()
-
-        # set osaka params
-        osaka_params = {}
 
         # S3 profile takes precedence over explicit api keys
         if s3_profile is not None:
@@ -578,6 +577,40 @@ def ingest_to_object_store(
         tx_t2 = datetime.utcnow()
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
+        # create PROV-ES JSON file for publish processStep
+        prod_prov_es_file = os.path.join(
+            local_prod_path, "%s.prov_es.json" % os.path.basename(local_prod_path)
+        )
+        pub_prov_es_bn = "publish.prov_es.json"
+        if os.path.exists(prod_prov_es_file):
+            pub_prov_es_file = os.path.join(local_prod_path, pub_prov_es_bn)
+            prov_es_info = {}
+            with open(prod_prov_es_file) as f:
+                try:
+                    prov_es_info = json.load(f)
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    raise RuntimeError(
+                        "Failed to load PROV-ES from {}: {}\n{}".format(
+                            prod_prov_es_file, str(e), tb
+                        )
+                    )
+            log_publish_prov_es(
+                prov_es_info,
+                pub_prov_es_file,
+                local_prod_path,
+                pub_urls,
+                prod_metrics,
+                objectid,
+            )
+            # upload publish PROV-ES file
+            osaka.main.put(
+                pub_prov_es_file,
+                os.path.join(pub_path_url, pub_prov_es_bn),
+                params=osaka_params,
+                noclobber=False,
+            )
+
         # save dataset metrics on size and transfer
         prod_metrics.update(
             {
@@ -587,6 +620,7 @@ def ingest_to_object_store(
                 "time_end": tx_t2.isoformat() + "Z",
                 "duration": tx_dur,
                 "transfer_rate": prod_dir_usage / tx_dur,
+                "pub_path_url": pub_path_url,
             }
         )
     else:
@@ -665,6 +699,9 @@ def ingest_to_object_store(
                     unrecognized.append(img)
             imgs_metadata = [sorter[i] for i in sorted(sorter)]
             imgs_metadata.extend(unrecognized)
+        prod_metrics.update({
+            "browse_path": browse_path
+        })
     else:
         logger.info("Browse publish is not configured.")
         browse_urls = []
@@ -712,40 +749,6 @@ def ingest_to_object_store(
             pass
         return prod_metrics, update_json
 
-    # create PROV-ES JSON file for publish processStep
-    prod_prov_es_file = os.path.join(
-        local_prod_path, "%s.prov_es.json" % os.path.basename(local_prod_path)
-    )
-    pub_prov_es_bn = "publish.prov_es.json"
-    if os.path.exists(prod_prov_es_file):
-        pub_prov_es_file = os.path.join(local_prod_path, pub_prov_es_bn)
-        prov_es_info = {}
-        with open(prod_prov_es_file) as f:
-            try:
-                prov_es_info = json.load(f)
-            except Exception as e:
-                tb = traceback.format_exc()
-                raise RuntimeError(
-                    "Failed to load PROV-ES from {}: {}\n{}".format(
-                        prod_prov_es_file, str(e), tb
-                    )
-                )
-        log_publish_prov_es(
-            prov_es_info,
-            pub_prov_es_file,
-            local_prod_path,
-            pub_urls,
-            prod_metrics,
-            objectid,
-        )
-        # upload publish PROV-ES file
-        osaka.main.put(
-            pub_prov_es_file,
-            os.path.join(pub_path_url, pub_prov_es_bn),
-            params=osaka_params,
-            noclobber=False,
-        )
-
     # cleanup publish context
     if publ_ctx_url is not None:
         try:
@@ -761,7 +764,7 @@ def ingest_to_object_store(
     except:
         pass
 
-    return prod_metrics, update_json, pub_path_url
+    return prod_metrics, update_json
 
 
 @backoff.on_exception(
@@ -850,7 +853,7 @@ def publish_datasets(job, ctx):
 
             # upload
             tx_t1 = datetime.utcnow()
-            metrics, prod_json, pub_path_url = ingest_to_object_store(
+            metrics, prod_json = ingest_to_object_store(
                 *(
                     prod_id,
                     datasets_cfg_file,
@@ -910,11 +913,14 @@ def publish_datasets(job, ctx):
                 "index": prod_json["grq_index_result"]["index"],
             }
 
-            prods_ingested_to_obj_store.append((prod_json, product_staged_metadata, pub_path_url))
+            prods_ingested_to_obj_store.append((prod_json, product_staged_metadata, metrics))
     except Exception as e:
         logger.error("Product failed to ingest to data store: %s" % traceback.format_exc())
-        for _, _, pub_path_url in prods_ingested_to_obj_store:
-            delete_from_object_store(pub_path_url)
+        for _, _, metrics in prods_ingested_to_obj_store:
+            if "pub_path_url" in metrics:
+                delete_from_object_store(metrics["pub_path_url"])
+            if "browse_path" in metrics:
+                delete_from_object_store(metrics["browse_path"])
         raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
 
     if len(prods_ingested_to_obj_store) > 0:
@@ -925,8 +931,11 @@ def publish_datasets(job, ctx):
             published_prods.extend(prod_jsons)
         except Exception as e:
             logger.error("datasets failed to publish to Elasticsearch, deleting from object store")
-            for _, _, pub_path_url in prods_ingested_to_obj_store:
-                delete_from_object_store(pub_path_url)
+            for _, _, metrics in prods_ingested_to_obj_store:
+                if "pub_path_url" in metrics:
+                    delete_from_object_store(metrics["pub_path_url"])
+                if "browse_path" in metrics:
+                    delete_from_object_store(metrics["browse_path"])
             raise NotAllProductsIngested("Products failed to index to elasticsearch")
 
         if "products_staged" not in job["job_info"]["metrics"]:
