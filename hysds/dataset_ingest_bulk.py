@@ -549,8 +549,8 @@ def ingest_to_object_store(
                         )
                     raise
                 else:
-                    msg = "Detected orphaned dataset without ES doc. Forcing publish."
-                    logger.warn(msg)
+                    msg = "Detected orphaned dataset %s, deleting from data store before re-publishing..." % objectid
+                    logger.info(msg)
                     log_custom_event(
                         "orphaned_dataset-no_es_doc",
                         "clobber",
@@ -930,7 +930,7 @@ def publish_datasets(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception as e:
-            logger.error("datasets failed to publish to Elasticsearch, deleting from object store")
+            logger.error("datasets failed to publish to Elasticsearch, deleting object(s) from data store")
             for _, _, metrics in prods_ingested_to_obj_store:
                 if "pub_path_url" in metrics:
                     delete_from_object_store(metrics["pub_path_url"])
