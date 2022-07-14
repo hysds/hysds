@@ -795,12 +795,6 @@ def queue_dataset(dataset, update_json, queue_name):
 def publish_datasets(job, ctx):
     """Publish a dataset. Track metrics."""
 
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-    time_start_iso = job["job_info"]["time_start"]
-    context_file = job["job_info"]["context_file"]
-    datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
-
     # if exit code of job command is non-zero, don't publish anything
     exit_code = job["job_info"]["status"]
     if exit_code != 0:
@@ -814,6 +808,12 @@ def publish_datasets(job, ctx):
     if pid == 0:
         logger.info("Job command never ran. Bypassing dataset publishing.")
         return True
+
+    # get job info
+    job_dir = job["job_info"]["job_dir"]
+    time_start_iso = job["job_info"]["time_start"]
+    context_file = job["job_info"]["context_file"]
+    datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
 
     dataset_directories = list(find_dataset_json(job_dir))
 
