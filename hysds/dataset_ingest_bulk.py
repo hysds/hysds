@@ -823,6 +823,11 @@ def publish_datasets(job, ctx):
     published_prods = []  # find and publish
     try:
         for _, prod_dir in dataset_directories:
+            signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
+            if os.path.exists(signal_file):
+                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                continue
+
             # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
             # also overwrite merged PROV-ES JSON file
             prod_id = os.path.basename(prod_dir)
