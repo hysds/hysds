@@ -931,7 +931,7 @@ def publish_datasets(job, ctx):
     if len(prods_ingested_to_obj_store) > 0:
         try:
             prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
-            logger.info(f"publishing datasets to Elasticsearch: {prod_jsons}")
+            logger.info(f"publishing %d dataset(s) to Elasticsearch" % len(prods_ingested_to_obj_store))
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception as e:
@@ -950,7 +950,7 @@ def publish_datasets(job, ctx):
             ipath = prod_json["ipath"]
             queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
             job["job_info"]["metrics"]["products_staged"].append(metadata)
-    logger.info("queued %d datasets to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
+        logger.info("queued %d dataset(s) to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
 
     # write published products to file
     pub_prods_file = os.path.join(job_dir, "_datasets.json")
