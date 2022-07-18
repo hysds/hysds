@@ -44,8 +44,8 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(hysds.triage.triage(job, job_context))
 
     def test_triage_default_triage_id(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         print("self.job_dir", self.job_dir)
@@ -95,8 +95,8 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_bad_custom_format_uses_default(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -147,8 +147,8 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_custom_triage_id(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -199,8 +199,8 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_no_time_start(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -249,8 +249,8 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_dataset_generation(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -308,8 +308,8 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(os.path.exists(expected_triage_json_filename))
 
     def test_triage_overlap(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -389,8 +389,8 @@ class TestTriage(unittest.TestCase):
         )
 
     def test_triage_on_triage_dataset(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
@@ -438,8 +438,8 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_invalid_path(self):
-        import hysds.utils
-        import hysds.dataset_ingest
+        # import hysds.utils
+        # import hysds.dataset_ingest
         import hysds.triage
 
         # Test case data
