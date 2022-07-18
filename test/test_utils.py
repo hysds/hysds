@@ -48,6 +48,8 @@ class TestTriage(unittest.TestCase):
         import hysds.dataset_ingest
         import hysds.triage
 
+        print("self.job_dir", self.job_dir)
+
         # Test case data
         job = {
             "task_id": "da9be25e-e281-4d3c-a7d8-e3c0c8342972",
