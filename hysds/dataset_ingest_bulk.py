@@ -368,14 +368,9 @@ def ingest_to_object_store(
     r.setDataset(dataset)
     r.setMetadata(metadata)
 
-    # get ipath
-    ipath = r.getIpath()
-
-    # get level
-    level = r.getLevel()
-
-    # get type
-    dtype = r.getType()
+    ipath = r.getIpath()  # get ipath
+    level = r.getLevel()  # get level
+    dtype = r.getType()  # get type
 
     # set product metrics
     prod_metrics = {"ipath": ipath, "path": local_prod_path}
@@ -730,15 +725,6 @@ def ingest_to_object_store(
         update_json["index"] = index
 
     # update GRQ
-    # if dry_run:
-    #     update_json["grq_index_result"] = {"index": index}
-    #     logger.info(
-    #         "Would've indexed doc at: %s"
-    #         % (json.dumps(update_json, indent=2, sort_keys=True))
-    #     )
-    # else:
-    #     # res = index_dataset(grq_update_url, update_json)
-    #     # logger.info("res: %s" % res)
     update_json["grq_index_result"] = {"index": index}
 
     # finish if dry run

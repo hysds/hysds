@@ -208,17 +208,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
 
     # upload
     tx_t1 = datetime.utcnow()
-    # metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(
-    #     *(
-    #         prod_id,
-    #         datasets_cfg_file,
-    #         app.conf.GRQ_UPDATE_URL,
-    #         app.conf.DATASET_PROCESSED_QUEUE,
-    #         prod_dir,
-    #         job_dir,
-    #     ),
-    #     **ingest_kwargs
-    # )
+
     metrics, prod_json = ingest(
         *(
             prod_id,
