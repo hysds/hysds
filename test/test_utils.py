@@ -28,23 +28,25 @@ class TestTriage(unittest.TestCase):
         shutil.rmtree(self.job_dir)
 
     def test_triage_job_succeeded(self):
-        import hysds.utils
+        import hysds.triage
 
         job = {"job_info": {"status": 0}}
 
-        self.assertTrue(hysds.utils.triage(job, None))
+        self.assertTrue(hysds.triage.triage(job, None))
 
     def test_triage_disabled(self):
-        import hysds.utils
+        import hysds.triage
 
         job = {"job_info": {"status": 1}}
 
         job_context = {"_triage_disabled": True}
 
-        self.assertTrue(hysds.utils.triage(job, job_context))
+        self.assertTrue(hysds.triage.triage(job, job_context))
 
     def test_triage_default_triage_id(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -66,7 +68,7 @@ class TestTriage(unittest.TestCase):
         open_mock = umock.patch("hysds.utils.open", umock.mock_open()).start()
         makedirs_mock = umock.patch("os.makedirs").start()
         shutil_copy_mock = umock.patch("shutil.copy").start()
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -81,7 +83,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -92,6 +94,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_bad_custom_format_uses_default(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -116,7 +120,7 @@ class TestTriage(unittest.TestCase):
         open_mock = umock.patch("hysds.utils.open", umock.mock_open()).start()
         makedirs_mock = umock.patch("os.makedirs").start()
         shutil_copy_mock = umock.patch("shutil.copy").start()
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -131,7 +135,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -142,6 +146,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_custom_triage_id(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -166,7 +172,7 @@ class TestTriage(unittest.TestCase):
         open_mock = umock.patch("hysds.utils.open", umock.mock_open()).start()
         makedirs_mock = umock.patch("os.makedirs").start()
         shutil_copy_mock = umock.patch("shutil.copy").start()
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -181,7 +187,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -192,6 +198,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_no_time_start(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -229,7 +237,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -240,6 +248,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_dataset_generation(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -272,7 +282,7 @@ class TestTriage(unittest.TestCase):
             f.write("{}")
 
         # Mocked data
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -287,7 +297,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -297,6 +307,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_overlap(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -341,7 +353,7 @@ class TestTriage(unittest.TestCase):
             f.write("this is a sub_dir2 log line")
 
         # Mocked data
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -361,7 +373,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_log_file2 = expected_triage_dataset + "/sub_dir/test.log"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -376,6 +388,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_on_triage_dataset(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -397,7 +411,7 @@ class TestTriage(unittest.TestCase):
         open_mock = umock.patch("hysds.utils.open", umock.mock_open()).start()
         makedirs_mock = umock.patch("os.makedirs").start()
         shutil_copy_mock = umock.patch("shutil.copy").start()
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -412,7 +426,7 @@ class TestTriage(unittest.TestCase):
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
         # Test execution
-        result = hysds.utils.triage(job, job_context)
+        result = hysds.triage.triage(job, job_context)
 
         # Assertions
         self.assertTrue(result)
@@ -423,6 +437,8 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_invalid_path(self):
         import hysds.utils
+        import hysds.dataset_ingest
+        import hysds.triage
 
         # Test case data
         job = {
@@ -464,7 +480,7 @@ class TestTriage(unittest.TestCase):
         os.chmod(sub_dir2, 0o000)
 
         # Mocked data
-        publish_dataset_mock = umock.patch("hysds.utils.publish_dataset").start()
+        publish_dataset_mock = umock.patch("hysds.dataset_ingest.publish_dataset").start()
         publish_dataset_mock.return_value = {}
 
         # Expectations
@@ -486,7 +502,7 @@ class TestTriage(unittest.TestCase):
 
         # Test execution
         try:
-            result = hysds.utils.triage(job, job_context)
+            result = hysds.triage.triage(job, job_context)
         finally:
             os.chmod(sub_dir2, 0o755)
 
@@ -627,7 +643,7 @@ class TestPublishDataset(unittest.TestCase):
         shutil.rmtree(self.job_dir)
 
     def test_publish_dataset(self):
-        import hysds.utils
+        import hysds.dataset_ingest
 
         job_context = {}
         job_context_file = os.path.join(self.job_dir, "_context.json")
@@ -639,7 +655,7 @@ class TestPublishDataset(unittest.TestCase):
         ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
         ingest_mock.return_value = (self.metrics, self.prod_json)
 
-        self.assertTrue(hysds.utils.publish_datasets(self.job, job_context))
+        self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
 
         # assert called args
         ingest_mock.assert_called_with(
@@ -653,7 +669,7 @@ class TestPublishDataset(unittest.TestCase):
         )
 
     def test_force_ingest(self):
-        import hysds.utils
+        import hysds.dataset_ingest
 
         job_context = {'_force_ingest': True}
         job_context_file = os.path.join(self.job_dir, "_context.json")
@@ -665,7 +681,7 @@ class TestPublishDataset(unittest.TestCase):
         ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
         ingest_mock.return_value = (self.metrics, self.prod_json)
 
-        self.assertTrue(hysds.utils.publish_datasets(self.job, job_context))
+        self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
 
         # assert that ingest function was called with force=True
         ingest_mock.assert_called_with(
