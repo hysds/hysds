@@ -48,7 +48,7 @@ class TestTriage(unittest.TestCase):
         # import hysds.dataset_ingest
         import hysds.triage
 
-        print("self.job_dir", self.job_dir)
+        job_dir = tempfile.mkdtemp(prefix="job-")
 
         # Test case data
         job = {
@@ -56,7 +56,7 @@ class TestTriage(unittest.TestCase):
             "job_info": {
                 "id": "boogaloo",
                 "status": 1,
-                "job_dir": self.job_dir,
+                "job_dir": job_dir,
                 "time_start": "0001-01-01T00:00:00.000Z",
                 "context_file": "electric",
                 "datasets_cfg_file": "more/configuration",
@@ -75,14 +75,14 @@ class TestTriage(unittest.TestCase):
 
         # Expectations
         expected_triage_dataset_filename = (
-            self.job_dir
+            job_dir
             + "/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.dataset.json"
         )
         expected_triage_met_filename = (
-            self.job_dir
+            job_dir
             + "/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972/triaged_job-boogaloo_task-da9be25e-e281-4d3c-a7d8-e3c0c8342972.met.json"
         )
-        expected_triage_json_filename = self.job_dir + "/_triaged.json"
+        expected_triage_json_filename = job_dir + "/_triaged.json"
 
         # Test execution
         result = hysds.triage.triage(job, job_context)
