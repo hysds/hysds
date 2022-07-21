@@ -1418,7 +1418,6 @@ def run_job(job, queue_when_finished=True):
                 "Post-processing steps that didn't signal continuation: %s"
                 % ", ".join(no_cont)
             )
-        logger.info("POST PROCESSORS FINISHED")
     except Exception as e:
         error = str(e)
         job_status_json = {
