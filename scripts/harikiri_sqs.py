@@ -115,6 +115,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             done_file = os.path.join(job_dir, ".done")
             if not os.path.exists(done_file):
                 logging.info("%s: no .done file found. Not jobless yet." % job_dir)
+                NO_JOBS_TIMER = None
                 return False
             t = os.path.getmtime(done_file)
             done_dt = datetime.utcfromtimestamp(t)
