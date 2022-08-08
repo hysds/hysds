@@ -68,25 +68,6 @@ def get_module(m):
         raise
 
 
-def get_func(f):
-    """Import function and return."""
-
-    if "." in f:
-        mod_name, func_name = f.rsplit(".", 1)
-        mod = get_module(mod_name)
-        try:
-            return getattr(mod, func_name)
-        except AttributeError:
-            logger.error('Failed to get function "%s" from module "%s".' % (func_name, mod_name))
-            raise
-    else:
-        try:
-            return eval(f)
-        except NameError:
-            logger.error('Failed to get function "%s".' % (f))
-            raise
-
-
 def get_disk_usage(path, follow_symlinks=True):
     """Return disk usage size in bytes."""
 
