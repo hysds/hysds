@@ -67,7 +67,7 @@ PRE_PROCESSORS = (
 )
 
 # built-in post-processors
-POST_PROCESSORS = ("hysds.utils.publish_datasets",)
+POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
 
 # signal names
 SIG_NAMES = {
@@ -523,8 +523,6 @@ def run_job(job, queue_when_finished=True):
     # redelivered job dedup
     if redelivered_job_dup(job):
         logger.info("Encountered duplicate redelivered job:%s" % json.dumps(job))
-        # TODO: not sure if returning something here does anything, unless we use log_job_status
-        #   i guess we can return True/False instead
         return {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -1112,7 +1110,7 @@ def run_job(job, queue_when_finished=True):
         logger.info(" cmdLineList: %s" % cmdLineList)
 
         # check if job needs to run in a container
-        docker_params = {}  # TODO: use docker-python for this instead (logic can be re-used for podman & singularity)
+        docker_params = {}
         if image_name is not None:
             docker_params[image_name] = container_engine.create_container_params(
                 image_name,

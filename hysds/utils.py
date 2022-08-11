@@ -22,7 +22,6 @@ import errno
 import shutil
 import traceback
 
-from glob import glob
 from datetime import datetime
 from subprocess import check_output
 from urllib.request import urlopen
@@ -34,7 +33,7 @@ from celery.result import AsyncResult
 from atomicwrites import atomic_write
 from bisect import insort
 
-import hysds
+# import hysds
 from hysds.log_utils import logger, log_prov_es, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es
@@ -229,32 +228,32 @@ def get_disk_usage(path, follow_symlinks=True):
     return size
 
 
-def makedirs(dir, mode=0o777):
+def makedirs(_dir, mode=0o777):
     """Make directory along with any parent directory that may be needed."""
 
     try:
-        os.makedirs(dir, mode)
+        os.makedirs(_dir, mode)
     except OSError as e:
-        if e.errno == errno.EEXIST and os.path.isdir(dir):
+        if e.errno == errno.EEXIST and os.path.isdir(_dir):
             pass
         else:
             raise  # TODO: raise a more specific error here
 
 
-def validateDirectory(dir, mode=0o755, noExceptionRaise=False):
+def validateDirectory(_dir, mode=0o755, noExceptionRaise=False):
     """Validate that a directory can be written to by the current process and return 1.
     Otherwise, try to create it.  If successful, return 1.  Otherwise return None.
     """
 
-    if os.path.isdir(dir):
-        if os.access(dir, 7):
+    if os.path.isdir(_dir):
+        if os.access(_dir, 7):
             return 1
         else:
             return None
     else:
         try:
-            makedirs(dir, mode)
-            os.chmod(dir, mode)
+            makedirs(_dir, mode)
+            os.chmod(_dir, mode)
         except:
             if noExceptionRaise:
                 pass
@@ -436,7 +435,6 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         }
 
 
-
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
@@ -547,282 +545,7 @@ def find_dataset_json(work_dir):
                         % (prod_dir, dataset_file)
                     )
                 else:
-                    yield (dataset_file, prod_dir)
-
-
-def publish_dataset(prod_dir, dataset_file, job, ctx):
-    """Publish a dataset. Track metrics."""
-
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-    time_start_iso = job["job_info"]["time_start"]
-    context_file = job["job_info"]["context_file"]
-    datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
-
-    # time start
-    time_start = parse_iso8601(time_start_iso)
-
-    # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
-    # also overwrite merged PROV-ES JSON file
-    prod_id = os.path.basename(prod_dir)
-    prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
-    prov_es_info = {}
-    if os.path.exists(prov_es_file):
-        with open(prov_es_file) as f:
-            try:
-                prov_es_info = json.load(f)
-            except Exception as e:
-                tb = traceback.format_exc()
-                raise RuntimeError(
-                    "Failed to log PROV-ES from {}: {}\n{}".format(
-                        prov_es_file, str(e), tb
-                    )
-                )
-        log_prov_es(job, prov_es_info, prov_es_file)
-
-    # copy _context.json
-    prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
-    shutil.copy(context_file, prod_context_file)
-
-    # force ingest? (i.e. disable no-clobber)
-    ingest_kwargs = { "force": False }
-    if ctx.get("_force_ingest", False):
-        logger.info("Flag _force_ingest set to True.")
-        ingest_kwargs["force"] = True
-
-    # upload
-    tx_t1 = datetime.utcnow()
-    metrics, prod_json = get_func("hysds.dataset_ingest.ingest")(
-        *(
-            prod_id,
-            datasets_cfg_file,
-            app.conf.GRQ_UPDATE_URL,
-            app.conf.DATASET_PROCESSED_QUEUE,
-            prod_dir,
-            job_dir,
-        ),
-        **ingest_kwargs
-    )
-    tx_t2 = datetime.utcnow()
-    tx_dur = (tx_t2 - tx_t1).total_seconds()
-    prod_dir_usage = get_disk_usage(prod_dir)
-
-    # set product provenance
-    prod_prov = {
-        "product_type": metrics["ipath"],
-        "processing_start_time": time_start.isoformat() + "Z",
-        "availability_time": tx_t2.isoformat() + "Z",
-        "processing_latency": (tx_t2 - time_start).total_seconds() / 60.0,
-        "total_latency": (tx_t2 - time_start).total_seconds() / 60.0,
-    }
-    prod_prov_file = os.path.join(prod_dir, "%s.prod_prov.json" % prod_id)
-    if os.path.exists(prod_prov_file):
-        with open(prod_prov_file) as f:
-            prod_prov.update(json.load(f))
-    if "acquisition_start_time" in prod_prov:
-        if "source_production_time" in prod_prov:
-            prod_prov["ground_system_latency"] = (
-                parse_iso8601(prod_prov["source_production_time"])
-                - parse_iso8601(prod_prov["acquisition_start_time"])
-            ).total_seconds() / 60.0
-            prod_prov["total_latency"] += prod_prov["ground_system_latency"]
-            prod_prov["access_latency"] = (
-                tx_t2 - parse_iso8601(prod_prov["source_production_time"])
-            ).total_seconds() / 60.0
-            prod_prov["total_latency"] += prod_prov["access_latency"]
-    # write product provenance of the last product; not writing to an array under the
-    # product because kibana table panel won't show them correctly:
-    # https://github.com/elasticsearch/kibana/issues/998
-    job["job_info"]["metrics"]["product_provenance"] = prod_prov
-
-    job["job_info"]["metrics"]["products_staged"].append(
-        {
-            "path": prod_dir,
-            "disk_usage": prod_dir_usage,
-            "time_start": tx_t1.isoformat() + "Z",
-            "time_end": tx_t2.isoformat() + "Z",
-            "duration": tx_dur,
-            "transfer_rate": prod_dir_usage / tx_dur,
-            "id": prod_json["id"],
-            "urls": prod_json["urls"],
-            "browse_urls": prod_json["browse_urls"],
-            "dataset": prod_json["dataset"],
-            "ipath": prod_json["ipath"],
-            "system_version": prod_json["system_version"],
-            "dataset_level": prod_json["dataset_level"],
-            "dataset_type": prod_json["dataset_type"],
-            "index": prod_json["grq_index_result"]["index"],
-        }
-    )
-
-    return prod_json
-
-
-def publish_datasets(job, ctx):
-    """Perform dataset publishing if job exited with zero status code."""
-
-    # if exit code of job command is non-zero, don't publish anything
-    exit_code = job["job_info"]["status"]
-    if exit_code != 0:
-        logger.info(
-            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
-        )
-        return True
-
-    # if job command never ran, don't publish anything
-    pid = job["job_info"]["pid"]
-    if pid == 0:
-        logger.info("Job command never ran. Bypassing dataset publishing.")
-        return True
-
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-
-    # find and publish
-    published_prods = []
-    for dataset_file, prod_dir in find_dataset_json(job_dir):
-
-        # skip if marked as localized input
-        signal_file = os.path.join(prod_dir, ".localized")
-        if os.path.exists(signal_file):
-            logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
-            continue
-
-        # publish
-        prod_json = publish_dataset(prod_dir, dataset_file, job, ctx)
-
-        # save json for published product
-        published_prods.append(prod_json)
-
-    # write published products to file
-    pub_prods_file = os.path.join(job_dir, "_datasets.json")
-    with open(pub_prods_file, "w") as f:
-        json.dump(published_prods, f, indent=2, sort_keys=True)
-
-    # signal run_job() to continue
-    return True
-
-
-def triage(job, ctx):
-    """Triage failed job's context and job json as well as _run.sh."""
-
-    # set time_start if not defined (job failed prior to setting it)
-    if "time_start" not in job["job_info"]:
-        job["job_info"]["time_start"] = "{}Z".format(datetime.utcnow().isoformat("T"))
-
-    # default triage id
-    default_triage_id_format = "triaged_job-{job_id}_task-{job[task_id]}"
-    default_triage_id_regex = "triaged_job-(?P<job_id>.+)_task-(?P<task_id>[-\\w])"
-
-    # if exit code of job command is zero, don't triage anything
-    exit_code = job["job_info"]["status"]
-    if exit_code == 0:
-        logger.info("Job exited with exit code %s. No need to triage." % exit_code)
-        return True
-
-    # disable triage
-    if ctx.get("_triage_disabled", False):
-        logger.info("Flag _triage_disabled set to True. Not performing triage.")
-        return True
-
-    # Check if custom triage id format was provided
-    if "_triage_id_format" in ctx:
-        triage_id_format = ctx["_triage_id_format"]
-    else:
-        triage_id_format = default_triage_id_format
-
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-    job_id = job["job_info"]["id"]
-    logger.info("job id: {}".format(job_id))
-
-    # Check if the job_id is a triaged dataset. If so, let's parse out the job_id
-    logger.info("Checking to see if the job_id matches the regex: {}".format(default_triage_id_regex))
-    match = re.search(default_triage_id_regex, job_id)
-    if match:
-        logger.info("job_id matches the triage dataset regex. Parsing out job_id")
-        parsed_job_id = match.groupdict()["job_id"]
-        logger.info("extracted job_id: {}".format(parsed_job_id))
-    else:
-        logger.info("job_id does not match the triage dataset regex: {}".format(default_triage_id_regex))
-        parsed_job_id = job_id
-
-    # create triage dataset
-    # Attempt to first use triage id format from user, but if there is any problem use the default id format instead
-    try:
-        triage_id = triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
-    except Exception as e:
-        logger.warning(
-            "Failed to apply custom triage id format because of {}: {}. Falling back to default triage id".format(
-                e.__class__.__name__, e
-            )
-        )
-        triage_id = default_triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
-    triage_dir = os.path.join(job_dir, triage_id)
-    makedirs(triage_dir)
-
-    # create dataset json
-    ds_file = os.path.join(triage_dir, "{}.dataset.json".format(triage_id))
-    ds = {
-        "version": "v{}".format(hysds.__version__),
-        "label": "triage for job {}".format(parsed_job_id),
-    }
-    if "cmd_start" in job["job_info"]:
-        ds["starttime"] = job["job_info"]["cmd_start"]
-    if "cmd_end" in job["job_info"]:
-        ds["endtime"] = job["job_info"]["cmd_end"]
-    with open(ds_file, "w") as f:
-        json.dump(ds, f, sort_keys=True, indent=2)
-
-    # create met json
-    met_file = os.path.join(triage_dir, "{}.met.json".format(triage_id))
-    with open(met_file, "w") as f:
-        json.dump(job["job_info"], f, sort_keys=True, indent=2)
-
-    # triage job-related files
-    for f in glob(os.path.join(job_dir, "_*")):
-        if os.path.isdir(f):
-            shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
-        else:
-            shutil.copy(f, triage_dir)
-
-    # triage log files
-    for f in glob(os.path.join(job_dir, "*.log")):
-        if os.path.isdir(f):
-            shutil.copytree(f, os.path.join(triage_dir, os.path.basename(f)))
-        else:
-            shutil.copy(f, triage_dir)
-
-    # triage additional globs
-    for g in ctx.get("_triage_additional_globs", []):
-        for f in glob(os.path.join(job_dir, g)):
-            f = os.path.normpath(f)
-            dst = os.path.join(triage_dir, os.path.basename(f))
-            if os.path.exists(dst):
-                dst = "{}.{}Z".format(dst, datetime.utcnow().isoformat("T"))
-            try:
-                if os.path.isdir(f):
-                    shutil.copytree(f, dst)
-                else:
-                    shutil.copy(f, dst)
-            except Exception as e:
-                tb = traceback.format_exc()
-                logger.error(
-                    "Skipping copying of {}. Got exception: {}\n{}".format(
-                        f, str(e), tb
-                    )
-                )
-
-    # publish
-    prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
-
-    # write published triage to file
-    pub_triage_file = os.path.join(job_dir, "_triaged.json")
-    with open(pub_triage_file, "w") as f:
-        json.dump(prod_json, f, indent=2, sort_keys=True)
-
-    # signal run_job() to continue
-    return True
+                    yield dataset_file, prod_dir
 
 
 def mark_localized_datasets(job, ctx):
