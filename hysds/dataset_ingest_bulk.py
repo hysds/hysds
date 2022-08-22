@@ -504,7 +504,6 @@ def ingest_to_object_store(
                             )
                         else:
                             raise
-                delete_from_object_store(prod_path)
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -541,7 +540,6 @@ def ingest_to_object_store(
                             }
                         },
                     )
-                    delete_from_object_store(prod_path)
                     write_to_object_store(
                         local_prod_path,
                         pub_path_url,
