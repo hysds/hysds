@@ -75,6 +75,7 @@ def index_dataset(grq_update_url, update_json):
     r = requests.post(
         grq_update_url, verify=False, data={"dataset_info": json.dumps(update_json)}
     )
+    logger.info(r.text)
     r.raise_for_status()
     return r.json()
 
