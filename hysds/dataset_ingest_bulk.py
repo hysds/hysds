@@ -734,7 +734,7 @@ def ingest_to_object_store(
 
 @backoff.on_exception(
     backoff.expo,
-    requests.RequestException,
+    NotAllProductsIngested,
     max_tries=backoff_max_tries,
     max_value=backoff_max_value,
 )
@@ -746,8 +746,9 @@ def bulk_index_dataset(grq_update_url, update_jsons):
     :return: Dict[any]
     """
     r = requests.post(grq_update_url, verify=False, json=json.dumps(update_jsons))
-    logger.info(r.text)
-    r.raise_for_status()
+    if not 200 <= r.status_code < 300:
+        logger.error("grq2 index error: %s" % r.text)
+        raise NotAllProductsIngested(r.text)
     return r.json()
 
 
@@ -906,7 +907,7 @@ def publish_datasets(job, ctx):
                     delete_from_object_store(metrics["pub_path_url"])
                 if "browse_path" in metrics:
                     delete_from_object_store(metrics["browse_path"])
-            raise NotAllProductsIngested("Products failed to index to elasticsearch")
+            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
 
         if "products_staged" not in job["job_info"]["metrics"]:
             job["job_info"]["metrics"]["products_staged"] = []
