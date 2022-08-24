@@ -747,7 +747,6 @@ def bulk_index_dataset(grq_update_url, update_jsons):
     """
     r = requests.post(grq_update_url, verify=False, json=json.dumps(update_jsons))
     if not 200 <= r.status_code < 300:
-        logger.error("grq2 index error: %s" % r.text)
         raise NotAllProductsIngested(r.text)
     return r.json()
 

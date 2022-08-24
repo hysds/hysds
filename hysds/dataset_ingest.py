@@ -76,7 +76,6 @@ def index_dataset(grq_update_url, update_json):
         grq_update_url, verify=False, data={"dataset_info": json.dumps(update_json)}
     )
     if not 200 <= r.status_code < 300:
-        logger.error(r.text)
         raise RuntimeError(r.text)
     return r.json()
 
