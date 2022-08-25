@@ -65,7 +65,7 @@ def verify_dataset(dataset):
 
 @backoff.on_exception(
     backoff.expo,
-    RuntimeError,
+    (RuntimeError, requests.RequestException),
     max_tries=backoff_max_tries,
     max_value=backoff_max_value,
 )

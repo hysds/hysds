@@ -734,7 +734,7 @@ def ingest_to_object_store(
 
 @backoff.on_exception(
     backoff.expo,
-    NotAllProductsIngested,
+    (NotAllProductsIngested, requests.RequestException),
     max_tries=backoff_max_tries,
     max_value=backoff_max_value,
 )
