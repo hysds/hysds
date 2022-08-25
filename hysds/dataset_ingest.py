@@ -65,7 +65,7 @@ def verify_dataset(dataset):
 
 @backoff.on_exception(
     backoff.expo,
-    requests.RequestException,
+    (RuntimeError, requests.RequestException),
     max_tries=backoff_max_tries,
     max_value=backoff_max_value,
 )
@@ -75,7 +75,8 @@ def index_dataset(grq_update_url, update_json):
     r = requests.post(
         grq_update_url, verify=False, data={"dataset_info": json.dumps(update_json)}
     )
-    r.raise_for_status()
+    if not 200 <= r.status_code < 300:
+        raise RuntimeError(r.text)
     return r.json()
 
 
