@@ -34,6 +34,16 @@ filter {
       rename => { "[event][local_received_new]" => "local_received" }
     }
   }
+
+  if [resource] in ["event", "job", "task"] {
+    mutate {
+      add_field => { "id" => "%{uuid}" }
+    }
+  } else if [resource] == "worker" {
+    mutate {
+      add_field => { "id" => "%{celery_hostname}" }
+    }
+  }
 }
 
 output {
