@@ -129,3 +129,5 @@ dmypy.json
 .idea
 
 test-results/
+
+celeryconfig.py
