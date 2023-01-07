@@ -122,6 +122,8 @@
     "worker_status*"
   ],
   "settings": {
+    "index.lifecycle.name": "ilm_rollover_policy",
+    "index.lifecycle.rollover_alias": "worker_status-current"
     "analysis": {
       "analyzer": {
         "default": {
@@ -136,6 +138,7 @@
   },
   "aliases": {
     "worker_status": {},
-    "job_status": {}
+    "job_status": {},
+    "worker_status-current": {}
   }
 }

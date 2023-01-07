@@ -677,6 +677,8 @@
   ],
   "settings": {
     "index.refresh_interval": "5s",
+    "index.lifecycle.name": "ilm_rollover_policy",
+    "index.lifecycle.rollover_alias": "job_status-current"
     "analysis": {
       "analyzer": {
         "default": {
@@ -690,6 +692,7 @@
     }
   },
   "aliases": {
-    "job_status": {}
+    "job_status": {},
+    "job_status-current": {}
   }
 }

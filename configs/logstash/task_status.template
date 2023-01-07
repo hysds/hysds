@@ -122,6 +122,8 @@
     "task_status*"
   ],
   "settings": {
+    "index.lifecycle.name": "ilm_rollover_policy",
+    "index.lifecycle.rollover_alias": "task_status-current"
     "analysis": {
       "analyzer": {
         "default": {
@@ -136,6 +138,6 @@
   },
   "aliases": {
     "task_status": {},
-    "job_status": {}
+    "task_status-current": {}
   }
 }
