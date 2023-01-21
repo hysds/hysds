@@ -698,8 +698,7 @@
         }
       },
       "aliases": {
-        "job_status": {},
-        "job_status-current": {}
+        "job_status": {}
       }
   }
 }

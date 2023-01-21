@@ -95,8 +95,7 @@
         }
       },
       "aliases": {
-        "job_status": {},
-        "event_status-current": {}
+        "job_status": {}
       }
   }
 }
