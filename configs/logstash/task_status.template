@@ -145,9 +145,7 @@
       },
       "aliases": {
         "job_status": {},
-        "task_status-current": {
-            "is_write_index": true
-        }
+        "task_status-current": {}
       }
   }
 }
