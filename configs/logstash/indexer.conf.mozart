@@ -54,7 +54,6 @@ output {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
       index => "job_status-current"
       document_id => "%{payload_id}"
-      template_name => "job_status"
     }
   } else if [resource] == "worker" {
     elasticsearch {
@@ -67,7 +66,6 @@ output {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
       index => "task_status-current"
       document_id => "%{uuid}"
-      template_name => "task_status"
     }
   } else if [resource] == "event" {
     elasticsearch {
