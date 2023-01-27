@@ -52,7 +52,7 @@ output {
   if [resource] == "job" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "%{index}"
+      index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
     }
   } else if [resource] == "worker" {
