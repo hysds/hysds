@@ -248,7 +248,7 @@ def log_job_status(job):
         job["status"],
     )
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
-    logger.info("job_status_json:%s" % json.dumps(job))
+    logger.info("job_status_json:%s" % json.dumps(job, indent=2))
 
 
 @backoff.on_exception(
