@@ -1,6 +1,6 @@
 {
   "index_patterns": [
-    "job_status-current-*"
+    "job_status*"
   ],
   "template": {
       "mappings": {
