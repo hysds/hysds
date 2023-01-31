@@ -96,7 +96,7 @@ def log_task_event(event_type, event, uuid=[]):
         "@version": "1",
         "@timestamp": "%sZ" % current_time.isoformat(),
         "event": event,
-        "index": f"worker_status-{current_time.strftime(DATE_FORMAT)}"
+        "index": f"task_status-{current_time.strftime(DATE_FORMAT)}"
     }
 
     # send update to redis
