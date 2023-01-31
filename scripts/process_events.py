@@ -123,7 +123,7 @@ def log_worker_event(event_type, event, uuid=[]):
         "celery_hostname": event["hostname"],
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": "%sZ" % current_tim.isoformat(),
+        "@timestamp": "%sZ" % current_time.isoformat(),
         "event": event,
         "index": f"worker_status-{current_time.strftime(DATE_FORMAT)}"
     }
