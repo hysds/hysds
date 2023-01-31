@@ -162,6 +162,13 @@
                   "time_queued": {
                     "type": "date"
                   },
+                  "index": {
+                    "type": "keyword",
+                    "ignore_above": 256,
+                    "copy_to": [
+                      "text_fields"
+                    ]
+                  },
                   "job_status_exchange": {
                     "type": "keyword",
                     "ignore_above": 256,

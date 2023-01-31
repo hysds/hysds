@@ -1,6 +1,6 @@
 {
   "index_patterns": [
-    "event_status-current-*"
+    "event_status*"
   ],
   "template": {
       "mappings": {

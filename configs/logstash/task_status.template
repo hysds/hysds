@@ -1,6 +1,6 @@
 {
   "index_patterns": [
-    "task_status-current-*"
+    "task_status*"
   ],
   "template": {
       "mappings": {

@@ -1,6 +1,6 @@
 {
   "index_patterns": [
-    "worker_status-current-*"
+    "worker_status*"
   ],
   "template": {
       "mappings": {
