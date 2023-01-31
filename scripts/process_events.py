@@ -86,7 +86,7 @@ def log_task_event(event_type, event, uuid=[]):
 
     set_redis_pool()
     global POOL
-    current_time = datetime.utcnow().isoformat()
+    current_time = datetime.utcnow()
     info = {
         "resource": "task",
         "type": parse_job_type(event),
@@ -94,7 +94,7 @@ def log_task_event(event_type, event, uuid=[]):
         "celery_hostname": event.get("hostname", None),
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": "%sZ" % current_time,
+        "@timestamp": "%sZ" % current_time.isoformat(),
         "event": event,
         "index": f"worker_status-{current_time.strftime(DATE_FORMAT)}"
     }
@@ -115,7 +115,7 @@ def log_worker_event(event_type, event, uuid=[]):
 
     set_redis_pool()
     global POOL
-    current_time = datetime.utcnow().isoformat()
+    current_time = datetime.utcnow()
     info = {
         "resource": "worker",
         "type": parse_job_type(event),
@@ -123,7 +123,7 @@ def log_worker_event(event_type, event, uuid=[]):
         "celery_hostname": event["hostname"],
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": "%sZ" % current_time,
+        "@timestamp": "%sZ" % current_tim.isoformat(),
         "event": event,
         "index": f"worker_status-{current_time.strftime(DATE_FORMAT)}"
     }
