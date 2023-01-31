@@ -47,7 +47,6 @@ TASK_FAILED_RE = re.compile(r"^(WorkerLostError|TimeLimitExceeded)")
 TYPE_RE = re.compile(r"'type': '(.+?)',")
 HOSTNAME_RE = re.compile(r"^celery@(.+?)\..+$")
 
-DATE_FORMAT = "%Y.%m.%d"
 
 
 def set_redis_pool():
@@ -94,7 +93,7 @@ def log_task_event(event_type, event, uuid=[]):
         "uuid": uuid,
         "@version": "1",
         "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
-        "event": event
+        "event": event,
     }
 
     # send update to redis
@@ -121,7 +120,7 @@ def log_worker_event(event_type, event, uuid=[]):
         "uuid": uuid,
         "@version": "1",
         "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
-        "event": event
+        "event": event,
     }
 
     # send update to redis
