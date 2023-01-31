@@ -48,7 +48,6 @@ TYPE_RE = re.compile(r"'type': '(.+?)',")
 HOSTNAME_RE = re.compile(r"^celery@(.+?)\..+$")
 
 
-
 def set_redis_pool():
     """Set redis connection pool for status updates."""
 
