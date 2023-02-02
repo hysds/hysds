@@ -408,6 +408,7 @@ def submit_job(j):
                 "id": job_json["job_id"],
                 "job_queue": queue,
                 "time_queued": time_queued.isoformat() + "Z",
+                "index": f"job_status-{time_queued.strftime('%Y.%m.%d')}",
                 "time_limit": time_limit,
                 "soft_time_limit": soft_time_limit,
                 "payload_hash": payload_hash,
