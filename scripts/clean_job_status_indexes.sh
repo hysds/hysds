@@ -1,4 +1,5 @@
 #!/bin/bash
 ES_URL=$1
 
-curl -XDELETE "${ES_URL}/job_status-current"
+python clean_job_status_indexes.py ${ES_URL}
+
