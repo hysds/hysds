@@ -6,15 +6,10 @@ from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
-import os
 import sys
 import requests
 import json
 import logging
-from subprocess import Popen, PIPE
-from pprint import pprint
-
-from hysds.celery import app
 
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
