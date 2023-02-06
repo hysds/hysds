@@ -28,7 +28,7 @@ def delete_job_status(es_url):
     logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(scan_result, indent=2)}")
     for index in scan_result.keys():
         logging.info(f"Deleting from Mozart ES: {index}")
-        r = requests.delete("f{es_url}/{index}")
+        r = requests.delete(f"{es_url}/{index}")
         r.raise_for_status()
 
 
