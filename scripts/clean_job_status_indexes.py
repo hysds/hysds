@@ -17,9 +17,10 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 
 
 def delete_job_status(es_url):
-    """Remove any started jobs from ES job_status index if
-    the start_time for the task is earlier than the passed
-    in start_time."""
+    """
+    Finds the indices associated with the job_status-current alias.
+    For each one found, delete it.
+    """
 
     alias = "job_status-current"
     r = requests.get(f"{es_url}/_alias/{alias}")
