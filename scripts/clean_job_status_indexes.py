@@ -24,13 +24,19 @@ def delete_job_status(es_url):
 
     alias = "job_status-current"
     r = requests.get(f"{es_url}/_alias/{alias}")
-    r.raise_for_status()
-    scan_result = r.json()
-    logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(scan_result, indent=2)}")
-    for index in scan_result.keys():
-        logging.info(f"Deleting from Mozart ES: {index}")
-        r = requests.delete(f"{es_url}/{index}")
-        r.raise_for_status()
+    if r.status_code == 404:
+        # If we get a 404, its safe to assume this is a fresh install
+        # and we don’t have to proceed with any subsequent request calls
+        logging.info(f"404 Client Error: Not Found for url: {es_url}/_alias/{alias}")
+    else:
+        scan_result = r.json()
+        logging.info(
+            f"Found indices associated with alias {alias}:\n{json.dumps(scan_result, indent=2)}"
+        )
+        for index in scan_result.keys():
+            logging.info(f"Deleting from Mozart ES: {index}")
+            r = requests.delete(f"{es_url}/{index}")
+            r.raise_for_status()
 
 
 if __name__ == "__main__":
