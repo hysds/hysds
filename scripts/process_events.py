@@ -86,6 +86,7 @@ def log_task_event(event_type, event, uuid=[]):
     global POOL
     info = {
         "resource": "task",
+        "index": event.get("index", f"task_status-{datetime.utcnow().strftime('%Y.%m.%d')}"),
         "type": parse_job_type(event),
         "status": event_type,
         "celery_hostname": event.get("hostname", None),
@@ -113,7 +114,6 @@ def log_worker_event(event_type, event, uuid=[]):
     global POOL
     info = {
         "resource": "worker",
-        "index": event.get("index", f"task_status-{datetime.utcnow().strftime('%Y.%m.%d')}"),
         "type": parse_job_type(event),
         "status": event_type,
         "celery_hostname": event["hostname"],
