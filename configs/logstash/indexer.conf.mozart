@@ -58,19 +58,19 @@ output {
   } else if [resource] == "worker" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "worker_status-current"
+      index => "worker_status-%{+YYYY.MM.dd}"
       document_id => "%{celery_hostname}"
     }
   } else if [resource] == "task" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "task_status-current"
+      index => "%{index}"
       document_id => "%{uuid}"
     }
   } else if [resource] == "event" {
     elasticsearch {
       hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
-      index => "event_status-current"
+      index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
     }
   } else {}
