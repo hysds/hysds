@@ -29,8 +29,8 @@ from importlib import import_module
 
 from tempfile import mkdtemp
 
-from billiard.managers import BaseManager as Manager
-from billiard.pool import Pool, cpu_count
+from billiard import Manager  # noqa
+from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
@@ -778,9 +778,9 @@ def async_publish_files(job, ctx, prod_dir, event=None):
     try:
         # get job info
         job_dir = job["job_info"]["job_dir"]
-        time_start_iso = job["job_info"]["time_start"]  # TODO: these variables are used in publishing
-        context_file = job["job_info"]["context_file"]  # TODO: these variables are used in publishing
-        datasets_cfg_file = job["job_info"]["datasets_cfg_file"]  # TODO: these variables are used in publishing
+        time_start_iso = job["job_info"]["time_start"]
+        context_file = job["job_info"]["context_file"]
+        datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
 
         time_start = parse_iso8601(time_start_iso)  # time start
 
@@ -913,7 +913,7 @@ def publish_datasets(job, ctx):
     published_prods = []  # find and publish
 
     async_tasks = []
-    num_procs = max(cpu_count() - 2, 1)  # TODO: create configuration in sdscli
+    num_procs = max(cpu_count() - 2, 1)  # TODO: create configuration in sdscli? (maybe)
 
     with Pool(num_procs) as pool, Manager() as manager:
         event = manager.Event()
