@@ -947,7 +947,7 @@ def publish_datasets(job, ctx):
             pool.close()
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
-        raise NotAllProductsIngested("Product failed to ingest to data store: %s" % err)
+        raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
 
     if len(prods_ingested_to_obj_store) > 0:
         try:
