@@ -929,7 +929,7 @@ def publish_datasets(job, ctx):
         logger.info("Waiting for dataset publishing tasks to complete...")
         pool.join()
 
-    has_error = False
+    has_error, err = False, ""
     for t in async_tasks:
         if t.successful():
             result = t.get()
@@ -938,6 +938,7 @@ def publish_datasets(job, ctx):
         else:
             has_error = True
             logger.error(t._value)  # noqa
+            err = t._value  # noqa
 
     if has_error is True:
         with Pool(num_procs) as pool:
@@ -946,7 +947,7 @@ def publish_datasets(job, ctx):
             pool.close()
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
-        raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
+        raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
 
     if len(prods_ingested_to_obj_store) > 0:
         try:
