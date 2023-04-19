@@ -33,6 +33,9 @@ from celery.result import AsyncResult
 from atomicwrites import atomic_write
 from bisect import insort
 
+from billiard import Manager  # noqa
+from billiard.pool import Pool, cpu_count  # noqa
+
 # import hysds
 from hysds.log_utils import logger, log_prov_es, payload_hash_exists
 from hysds.celery import app
@@ -156,19 +159,53 @@ def download_file(url, path, cache=False):
                 dst = os.path.join(path, i) if os.path.isdir(path) else path
                 try:
                     os.symlink(cached_obj, dst)
-                except:
+                except Exception:
                     logger.error("Failed to soft link {} to {}".format(cached_obj, dst))
                     raise
             else:
                 try:
                     os.symlink(cached_obj, path)
-                except:
+                except Exception:
                     logger.error(
                         "Failed to soft link {} to {}".format(cached_obj, path)
                     )
                     raise
     else:
         return osaka.main.get(url, path, params=params)
+
+
+def download_file_async(url, path, cache=False, event=None):
+    """
+    @param url: Str
+    @param path: Str
+    @param cache: Bool (default False) pull from cache
+    @param event: Manager().event() (optional)
+    :return: Dict[str: any] localized data information
+    """
+    if event and event.is_set():
+        logger.warning("Previous localize task failed, skipping %s..." % url)
+        return
+
+    loc_t1 = datetime.utcnow()
+    try:
+        download_file(url, path, cache=cache)
+        loc_t2 = datetime.utcnow()
+        loc_dur = (loc_t2 - loc_t1).total_seconds()
+        path_disk_usage = get_disk_usage(path)
+        return {
+            "url": url,
+            "path": path,
+            "disk_usage": path_disk_usage,
+            "time_start": loc_t1.isoformat() + "Z",
+            "time_end": loc_t2.isoformat() + "Z",
+            "duration": loc_dur,
+            "transfer_rate": path_disk_usage / loc_dur,
+        }
+    except Exception as e:
+        if event:
+            event.set()
+        tb = traceback.format_exc()
+        raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
 
 
 def find_cache_dir(cache_dir):
@@ -478,48 +515,54 @@ def dataset_exists(_id, es_index="grq"):
 def localize_urls(job, ctx):
     """Localize urls for job inputs. Track metrics."""
 
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
+    job_dir = job["job_info"]["job_dir"]  # get job info
 
-    # localize urls
-    for i in job["localize_urls"]:
-        url = i["url"]
-        path = i.get("local_path", None)
-        cache = i.get("cache", True)
-        if path is None:
-            path = "%s/" % job_dir
-        else:
-            if path.startswith("/"):
-                pass
+    async_tasks = []
+    num_procs = max(cpu_count() - 2, 1)
+    logger.info("multiprocessing procs used: %d" % num_procs)
+
+    with Pool(num_procs) as pool, Manager() as manager:
+        event = manager.Event()
+
+        # localize urls
+        for i in job["localize_urls"]:
+            url = i["url"]
+            path = i.get("local_path", None)
+            cache = i.get("cache", True)
+            if path is None:
+                path = "%s/" % job_dir
             else:
-                path = os.path.join(job_dir, path)
-        if os.path.isdir(path) or path.endswith("/"):
-            path = os.path.join(path, os.path.basename(url))
-        dir_path = os.path.dirname(path)
-        makedirs(dir_path)
-        loc_t1 = datetime.utcnow()
-        try:
-            download_file(url, path, cache=cache)
-        except Exception as e:
-            tb = traceback.format_exc()
-            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
-        loc_t2 = datetime.utcnow()
-        loc_dur = (loc_t2 - loc_t1).total_seconds()
-        path_disk_usage = get_disk_usage(path)
-        job["job_info"]["metrics"]["inputs_localized"].append(
-            {
-                "url": url,
-                "path": path,
-                "disk_usage": path_disk_usage,
-                "time_start": loc_t1.isoformat() + "Z",
-                "time_end": loc_t2.isoformat() + "Z",
-                "duration": loc_dur,
-                "transfer_rate": path_disk_usage / loc_dur,
-            }
-        )
+                if path.startswith("/"):
+                    pass
+                else:
+                    path = os.path.join(job_dir, path)
+            if os.path.isdir(path) or path.endswith("/"):
+                path = os.path.join(path, os.path.basename(url))
+            dir_path = os.path.dirname(path)
+            makedirs(dir_path)
 
-    # signal run_job() to continue
-    return True
+            async_task = pool.apply_async(download_file_async,
+                                          args=(url, path, ),
+                                          kwds={"cache": cache, "event": event})
+            async_tasks.append(async_task)
+        pool.close()
+        logger.info("Waiting for dataset localization tasks to complete...")
+        pool.join()
+
+        has_error, err = False, ""
+        for t in async_tasks:
+            if t.successful():
+                result = t.get()
+                if result:
+                    job["job_info"]["metrics"]["inputs_localized"].append(result)
+            else:
+                has_error = True
+                logger.error(t._value)  # noqa
+                err = t._value  # noqa
+        if has_error is True:
+            raise RuntimeError("Failed to download {}".format(err))
+
+    return True  # signal run_job() to continue
 
 
 def find_dataset_json(work_dir):
