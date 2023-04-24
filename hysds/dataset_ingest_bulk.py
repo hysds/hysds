@@ -875,12 +875,12 @@ def async_publish_files(job, ctx, prod_dir, event=None):
         }
 
         return prod_json, product_staged_metadata, metrics
-    except Exception:
+    except Exception as e:
         if event:
             event.set()
-        logger.error("Publishing fialed on %s" % prod_dir)
-        logger.error(traceback.format_exc())
-        raise
+        tb = traceback.format_exc()
+        logger.error(tb)
+        raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
 
 
 def async_delete_files(metrics):

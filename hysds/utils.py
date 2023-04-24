@@ -126,7 +126,12 @@ def get_download_params(url):
 
 
 def download_file(url, path, cache=False):
-    """Download file/dir for input."""
+    """
+    Download file/dir for input
+    @param url: Str
+    @param path: Str
+    @param cache: Bool (default False) pull from cache
+    """
 
     params = get_download_params(url)
     if cache:
@@ -174,13 +179,19 @@ def download_file(url, path, cache=False):
         return osaka.main.get(url, path, params=params)
 
 
+@backoff.on_exception(
+    backoff.constant,
+    Exception,
+    max_tries=5,
+    interval=5,
+)
 def download_file_async(url, path, cache=False, event=None):
     """
     @param url: Str
     @param path: Str
     @param cache: Bool (default False) pull from cache
     @param event: Manager().event() (optional)
-    :return: Dict[str: any] localized data information
+    :return: Dict[Str: any] localized data information
     """
     if event and event.is_set():
         logger.warning("Previous localize task failed, skipping %s..." % url)
@@ -205,6 +216,7 @@ def download_file_async(url, path, cache=False, event=None):
         if event:
             event.set()
         tb = traceback.format_exc()
+        logger.error(tb)
         raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
 
 
@@ -524,8 +536,7 @@ def localize_urls(job, ctx):
     with Pool(num_procs) as pool, Manager() as manager:
         event = manager.Event()
 
-        # localize urls
-        for i in job["localize_urls"]:
+        for i in job["localize_urls"]:  # localize urls
             url = i["url"]
             path = i.get("local_path", None)
             cache = i.get("cache", True)
