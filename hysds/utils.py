@@ -179,7 +179,7 @@ def download_file(url, path, cache=False):
         return osaka.main.get(url, path, params=params)
 
 
-def download_file_async_backoff_handler(b, max_tries=5):
+def download_file_async_backoff_handler(b, max_tries=6):
     """
     @param b: (Dict) backoff information
         target: function wrapped by backoff
@@ -196,7 +196,7 @@ def download_file_async_backoff_handler(b, max_tries=5):
     tries = b["tries"]
     kwargs = b["kwargs"]
     event = kwargs.get("event", None)
-    if event and tries >= max_tries:
+    if event and tries >= max_tries - 1:
         event.set()
         exception = b["exception"]
         raise exception
