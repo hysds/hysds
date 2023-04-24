@@ -179,11 +179,35 @@ def download_file(url, path, cache=False):
         return osaka.main.get(url, path, params=params)
 
 
+def download_file_async_backoff_handler(b, max_tries=5):
+    """
+    @param b: (Dict) backoff information
+        target: function wrapped by backoff
+        args: (tuple) function arguments
+        kwargs: (Dict) keyword arguments
+            cache: Bool (default False) pull from cache
+            event: (optional) Manager().event()
+        tries: (int) number of tries
+        elapsed: (float) function runtime
+        wait: (float) wait time after error
+        exception: (str) error/traceback raised by the function
+    @param max_tries: maximum number of tries allowed by backoff
+    """
+    tries = b["tries"]
+    kwargs = b["kwargs"]
+    event = kwargs.get("event", None)
+    if event and tries >= max_tries:
+        event.set()
+        exception = b["exception"]
+        raise exception
+
+
 @backoff.on_exception(
     backoff.constant,
     Exception,
-    max_tries=5,
+    max_tries=6,
     interval=5,
+    on_backoff=download_file_async_backoff_handler
 )
 def download_file_async(url, path, cache=False, event=None):
     """
@@ -191,7 +215,9 @@ def download_file_async(url, path, cache=False, event=None):
     @param path: Str
     @param cache: Bool (default False) pull from cache
     @param event: Manager().event() (optional)
-    :return: Dict[Str: any] localized data information
+    :return: Dict[Str: any] or None
+        if successful, will return localized data information
+        if None that means a previous task failed and will exit early
     """
     if event and event.is_set():
         logger.warning("Previous localize task failed, skipping %s..." % url)
@@ -213,8 +239,6 @@ def download_file_async(url, path, cache=False, event=None):
             "transfer_rate": path_disk_usage / loc_dur,
         }
     except Exception as e:
-        if event:
-            event.set()
         tb = traceback.format_exc()
         logger.error(tb)
         raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
