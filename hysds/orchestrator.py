@@ -165,6 +165,9 @@ def submit_job(j):
         "job_info": j,
     }
 
+    current_time = datetime.utcnow()
+    job["job_info"]["index"] = f"job_status-{current_time.strftime('%Y.%m.%d')}"
+
     # set job type
     if "job_type" in j:
         match = JOB_TYPE_RE.search(j["job_type"])
@@ -403,12 +406,11 @@ def submit_job(j):
                 job_json["username"] = username
 
             # set job_info
-            time_queued = datetime.utcnow()
             job_json["job_info"] = {
                 "id": job_json["job_id"],
                 "job_queue": queue,
-                "time_queued": time_queued.isoformat() + "Z",
-                "index": f"job_status-{time_queued.strftime('%Y.%m.%d')}",
+                "time_queued": current_time.isoformat() + "Z",
+                "index": f"job_status-{current_time.strftime('%Y.%m.%d')}",
                 "time_limit": time_limit,
                 "soft_time_limit": soft_time_limit,
                 "payload_hash": payload_hash,
