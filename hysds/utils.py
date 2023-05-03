@@ -196,8 +196,9 @@ def download_file_async_backoff_handler(b, max_tries=6):
     tries = b["tries"]
     kwargs = b["kwargs"]
     event = kwargs.get("event", None)
-    if event and tries >= max_tries - 1:
-        event.set()
+    if tries >= max_tries - 1:
+        if event:
+            event.set()
         exception = b["exception"]
         raise exception
 
