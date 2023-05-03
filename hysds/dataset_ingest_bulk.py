@@ -772,7 +772,7 @@ def async_publish_files(job, ctx, prod_dir, event=None):
     """
 
     if event and event.is_set():
-        logger.warning("Previous task failed, skipping %s..." % prod_dir)
+        logger.warning("Previous publish task failed, skipping %s..." % prod_dir)
         return
 
     try:
@@ -875,12 +875,12 @@ def async_publish_files(job, ctx, prod_dir, event=None):
         }
 
         return prod_json, product_staged_metadata, metrics
-    except Exception:
+    except Exception as e:
         if event:
             event.set()
-        logger.error("Publishing fialed on %s" % prod_dir)
-        logger.error(traceback.format_exc())
-        raise
+        tb = traceback.format_exc()
+        logger.error(tb)
+        raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
 
 
 def async_delete_files(metrics):
@@ -915,6 +915,7 @@ def publish_datasets(job, ctx):
 
     async_tasks = []
     num_procs = max(cpu_count() - 2, 1)  # TODO: create configuration in sdscli? (maybe)
+    logger.info("multiprocessing procs used: %d" % num_procs)
 
     with Pool(num_procs) as pool, Manager() as manager:
         event = manager.Event()
