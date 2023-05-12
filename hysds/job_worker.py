@@ -1469,7 +1469,8 @@ def run_job(job, queue_when_finished=True):
                     str(e),
                     tb,
                 )
-                raise RuntimeError(err)
+                # raise RuntimeError(err)  # https://hysds-core.atlassian.net/browse/HC-468
+                logger.error(err)
         if len(usage_stats) > 0:
             job["job_info"]["metrics"]["usage_stats"].append(usage_stats)
 
