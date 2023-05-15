@@ -176,7 +176,11 @@ def download_file(url, path, cache=False):
                     )
                     raise
     else:
-        return osaka.main.get(url, path, params=params)
+        try:
+            return osaka.main.get(url, path, params=params)
+        except Exception as e:
+            logger.error(e)
+            raise
 
 
 def download_file_async_backoff_handler(b, max_tries=6):
@@ -195,8 +199,15 @@ def download_file_async_backoff_handler(b, max_tries=6):
     """
     tries = b["tries"]
     kwargs = b["kwargs"]
-    event = kwargs.get("event", None)
+    args = b["args"]
+    url, path = args
+
+    logger.error("download_file_async failed ({}) {} {}".format(tries, args, kwargs))
+    logger.warning("rolling back localized data: {}".format(path))
+    shutil.rmtree(path, ignore_errors=True)
+
     if tries >= max_tries - 1:
+        event = kwargs.get("event", None)
         if event:
             event.set()
         exception = b["exception"]
