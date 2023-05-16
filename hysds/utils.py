@@ -171,15 +171,17 @@ def download_file(url, path, cache=False):
                 try:
                     os.symlink(cached_obj, path)
                 except Exception:
-                    logger.error(
-                        "Failed to soft link {} to {}".format(cached_obj, path)
-                    )
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
                     raise
     else:
         try:
             return osaka.main.get(url, path, params=params)
         except Exception as e:
             logger.error(e)
+            logger.warning("rolling back localized data: {}".format(path))
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.exists(os.path.join(path, "osaka.locked.json")):
+                shutil.rmtree(os.path.join(path, "osaka.locked.json"))
             raise
 
 
@@ -200,11 +202,7 @@ def download_file_async_backoff_handler(b, max_tries=6):
     tries = b["tries"]
     kwargs = b["kwargs"]
     args = b["args"]
-    url, path = args
-
     logger.error("download_file_async failed ({}) {} {}".format(tries, args, kwargs))
-    logger.warning("rolling back localized data: {}".format(path))
-    shutil.rmtree(path, ignore_errors=True)
 
     if tries >= max_tries - 1:
         event = kwargs.get("event", None)
