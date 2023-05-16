@@ -181,6 +181,7 @@ def download_file(url, path, cache=False):
             logger.warning("rolling back localized data: {}".format(path))
             shutil.rmtree(path, ignore_errors=True)
             if os.path.exists(os.path.join(path, "osaka.locked.json")):
+                logger.warning(".osaka.locked.json file found, rolling back...")
                 shutil.rmtree(os.path.join(path, "osaka.locked.json"))
             raise
 
