@@ -917,7 +917,7 @@ def publish_datasets(job, ctx):
     num_procs = max(cpu_count() - 2, 1)  # TODO: create configuration in sdscli? (maybe)
     logger.info("multiprocessing procs used: %d" % num_procs)
 
-    with Pool(num_procs) as pool, Manager() as manager:
+    with Pool(num_procs, maxtasksperchild=1) as pool, Manager() as manager:
         event = manager.Event()
         for _, prod_dir in dataset_directories:
             signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
@@ -942,7 +942,7 @@ def publish_datasets(job, ctx):
             err = t._value  # noqa
 
     if has_error is True:
-        with Pool(num_procs) as pool:
+        with Pool(num_procs, maxtasksperchild=1) as pool:
             for _, _, metrics in prods_ingested_to_obj_store:
                 pool.apply_async(async_delete_files, args=(metrics,))
             pool.close()
@@ -957,7 +957,7 @@ def publish_datasets(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except (Exception, ):
-            with Pool(num_procs) as pool:
+            with Pool(num_procs, maxtasksperchild=1) as pool:
                 for _, _, metrics in prods_ingested_to_obj_store:
                     pool.apply_async(async_delete_files, args=(metrics,))
             pool.close()

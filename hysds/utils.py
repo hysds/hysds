@@ -568,7 +568,7 @@ def localize_urls(job, ctx):
     num_procs = max(cpu_count() - 2, 1)
     logger.info("multiprocessing procs used: %d" % num_procs)
 
-    with Pool(num_procs) as pool, Manager() as manager:
+    with Pool(num_procs, maxtasksperchild=1) as pool, Manager() as manager:
         event = manager.Event()
 
         for i in job["localize_urls"]:  # localize urls
