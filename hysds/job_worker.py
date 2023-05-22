@@ -965,6 +965,7 @@ def run_job(job, queue_when_finished=True):
         context["container_mappings"] = job.get("container_mappings", {})
         context["runtime_options"] = job.get("runtime_options", {})
         context["_prov"] = {"wasGeneratedBy": "task_id:{}".format(job["task_id"])}
+        context["_force_ingest"] = job.get("publish_override_ok", False)
         context_file = os.path.join(job_dir, "_context.json")
         with open(context_file, "w") as f:
             json.dump(context, f, indent=2, sort_keys=True)
