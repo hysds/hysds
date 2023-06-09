@@ -203,14 +203,7 @@ def parse_iso8601(t):
         return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
 
 
-def ingest_to_object_store(
-    objectid,
-    dsets_file,
-    prod_path,
-    job_path,
-    dry_run=False,
-    force=False,
-):
+def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=False, force=False):
     """Run dataset ingest."""
     logger.info("datasets: %s" % dsets_file)
     logger.info("prod_path: %s" % prod_path)
@@ -777,6 +770,9 @@ def async_publish_files(job, ctx, prod_dir, event=None, log_queue=None):
         return
 
     if log_queue:
+        _logger = logging.getLogger()
+        _logger.setLevel(logging.INFO)
+        _logger.propagate = False
         logger.addHandler(QueueHandler(log_queue))
 
     try:
