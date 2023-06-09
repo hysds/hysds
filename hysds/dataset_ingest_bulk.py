@@ -957,8 +957,9 @@ def publish_datasets(job, ctx):
         pool.close()
         logger.info("Waiting for dataset publishing tasks to complete...")
         pool.join()
+
+        logger.handlers.clear()  # clearing the queue and removing the handler to prevent broken pipe error
         log_listener.enqueue_sentinel()
-        logger.handlers.clear()
 
     has_error, err = False, ""
     for t in async_tasks:

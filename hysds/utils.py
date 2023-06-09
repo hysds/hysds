@@ -21,6 +21,8 @@ import copy
 import errno
 import shutil
 import traceback
+import logging
+from logging.handlers import QueueHandler, QueueListener
 
 from datetime import datetime
 from subprocess import check_output
@@ -32,6 +34,9 @@ from importlib import import_module
 from celery.result import AsyncResult
 from atomicwrites import atomic_write
 from bisect import insort
+
+from billiard import Manager, set_start_method, get_context  # noqa
+from billiard.pool import Pool, cpu_count  # noqa
 
 # import hysds
 from hysds.log_utils import logger, log_prov_es, payload_hash_exists
@@ -142,6 +147,7 @@ def download_file(url, path, cache=False):
         else:
             logger.info("cache miss for {}".format(url))
             try:
+                logger.info("downloading to cache %s" % url)
                 osaka.main.get(url, cache_dir, params=params)
             except Exception as e:
                 shutil.rmtree(cache_dir)
@@ -168,12 +174,95 @@ def download_file(url, path, cache=False):
                 try:
                     os.symlink(cached_obj, path)
                 except Exception:
-                    logger.error(
-                        "Failed to soft link {} to {}".format(cached_obj, path)
-                    )
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
                     raise
     else:
-        return osaka.main.get(url, path, params=params)
+        try:
+            logger.info("downloading %s" % url)
+            return osaka.main.get(url, path, params=params)
+        except Exception as e:
+            logger.error(e)
+            logger.warning("rolling back localized data: {}".format(path))
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.exists(path + ".osaka.locked.json"):
+                logger.warning(".osaka.locked.json file found, rolling back...")
+                shutil.rmtree(path + ".osaka.locked.json")
+            raise
+
+
+def download_file_async_backoff_handler(b, max_tries=6):
+    """
+    @param b: (Dict) backoff information
+        target: function wrapped by backoff
+        args: (tuple) function arguments
+        kwargs: (Dict) keyword arguments
+            cache: Bool (default False) pull from cache
+            event: (optional) Manager().event()
+        tries: (int) number of tries
+        elapsed: (float) function runtime
+        wait: (float) wait time after error
+        exception: (str) error/traceback raised by the function
+    @param max_tries: maximum number of tries allowed by backoff
+    """
+    tries = b["tries"]
+    kwargs = b["kwargs"]
+    args = b["args"]
+    logger.error("download_file_async failed ({}) {} {}".format(tries, args, kwargs))
+
+    if tries >= max_tries - 1:
+        event = kwargs.get("event", None)
+        if event:
+            event.set()
+        exception = b["exception"]
+        raise exception
+
+
+@backoff.on_exception(
+    backoff.constant,
+    Exception,
+    max_tries=6,
+    interval=5,
+    on_backoff=download_file_async_backoff_handler
+)
+def download_file_async(url, path, cache=False, event=None, log_queue=None):
+    """
+    @param url: Str
+    @param path: Str
+    @param cache: Bool (default False) pull from cache
+    @param event: Manager().event() (optional)
+    :return: Dict[Str: any] or None
+        if successful, will return localized data information
+        if None that means a previous task failed and will exit early
+    """
+    if event and event.is_set():
+        logger.warning("Previous localize task failed, skipping %s..." % url)
+        return
+
+    if log_queue:
+        _logger = logging.getLogger()
+        _logger.setLevel(logging.INFO)
+        _logger.propagate = False
+        logger.addHandler(QueueHandler(log_queue))
+
+    loc_t1 = datetime.utcnow()
+    try:
+        download_file(url, path, cache=cache)
+        loc_t2 = datetime.utcnow()
+        loc_dur = (loc_t2 - loc_t1).total_seconds()
+        path_disk_usage = get_disk_usage(path)
+        return {
+            "url": url,
+            "path": path,
+            "disk_usage": path_disk_usage,
+            "time_start": loc_t1.isoformat() + "Z",
+            "time_end": loc_t2.isoformat() + "Z",
+            "duration": loc_dur,
+            "transfer_rate": path_disk_usage / loc_dur,
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(tb)
+        raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
 
 
 def find_cache_dir(cache_dir):
@@ -480,48 +569,83 @@ def dataset_exists(_id, es_index="grq"):
     return True if check_dataset(_id, es_index) > 0 else False
 
 
+def localize_urls_handler(func):
+    """
+    https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+    decorator to set multiprocessing start method to spawn and back to fork when the function finishes
+    """
+    def inner_func(*args, **kwargs):
+        set_start_method("spawn", force=True)
+        logger.info("setting start_method to 'spawn'")
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error("something went wrong (decorator)")
+            logger.error(e)
+            raise
+        finally:
+            set_start_method("fork", force=True)
+            logger.info("setting start_method to 'fork'")
+    return inner_func
+
+
+@localize_urls_handler
 def localize_urls(job, ctx):
     """Localize urls for job inputs. Track metrics."""
+    job_dir = job["job_info"]["job_dir"]  # get job info
 
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
+    async_tasks = []
+    localize_urls_list = job.get("localize_urls", [])
+    num_procs = min(max(cpu_count() - 2, 1), len(localize_urls_list))
+    logger.info("multiprocessing procs used: %d" % num_procs)
 
-    # localize urls
-    for i in job["localize_urls"]:
-        url = i["url"]
-        path = i.get("local_path", None)
-        cache = i.get("cache", True)
-        if path is None:
-            path = "%s/" % job_dir
-        else:
-            if path.startswith("/"):
-                pass
+    stdout_handler = logging.StreamHandler()
+    with get_context("spawn").Pool(num_procs) as pool, Manager() as manager:
+        log_queue = manager.Queue()
+        logger.addHandler(QueueHandler(log_queue))
+        log_listener = QueueListener(log_queue, stdout_handler)
+        log_listener.start()
+
+        event = manager.Event()
+        for i in localize_urls_list:  # localize urls
+            url = i["url"]
+            path = i.get("local_path", None)
+            cache = i.get("cache", True)
+            if path is None:
+                path = "%s/" % job_dir
             else:
-                path = os.path.join(job_dir, path)
-        if os.path.isdir(path) or path.endswith("/"):
-            path = os.path.join(path, os.path.basename(url))
-        dir_path = os.path.dirname(path)
-        makedirs(dir_path)
-        loc_t1 = datetime.utcnow()
-        try:
-            download_file(url, path, cache=cache)
-        except Exception as e:
-            tb = traceback.format_exc()
-            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
-        loc_t2 = datetime.utcnow()
-        loc_dur = (loc_t2 - loc_t1).total_seconds()
-        path_disk_usage = get_disk_usage(path)
-        job["job_info"]["metrics"]["inputs_localized"].append(
-            {
-                "url": url,
-                "path": path,
-                "disk_usage": path_disk_usage,
-                "time_start": loc_t1.isoformat() + "Z",
-                "time_end": loc_t2.isoformat() + "Z",
-                "duration": loc_dur,
-                "transfer_rate": path_disk_usage / loc_dur,
-            }
-        )
+                if path.startswith("/"):
+                    pass
+                else:
+                    path = os.path.join(job_dir, path)
+            if os.path.isdir(path) or path.endswith("/"):
+                path = os.path.join(path, os.path.basename(url))
+            dir_path = os.path.dirname(path)
+            makedirs(dir_path)
+
+            async_task = pool.apply_async(download_file_async,
+                                          args=(url, path, ),
+                                          kwds={"cache": cache, "event": event, "log_queue": log_queue})
+            async_tasks.append(async_task)
+        pool.close()
+        logger.info("Waiting for dataset localization tasks to complete...")
+        pool.join()
+
+        logger.handlers.clear()  # clearing the queue and removing the handler to prevent broken pipe error
+        log_listener.enqueue_sentinel()
+
+        has_error, err = False, ""
+        for t in async_tasks:
+            if t.successful():
+                result = t.get()
+                if result:
+                    job["job_info"]["metrics"]["inputs_localized"].append(result)
+            else:
+                has_error = True
+                logger.error(t._value)  # noqa
+                err = t._value  # noqa
+        if has_error is True:
+            raise RuntimeError("Failed to download {}".format(err))
 
     return True  # signal run_job() to continue
 
@@ -651,8 +775,7 @@ def read_checksum_file(file_path):
 
 def generate_list_checksum_files(job):
     """
-    :param job:
-    :param cxt:
+    :param job: Dict
     :return: list of all checksum files, so we can compare one by one
              ex. list of dictionaries: [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
     """
@@ -675,9 +798,7 @@ def generate_list_checksum_files(job):
             path = os.path.join(path, os.path.basename(url))
         dir_path = os.path.dirname(path)
 
-        if os.path.isdir(
-            path
-        ):  # if path is a directory, loop through each file in directory
+        if os.path.isdir(path):  # if path is a directory, loop through each file in directory
             for file in os.listdir(path):
                 full_file_path = os.path.join(path, file)
                 hash_algo = check_file_is_checksum(full_file_path)
