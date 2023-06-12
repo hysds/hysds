@@ -18,7 +18,6 @@ import backoff
 import shutil
 import traceback
 import logging
-from logging.handlers import QueueHandler, QueueListener
 
 from glob import glob
 from datetime import datetime
@@ -756,24 +755,24 @@ def queue_dataset(dataset, update_json, queue_name):
     do_submit_job(payload, queue_name)
 
 
-def async_publish_files(job, ctx, prod_dir, event=None, log_queue=None):
+def init_pool_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+
+def async_publish_files(job, ctx, prod_dir, event=None):
     """
     publish single dataset given the product directory, can be used in both multiprocessing or synchronous
     :param job [Dict] - job object
     :param ctx [Dict] - job context
     :param prod_dir [Str] - str; product directory
     :param event [Event, Optional] - Event to halt tasks if previous failed, taken from multiprocessing Manager()
-    :param log_queue [Queue, Optional] - The log queue for multiprocessing logging
     """
     if event and event.is_set():
         logger.warning("Previous publish task failed, skipping %s..." % prod_dir)
         return
-
-    if log_queue:
-        _logger = logging.getLogger()
-        _logger.setLevel(logging.INFO)
-        _logger.propagate = False
-        logger.addHandler(QueueHandler(log_queue))
 
     try:
         # get job info
@@ -890,27 +889,6 @@ def async_delete_files(metrics):
         delete_from_object_store(metrics["browse_path"])
 
 
-def publish_datasets_handler(func):
-    """
-    https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-    decorator to set multiprocessing start method to spawn and back to fork when the function finishes
-    """
-    def inner_func(*args, **kwargs):
-        set_start_method("spawn", force=True)
-        logger.info("setting start_method to 'spawn'")
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error("something went wrong (decorator)")
-            logger.error(e)
-            raise
-        finally:
-            set_start_method("fork", force=True)
-            logger.info("setting start_method to 'fork'")
-    return inner_func
-
-
-@publish_datasets_handler
 def publish_datasets(job, ctx):
     """Publish a dataset. Track metrics."""
 
@@ -938,28 +916,20 @@ def publish_datasets(job, ctx):
     num_procs = min(max(cpu_count() - 2, 1), len(datasets_list))
     logger.info("multiprocessing procs used: %d" % num_procs)
 
-    stdout_handler = logging.StreamHandler()
-    with get_context("spawn").Pool(num_procs) as pool, Manager() as manager:
-        log_queue = manager.Queue()
-        logger.addHandler(QueueHandler(log_queue))
-        log_listener = QueueListener(log_queue, stdout_handler)
-        log_listener.start()
-
+    with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
         event = manager.Event()
         for _, prod_dir in datasets_list:
             signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
             if os.path.exists(signal_file):
                 logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
                 continue
-            async_task = pool.apply_async(async_publish_files, args=(job, ctx, prod_dir, ),
-                                          kwds={"event": event, "log_queue": log_queue})
+            async_task = pool.apply_async(async_publish_files, args=(job, ctx, prod_dir, ), kwds={"event": event})
             async_tasks.append(async_task)
         pool.close()
         logger.info("Waiting for dataset publishing tasks to complete...")
         pool.join()
 
         logger.handlers.clear()  # clearing the queue and removing the handler to prevent broken pipe error
-        log_listener.enqueue_sentinel()
 
     has_error, err = False, ""
     for t in async_tasks:
