@@ -496,7 +496,6 @@ def init_pool_logger():
     logger.addHandler(handler)
 
 
-# TODO: create new function to filter out the .localized datasets
 def find_dataset_json(work_dir):
     """Search for *.dataset.json files."""
 
