@@ -89,6 +89,13 @@ def update_query(_id, system_version, rule):
     return final_query
 
 
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def search_es(index, body):
+    return grq_es.es.search(index=index, body=body)
+
+
 def evaluate_user_rules_dataset(
     objectid, system_version, alias=DATASET_ALIAS, job_queue=JOBS_PROCESSED_QUEUE
 ):
@@ -133,7 +140,8 @@ def evaluate_user_rules_dataset(
 
         # check for matching rules
         try:
-            result = grq_es.es.search(index=alias, body=final_qs)
+            # result = grq_es.es.search(index=alias, body=final_qs)
+            result = search_es(index=alias, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
                 continue
