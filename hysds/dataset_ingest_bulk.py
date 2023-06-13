@@ -30,7 +30,7 @@ from importlib import import_module
 
 from tempfile import mkdtemp
 
-from billiard import Manager, set_start_method, get_context, Queue  # noqa
+from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
@@ -762,7 +762,7 @@ def init_pool_logger():
     logger.addHandler(handler)
 
 
-def async_publish_files(job, ctx, prod_dir, event=None):
+def publish_files_wrapper(job, ctx, prod_dir, event=None):
     """
     publish single dataset given the product directory, can be used in both multiprocessing or synchronous
     :param job [Dict] - job object
@@ -882,7 +882,7 @@ def async_publish_files(job, ctx, prod_dir, event=None):
         raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
 
 
-def async_delete_files(metrics):
+def delete_files(metrics):
     if "pub_path_url" in metrics:
         logger.info("deleting %s" % metrics["pub_path_url"])
         delete_from_object_store(metrics["pub_path_url"])
@@ -891,7 +891,7 @@ def async_delete_files(metrics):
         delete_from_object_store(metrics["browse_path"])
 
 
-def publish_datasets(job, ctx):
+def publish_datasets_parallel(job, ctx):
     """Publish a dataset. Track metrics."""
 
     # if exit code of job command is non-zero, don't publish anything
@@ -925,13 +925,12 @@ def publish_datasets(job, ctx):
             if os.path.exists(signal_file):
                 logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
                 continue
-            async_task = pool.apply_async(async_publish_files, args=(job, ctx, prod_dir, ), kwds={"event": event})
+            async_task = pool.apply_async(publish_files_wrapper, args=(job, ctx, prod_dir, ), kwds={"event": event})
             async_tasks.append(async_task)
         pool.close()
         logger.info("Waiting for dataset publishing tasks to complete...")
         pool.join()
-
-        logger.handlers.clear()  # clearing the queue and removing the handler to prevent broken pipe error
+        logger.handlers.clear()  # removing the handler to prevent broken pipe error
 
     has_error, err = False, ""
     for t in async_tasks:
@@ -947,7 +946,7 @@ def publish_datasets(job, ctx):
     if has_error is True:
         with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
             for _, _, metrics in prods_ingested_to_obj_store:
-                pool.apply_async(async_delete_files, args=(metrics,))
+                pool.apply_async(delete_files, args=(metrics,))
             pool.close()
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
@@ -963,11 +962,76 @@ def publish_datasets(job, ctx):
         except Exception:
             with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
                 for _, _, metrics in prods_ingested_to_obj_store:
-                    pool.apply_async(async_delete_files, args=(metrics,))
+                    pool.apply_async(delete_files, args=(metrics,))
             pool.close()
             logger.error("datasets failed to publish to Elasticsearch, deleting object(s) from data store")
             pool.join()
             logger.handlers.clear()
+            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+
+        if "products_staged" not in job["job_info"]["metrics"]:
+            job["job_info"]["metrics"]["products_staged"] = []
+
+        for prod_json, metadata, _ in prods_ingested_to_obj_store:
+            ipath = prod_json["ipath"]
+            queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
+            job["job_info"]["metrics"]["products_staged"].append(metadata)
+        logger.info("queued %d dataset(s) to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
+
+    # write published products to file
+    pub_prods_file = os.path.join(job_dir, "_datasets.json")
+    with open(pub_prods_file, "w") as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
+
+    return True
+
+
+def publish_datasets(job, ctx):
+    """Publish a dataset. Track metrics."""
+
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job["job_info"]["status"]
+    if exit_code != 0:
+        logger.info(
+            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
+        )
+        return True
+
+    # if job command never ran, don't publish anything
+    pid = job["job_info"]["pid"]
+    if pid == 0:
+        logger.info("Job command never ran. Bypassing dataset publishing.")
+        return True
+
+    job_dir = job["job_info"]["job_dir"]
+    dataset_directories = find_dataset_json(job_dir)
+
+    prods_ingested_to_obj_store = []
+    published_prods = []  # find and publish
+
+    try:
+        for _, prod_dir in dataset_directories:
+            signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
+            if os.path.exists(signal_file):
+                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                continue
+            published_metadata = publish_files_wrapper(job, ctx, prod_dir)
+            prods_ingested_to_obj_store.append(published_metadata)
+    except Exception:
+        logger.error("Product failed to ingest to data store: %s" % traceback.format_exc())
+        for _, _, metrics in prods_ingested_to_obj_store:
+            delete_files(metrics)
+        raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
+
+    if len(prods_ingested_to_obj_store) > 0:
+        try:
+            prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
+            logger.info(f"publishing %d dataset(s) to Elasticsearch" % len(prods_ingested_to_obj_store))
+            bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
+            published_prods.extend(prod_jsons)
+        except Exception:
+            for _, _, metrics in prods_ingested_to_obj_store:
+                delete_files(metrics)
             raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
 
         if "products_staged" not in job["job_info"]["metrics"]:
