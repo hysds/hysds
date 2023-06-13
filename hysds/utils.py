@@ -523,6 +523,15 @@ def find_dataset_json(work_dir):
                     yield dataset_file, prod_dir
 
 
+def find_non_localized_datasets(work_dir):
+    """
+    :param work_dir - Str; work directory to traverse for dataset directories
+    :return: List[str] - list of dataset directories
+    """
+    datasets_list = find_dataset_json(work_dir)
+    return [prod_dir for _, prod_dir in datasets_list if not os.path.isfile(os.path.join(prod_dir, ".localized"))]
+
+
 def mark_localized_datasets(job, ctx):
     """Mark localized datasets to prevent republishing."""
 

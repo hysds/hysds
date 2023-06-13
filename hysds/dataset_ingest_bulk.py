@@ -33,7 +33,7 @@ from tempfile import mkdtemp
 from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
-from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
+from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
     backoff_max_tries
 from hysds.celery import app
@@ -909,7 +909,7 @@ def publish_datasets_parallel(job, ctx):
         return True
 
     job_dir = job["job_info"]["job_dir"]
-    datasets_list = list(find_dataset_json(job_dir))
+    datasets_list = find_non_localized_datasets(job_dir)
 
     prods_ingested_to_obj_store = []
     published_prods = []  # find and publish
@@ -920,7 +920,7 @@ def publish_datasets_parallel(job, ctx):
 
     with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
         event = manager.Event()
-        for _, prod_dir in datasets_list:
+        for prod_dir in datasets_list:
             signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
             if os.path.exists(signal_file):
                 logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
@@ -1004,13 +1004,13 @@ def publish_datasets(job, ctx):
         return True
 
     job_dir = job["job_info"]["job_dir"]
-    dataset_directories = find_dataset_json(job_dir)
+    dataset_directories = find_non_localized_datasets(job_dir)
 
     prods_ingested_to_obj_store = []
     published_prods = []  # find and publish
 
     try:
-        for _, prod_dir in dataset_directories:
+        for prod_dir in dataset_directories:
             signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
             if os.path.exists(signal_file):
                 logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
