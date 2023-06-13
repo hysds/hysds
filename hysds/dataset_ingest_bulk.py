@@ -884,8 +884,10 @@ def async_publish_files(job, ctx, prod_dir, event=None):
 
 def async_delete_files(metrics):
     if "pub_path_url" in metrics:
+        logger.info("deleting %s" % metrics["pub_path_url"])
         delete_from_object_store(metrics["pub_path_url"])
     if "browse_path" in metrics:
+        logger.info("deleting %s" % metrics["browse_path"])
         delete_from_object_store(metrics["browse_path"])
 
 
@@ -943,12 +945,13 @@ def publish_datasets(job, ctx):
             err = t._value  # noqa
 
     if has_error is True:
-        with get_context("spawn").Pool(num_procs) as pool:
+        with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
             for _, _, metrics in prods_ingested_to_obj_store:
                 pool.apply_async(async_delete_files, args=(metrics,))
             pool.close()
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
+            logger.handlers.clear()
         raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
 
     if len(prods_ingested_to_obj_store) > 0:
@@ -958,12 +961,13 @@ def publish_datasets(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
-            with get_context("spawn").Pool(num_procs) as pool:
+            with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
                 for _, _, metrics in prods_ingested_to_obj_store:
                     pool.apply_async(async_delete_files, args=(metrics,))
             pool.close()
             logger.error("datasets failed to publish to Elasticsearch, deleting object(s) from data store")
             pool.join()
+            logger.handlers.clear()
             raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
 
         if "products_staged" not in job["job_info"]["metrics"]:

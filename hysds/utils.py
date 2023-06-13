@@ -569,27 +569,13 @@ def dataset_exists(_id, es_index="grq"):
     return True if check_dataset(_id, es_index) > 0 else False
 
 
-def localize_urls_handler(func):
-    """
-    https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-    decorator to set multiprocessing start method to spawn and back to fork when the function finishes
-    """
-    def inner_func(*args, **kwargs):
-        set_start_method("spawn", force=True)
-        logger.info("setting start_method to 'spawn'")
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error("something went wrong (decorator)")
-            logger.error(e)
-            raise
-        finally:
-            set_start_method("fork", force=True)
-            logger.info("setting start_method to 'fork'")
-    return inner_func
+def init_pool_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
 
 
-@localize_urls_handler
 def localize_urls(job, ctx):
     """Localize urls for job inputs. Track metrics."""
     job_dir = job["job_info"]["job_dir"]  # get job info
@@ -599,13 +585,7 @@ def localize_urls(job, ctx):
     num_procs = min(max(cpu_count() - 2, 1), len(localize_urls_list))
     logger.info("multiprocessing procs used: %d" % num_procs)
 
-    stdout_handler = logging.StreamHandler()
     with get_context("spawn").Pool(num_procs) as pool, Manager() as manager:
-        log_queue = manager.Queue()
-        logger.addHandler(QueueHandler(log_queue))
-        log_listener = QueueListener(log_queue, stdout_handler)
-        log_listener.start()
-
         event = manager.Event()
         for i in localize_urls_list:  # localize urls
             url = i["url"]
@@ -624,15 +604,13 @@ def localize_urls(job, ctx):
             makedirs(dir_path)
 
             async_task = pool.apply_async(download_file_async,
-                                          args=(url, path, ),
-                                          kwds={"cache": cache, "event": event, "log_queue": log_queue})
+                                          args=(url, path, ), kwds={"cache": cache, "event": event})
             async_tasks.append(async_task)
         pool.close()
         logger.info("Waiting for dataset localization tasks to complete...")
         pool.join()
 
         logger.handlers.clear()  # clearing the queue and removing the handler to prevent broken pipe error
-        log_listener.enqueue_sentinel()
 
         has_error, err = False, ""
         for t in async_tasks:
