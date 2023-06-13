@@ -22,7 +22,6 @@ import errno
 import shutil
 import traceback
 import logging
-from logging.handlers import QueueHandler, QueueListener
 
 from datetime import datetime
 from subprocess import check_output
@@ -39,7 +38,7 @@ from billiard import Manager, set_start_method, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
 # import hysds
-from hysds.log_utils import logger, log_prov_es, payload_hash_exists
+from hysds.log_utils import logger, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es
 
@@ -224,7 +223,7 @@ def download_file_async_backoff_handler(b, max_tries=6):
     interval=5,
     on_backoff=download_file_async_backoff_handler
 )
-def download_file_async(url, path, cache=False, event=None, log_queue=None):
+def download_file_async(url, path, cache=False, event=None):
     """
     @param url: Str
     @param path: Str
@@ -237,12 +236,6 @@ def download_file_async(url, path, cache=False, event=None, log_queue=None):
     if event and event.is_set():
         logger.warning("Previous localize task failed, skipping %s..." % url)
         return
-
-    if log_queue:
-        _logger = logging.getLogger()
-        _logger.setLevel(logging.INFO)
-        _logger.propagate = False
-        logger.addHandler(QueueHandler(log_queue))
 
     loc_t1 = datetime.utcnow()
     try:
