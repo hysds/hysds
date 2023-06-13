@@ -585,7 +585,7 @@ def localize_urls(job, ctx):
     num_procs = min(max(cpu_count() - 2, 1), len(localize_urls_list))
     logger.info("multiprocessing procs used: %d" % num_procs)
 
-    with get_context("spawn").Pool(num_procs) as pool, Manager() as manager:
+    with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
         event = manager.Event()
         for i in localize_urls_list:  # localize urls
             url = i["url"]
