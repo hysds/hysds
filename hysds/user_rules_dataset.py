@@ -93,7 +93,7 @@ def update_query(_id, system_version, rule):
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def search_es(index, body):
-    return grq_es.es.search(index=index, body=body)
+    return grq_es.es.search(index=index, body=body, timeout=30)
 
 
 def evaluate_user_rules_dataset(
