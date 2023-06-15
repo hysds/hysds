@@ -16,7 +16,7 @@ setup(
     install_requires=[
         "redis>=3.2.1,<4.5.2",  # https://github.com/redis/redis-py/issues/2629
         "celery>=5.2.2,<6.0.0,!=5.2.3",
-        "click-repl>=0.2.0,<0.3.0",
+        "prompt-toolkit==1.0.18",
         "requests>=2.20.0",
         "flower>=1.0.0",
         "eventlet>=0.17.2",
