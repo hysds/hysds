@@ -61,13 +61,15 @@ from hysds.containers.factory import container_engine_factory
 
 # built-in pre-processors
 PRE_PROCESSORS = (
-    "hysds.utils.localize_urls",
+    "hysds.localize.localize_urls",
     "hysds.utils.mark_localized_datasets",
     "hysds.utils.validate_checksum_files",
 )
 
 # built-in post-processors
-POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
+POST_PROCESSORS = (
+    "hysds.dataset_ingest_bulk.publish_datasets",
+)
 
 # signal names
 SIG_NAMES = {

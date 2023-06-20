@@ -21,6 +21,7 @@ import copy
 import errno
 import shutil
 import traceback
+import logging
 
 from datetime import datetime
 from subprocess import check_output
@@ -33,8 +34,7 @@ from celery.result import AsyncResult
 from atomicwrites import atomic_write
 from bisect import insort
 
-# import hysds
-from hysds.log_utils import logger, log_prov_es, payload_hash_exists
+from hysds.log_utils import logger, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es
 
@@ -142,6 +142,7 @@ def download_file(url, path, cache=False):
         else:
             logger.info("cache miss for {}".format(url))
             try:
+                logger.info("downloading to cache %s" % url)
                 osaka.main.get(url, cache_dir, params=params)
             except Exception as e:
                 shutil.rmtree(cache_dir)
@@ -168,12 +169,20 @@ def download_file(url, path, cache=False):
                 try:
                     os.symlink(cached_obj, path)
                 except Exception:
-                    logger.error(
-                        "Failed to soft link {} to {}".format(cached_obj, path)
-                    )
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
                     raise
     else:
-        return osaka.main.get(url, path, params=params)
+        try:
+            logger.info("downloading %s" % url)
+            return osaka.main.get(url, path, params=params)
+        except Exception as e:
+            logger.error(e)
+            logger.warning("rolling back localized data: {}".format(path))
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.exists(path + ".osaka.locked.json"):
+                logger.warning(".osaka.locked.json file found, rolling back...")
+                shutil.rmtree(path + ".osaka.locked.json")
+            raise
 
 
 def find_cache_dir(cache_dir):
@@ -480,50 +489,11 @@ def dataset_exists(_id, es_index="grq"):
     return True if check_dataset(_id, es_index) > 0 else False
 
 
-def localize_urls(job, ctx):
-    """Localize urls for job inputs. Track metrics."""
-
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-
-    # localize urls
-    for i in job["localize_urls"]:
-        url = i["url"]
-        path = i.get("local_path", None)
-        cache = i.get("cache", True)
-        if path is None:
-            path = "%s/" % job_dir
-        else:
-            if path.startswith("/"):
-                pass
-            else:
-                path = os.path.join(job_dir, path)
-        if os.path.isdir(path) or path.endswith("/"):
-            path = os.path.join(path, os.path.basename(url))
-        dir_path = os.path.dirname(path)
-        makedirs(dir_path)
-        loc_t1 = datetime.utcnow()
-        try:
-            download_file(url, path, cache=cache)
-        except Exception as e:
-            tb = traceback.format_exc()
-            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
-        loc_t2 = datetime.utcnow()
-        loc_dur = (loc_t2 - loc_t1).total_seconds()
-        path_disk_usage = get_disk_usage(path)
-        job["job_info"]["metrics"]["inputs_localized"].append(
-            {
-                "url": url,
-                "path": path,
-                "disk_usage": path_disk_usage,
-                "time_start": loc_t1.isoformat() + "Z",
-                "time_end": loc_t2.isoformat() + "Z",
-                "duration": loc_dur,
-                "transfer_rate": path_disk_usage / loc_dur,
-            }
-        )
-
-    return True  # signal run_job() to continue
+def init_pool_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
 
 
 def find_dataset_json(work_dir):
@@ -550,6 +520,15 @@ def find_dataset_json(work_dir):
                     )
                 else:
                     yield dataset_file, prod_dir
+
+
+def find_non_localized_datasets(work_dir):
+    """
+    :param work_dir - Str; work directory to traverse for dataset directories
+    :return: List[str] - list of dataset directories
+    """
+    datasets_list = find_dataset_json(work_dir)
+    return [prod_dir for _, prod_dir in datasets_list if not os.path.isfile(os.path.join(prod_dir, ".localized"))]
 
 
 def mark_localized_datasets(job, ctx):
@@ -651,8 +630,7 @@ def read_checksum_file(file_path):
 
 def generate_list_checksum_files(job):
     """
-    :param job:
-    :param cxt:
+    :param job: Dict
     :return: list of all checksum files, so we can compare one by one
              ex. list of dictionaries: [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
     """
@@ -675,9 +653,7 @@ def generate_list_checksum_files(job):
             path = os.path.join(path, os.path.basename(url))
         dir_path = os.path.dirname(path)
 
-        if os.path.isdir(
-            path
-        ):  # if path is a directory, loop through each file in directory
+        if os.path.isdir(path):  # if path is a directory, loop through each file in directory
             for file in os.listdir(path):
                 full_file_path = os.path.join(path, file)
                 hash_algo = check_file_is_checksum(full_file_path)

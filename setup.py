@@ -40,7 +40,7 @@ setup(
         "atomicwrites>=1.1.5",
         "future>=0.17.1",
         "greenlet>=0.4.15",
-        "fabric3",
+        "fab-classic>=1.19.2",
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
