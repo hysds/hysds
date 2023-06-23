@@ -458,7 +458,7 @@ def get_job_status(_id):
 
     logger.info("get_job_status result: %s" % json.dumps(res, indent=2))
     doc = res["hits"]["hits"][0]
-    return doc["status"]
+    return doc["_source"]["status"]
 
 
 @backoff.on_exception(

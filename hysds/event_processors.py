@@ -44,7 +44,8 @@ def fail_job(event, uuid, exc, short_error):
         }
     }
 
-    result = mozart_es.search(index="job_status-current", body=query)
+    result = mozart_es.search(index="job_status-current", body=query,
+                              _source_includes=["status", "error", "short_error", "traceback"])
     total = result["hits"]["total"]["value"]
     if total == 0:
         logger.error("Failed to query for task UUID %s" % uuid)
