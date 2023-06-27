@@ -136,12 +136,12 @@ def evaluate_user_rules_dataset(
         rule_name = rule["rule_name"]
         job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
+        index_pattern = rule.get("index_pattern", alias)
         logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
         # check for matching rules
         try:
-            # result = grq_es.es.search(index=alias, body=final_qs)
-            result = search_es(index=alias, body=final_qs)
+            result = search_es(index=index_pattern, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
                 continue
