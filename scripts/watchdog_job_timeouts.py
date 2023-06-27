@@ -46,7 +46,8 @@ def tag_timedout_jobs(url, timeout):
 
     # tag each with timedout
     for res in results:
-        id = res["_id"]
+        _id = res["_id"]
+        _index = res["_index"]
         src = res.get("_source", {})
         status = src["status"]
         tags = src.get("tags", [])
@@ -70,10 +71,7 @@ def tag_timedout_jobs(url, timeout):
             task_res = job_utils.es_query(task_query, index="task_status-current")
 
             if len(task_res["hits"]["hits"]) == 0:
-                logging.error(
-                    "No result found with : query\n%s"
-                    % (json.dumps(task_query, indent=2))
-                )
+                logging.error("No result found with : query\n%s" % json.dumps(task_query, indent=2))
 
             logging.info("task_res: {}".format(json.dumps(task_res)))
 
@@ -118,30 +116,28 @@ def tag_timedout_jobs(url, timeout):
                     "doc_as_upsert": True,
                 }
                 print(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(id, new_doc, index="job_status-current")
+                response = job_utils.update_es(_id, new_doc, index="job_status-current")
                 if response["result"].strip() != "updated":
                     err_str = "Failed to update status for {} : {}".format(
-                        id, json.dumps(response, indent=2)
+                        _id, json.dumps(response, indent=2)
                     )
                     logging.error(err_str)
                     raise Exception(err_str)
                 logging.info(
-                    "Set job {} to {} and tagged as timedout.".format(id, new_status)
+                    "Set job {} to {} and tagged as timedout.".format(_id, new_status)
                 )
                 continue
 
         if "timedout" in tags:
-            logging.info("%s already tagged as timedout." % id)
+            logging.info("%s already tagged as timedout." % _id)
         else:
             if duration > time_limit:
                 tags.append("timedout")
                 new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
                 print(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(id, new_doc, index="job_status-current")
+                response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() != "updated":
-                    err_str = "Failed to update status for {} : {}".format(
-                        id, json.dumps(response, indent=2)
-                    )
+                    err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
                     logging.error(err_str)
                     raise Exception(err_str)
 
