@@ -116,7 +116,7 @@ def tag_timedout_jobs(url, timeout):
                     "doc_as_upsert": True,
                 }
                 print(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(_id, new_doc, index="job_status-current")
+                response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() != "updated":
                     err_str = "Failed to update status for {} : {}".format(
                         _id, json.dumps(response, indent=2)
