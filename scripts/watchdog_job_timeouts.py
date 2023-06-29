@@ -110,12 +110,13 @@ def tag_timedout_jobs(url, timeout):
             if status != new_status:
                 logging.info("updating status from {} to {}".format(status, new_status))
                 if duration > time_limit and "timedout" not in tags:
+                    logging.info("adding 'timedout' to tag, %s/%s" % (_index, _id))
                     tags.append("timedout")
                 new_doc = {
                     "doc": {"status": new_status, "tags": tags},
                     "doc_as_upsert": True,
                 }
-                print(json.dumps(new_doc, indent=2))
+                logging.info(json.dumps(new_doc, indent=2))
                 response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() != "updated":
                     err_str = "Failed to update status for {} : {}".format(
@@ -132,9 +133,10 @@ def tag_timedout_jobs(url, timeout):
             logging.info("%s already tagged as timedout." % _id)
         else:
             if duration > time_limit:
+                logging.info("adding 'timedout' to tag, %s/%s" % (_index, _id))
                 tags.append("timedout")
                 new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
-                print(json.dumps(new_doc, indent=2))
+                logging.info(json.dumps(new_doc, indent=2))
                 response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() != "updated":
                     err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
@@ -166,7 +168,7 @@ def daemon(interval, url, timeout):
 if __name__ == "__main__":
     desc = "Watchdog jobs stuck in job-offline or job-started."
     host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
-    print("host : {}".format(host))
+    logging.info("host : {}".format(host))
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "-i",

@@ -38,9 +38,7 @@ def get_timedout_query(timeout, status, source_data):
 
 
 def es_query(query, index="job_status-current"):
-
     print("es_query : query : {}".format(query))
-
     ES = es_util.get_mozart_es()
     result = ES.search(index=index, body=json.dumps(query))
     print("run_query : result : \n{}".format(json.dumps(result, indent=2)))
@@ -56,6 +54,7 @@ def run_query_with_scroll(query, index="job_status-current"):
 
 
 def update_es(doc_id, data, index="job_status-current"):
+    print(data)
     ES = es_util.get_mozart_es()
     response = ES.update_document(index=index, id=doc_id, body=data)
     print(response)
