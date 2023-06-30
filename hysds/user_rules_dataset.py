@@ -13,6 +13,7 @@ import socket
 
 import hysds
 from hysds.celery import app
+from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es, get_grq_es
 
@@ -136,7 +137,11 @@ def evaluate_user_rules_dataset(
         rule_name = rule["rule_name"]
         job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
-        index_pattern = rule.get("index_pattern", alias)
+
+        index_pattern = rule.get("index_pattern", "").strip()
+        if not index_pattern or not validate_index_pattern(index_pattern):
+            logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
+            index_pattern = DATASET_ALIAS
         logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
         # check for matching rules
