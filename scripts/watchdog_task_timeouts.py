@@ -40,27 +40,26 @@ def tag_timedout_tasks(url, timeout):
 
     # tag each with timedout
     for res in results:
-        id = res["_id"]
+        _id = res["_id"]
+        _index = res["_index"]
         src = res.get("_source", {})
-        status = src["status"]
+        # status = src["status"]
         tags = src.get("tags", [])
-        task_id = src["uuid"]
+        # task_id = src["uuid"]
 
         if "timedout" not in tags:
             tags.append("timedout")
             new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
 
-            response = job_utils.update_es(id, new_doc, index="task_status-current")
+            response = job_utils.update_es(_id, new_doc, index=_index)
             if response["result"].strip() != "updated":
-                err_str = "Failed to update status for {} : {}".format(
-                    id, json.dumps(response, indent=2)
-                )
+                err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
                 logging.error(err_str)
                 raise Exception(err_str)
 
-            logging.info("Tagged %s as timedout." % id)
+            logging.info("Tagged %s as timedout." % _id)
         else:
-            logging.info("%s already tagged as timedout." % id)
+            logging.info("%s already tagged as timedout." % _id)
 
 
 def daemon(interval, url, timeout):
