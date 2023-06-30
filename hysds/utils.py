@@ -722,7 +722,7 @@ def validate_index_pattern(index):
     :return: Boolean
     """
     index = index.strip()
-    if index.startsWith(',') or index.endsWith(','):
+    if index.startswith(',') or index.endswith(','):
         return False
     if ''.join(set(index)) == '*':
         return False

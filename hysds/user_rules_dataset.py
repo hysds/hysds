@@ -105,7 +105,7 @@ def evaluate_user_rules_dataset(
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(10)  # sleep for 10 seconds; let any documents finish indexing in ES
+    time.sleep(6)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
@@ -138,7 +138,10 @@ def evaluate_user_rules_dataset(
         job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
 
-        index_pattern = rule.get("index_pattern", "").strip()
+        index_pattern = rule.get("index_pattern", "")
+        if index_pattern is None:
+            index_pattern = ""
+        index_pattern = index_pattern.strip()
         if not index_pattern or not validate_index_pattern(index_pattern):
             logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
             index_pattern = DATASET_ALIAS
