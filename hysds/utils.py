@@ -36,11 +36,12 @@ from bisect import insort
 
 from hysds.log_utils import logger, payload_hash_exists
 from hysds.celery import app
-from hysds.es_util import get_grq_es
+from hysds.es_util import get_grq_es, get_mozart_es
 
 import osaka.main
 
 grq_es = get_grq_es()
+mozart_es = get_mozart_es()
 
 # disk usage setting converter
 DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
@@ -412,20 +413,8 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         query["query"]["bool"]["must_not"] = {"term": {"uuid": filter_id}}
 
     logger.info("constructed query: %s" % json.dumps(query, indent=2))
-    es_url = "%s/job_status-current/_search" % app.conf["JOBS_ES_URL"]
-
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(es_url, data=json.dumps(query), headers=headers)
-    if r.status_code != 200:
-        if r.status_code == 404:
-            logger.info(
-                "status_code 404, job_status-current index probably does not exist, returning None"
-            )
-            return None
-        else:
-            r.raise_for_status()
-    j = r.json()
-    logger.info("result: %s" % r.text)
+    j = mozart_es.search(index="job_status-current", body=query)
+    logger.info(j)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
             if is_worker:
@@ -454,15 +443,22 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
 )
 def get_job_status(_id):
     """Get job status."""
+    query = {
+        "query": {
+            "bool": {
+                "must": [{"term": {"_id": _id}}]
+            }
+        }
+    }
 
-    es_url = "%s/job_status-current/_doc/%s" % (app.conf["JOBS_ES_URL"], _id)
-    r = requests.get(es_url, params={"_source": "status"})
+    res = mozart_es.search(index="job_status-current", body=query, _source_includes=["status"])
+    if res["hits"]["total"]["value"] == 0:
+        logger.warning("job not found, _id: %s" % _id)
+        return None
 
-    logger.info("get_job_status status: %s" % r.status_code)
-    result = r.json()
-
-    logger.info("get_job_status result: %s" % json.dumps(result, indent=2))
-    return result["_source"]["status"] if result["found"] else None
+    logger.info("get_job_status result: %s" % json.dumps(res, indent=2))
+    doc = res["hits"]["hits"][0]
+    return doc["_source"]["status"]
 
 
 @backoff.on_exception(

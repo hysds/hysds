@@ -36,20 +36,19 @@ mozart_es = get_mozart_es()
 def fail_job(event, uuid, exc, short_error):
     """Set job status to job-failed."""
 
-    query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
-    search_url = "%s/job_status-current/_search" % app.conf["JOBS_ES_URL"]
+    query = {
+        "query": {
+            "bool": {
+                "must": [{"term": {"uuid": uuid}}]
+            }
+        }
+    }
 
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(search_url, data=json.dumps(query), headers=headers)
-
-    if r.status_code != 200:
-        logger.error("Failed to query for task UUID %s: %s" % (uuid, r.content))
-        return
-
-    result = r.json()
+    result = mozart_es.search(index="job_status-current", body=query,
+                              _source_includes=["status", "error", "short_error", "traceback"])
     total = result["hits"]["total"]["value"]
     if total == 0:
-        logger.error("Failed to query for task UUID %s: %s" % (uuid, r.content))
+        logger.error("Failed to query for task UUID %s" % uuid)
         return
 
     res = result["hits"]["hits"][0]
