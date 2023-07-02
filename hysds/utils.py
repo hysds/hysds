@@ -413,7 +413,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         query["query"]["bool"]["must_not"] = {"term": {"uuid": filter_id}}
 
     logger.info("constructed query: %s" % json.dumps(query, indent=2))
-    j = mozart_es.search(index="job_status-current", body=query)
+    j = mozart_es.search(index="job_status-current", body=query, ignore=[404])
     logger.info(j)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
