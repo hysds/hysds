@@ -718,3 +718,19 @@ def validate_checksum_files(job, cxt):
     else:
         logger.info("checksum preprocessing completed successfully")
     return True
+
+
+def validate_index_pattern(index):
+    """
+    validates the elasticsearch index pattern
+        - no trailing commas
+        - no broad wildcards, ex. '*' or "**"
+    :param index: [Str] ES index pattern
+    :return: Boolean
+    """
+    index = index.strip()
+    if index.startswith(',') or index.endswith(','):
+        return False
+    if ''.join(set(index)) == '*':
+        return False
+    return True

@@ -13,6 +13,7 @@ import socket
 
 import hysds
 from hysds.celery import app
+from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es, get_grq_es
 
@@ -104,7 +105,7 @@ def evaluate_user_rules_dataset(
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(10)  # sleep for 10 seconds; let any documents finish indexing in ES
+    time.sleep(6)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
@@ -136,12 +137,19 @@ def evaluate_user_rules_dataset(
         rule_name = rule["rule_name"]
         job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
+
+        index_pattern = rule.get("index_pattern", "")
+        if index_pattern is None:
+            index_pattern = ""
+        index_pattern = index_pattern.strip()
+        if not index_pattern or not validate_index_pattern(index_pattern):
+            logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
+            index_pattern = DATASET_ALIAS
         logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
         # check for matching rules
         try:
-            # result = grq_es.es.search(index=alias, body=final_qs)
-            result = search_es(index=alias, body=final_qs)
+            result = search_es(index=index_pattern, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
                 continue

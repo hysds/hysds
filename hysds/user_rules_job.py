@@ -85,7 +85,7 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(10)  # sleep 10 seconds to allow ES documents to be indexed
+    time.sleep(7)  # sleep 7 seconds to allow ES documents to be indexed
     ensure_job_indexed(job_id, alias)  # ensure job is indexed
 
     # get all enabled user rules
