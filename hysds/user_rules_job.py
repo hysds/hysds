@@ -19,12 +19,12 @@ from hysds.es_util import get_mozart_es
 from elasticsearch import ElasticsearchException
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
-STATUS_ALIAS = app.conf.STATUS_ALIAS
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
 
 JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
 USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
+JOB_STATUS_ALIAS = "job_status-current"
 
 mozart_es = get_mozart_es()
 
@@ -79,14 +79,14 @@ def update_query(job_id, rule):
     return final_query
 
 
-def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
+def evaluate_user_rules_job(job_id, index=None):
     """
     Process all user rules in ES database and check if this job ID matches.
     If so, submit jobs. Otherwise do nothing.
     """
 
     time.sleep(7)  # sleep 7 seconds to allow ES documents to be indexed
-    ensure_job_indexed(job_id, alias)  # ensure job is indexed
+    ensure_job_indexed(job_id, JOB_STATUS_ALIAS)  # ensure job is indexed
 
     # get all enabled user rules
     query = {
@@ -120,7 +120,7 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
 
         # check for matching rules
         try:
-            result = mozart_es.es.search(index=alias, body=final_qs)
+            result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
@@ -141,12 +141,13 @@ def evaluate_user_rules_job(job_id, alias=STATUS_ALIAS):
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_finished_job(_id):
+def queue_finished_job(_id, index=None):
     """Queue job id for user_rules_job evaluation."""
     payload = {
         "type": "user_rules_job",
         "function": "hysds.user_rules_job.evaluate_user_rules_job",
         "args": [_id],
+        "kwargs": {"index": index},
     }
     hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
 
