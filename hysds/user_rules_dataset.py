@@ -103,7 +103,7 @@ async def search_es(index, body):
     return await grq_es_async.es.search(index=index, body=body, request_timeout=30)
 
 
-async def evaluate_rule(_id, system_version, rule):
+async def evaluate_rule(_id, system_version, rule, sleep_interval=0.0):
     try:
         updated_query = update_query(_id, system_version, rule)
         rule["query"] = updated_query
@@ -126,13 +126,14 @@ async def evaluate_rule(_id, system_version, rule):
         index_pattern = DATASET_ALIAS
     logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
-    # await asyncio.sleep(random.uniform(0, 7))
-    await asyncio.sleep(1)
+    await asyncio.sleep(random.uniform(0, sleep_interval))
+    # await asyncio.sleep(1)
     try:
         result = await search_es(index=index_pattern, body=final_qs)
         if result["hits"]["total"]["value"] == 0:
             logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, _id, system_version))
             return
+        logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, _id, system_version))
         doc_res = result["hits"]["hits"][0]
     except (ElasticsearchException, Exception) as e:
         logger.error("Failed to query ES")
@@ -148,10 +149,13 @@ async def evaluate_rule(_id, system_version, rule):
 
 
 async def run_tasks(rules, _id, system_version):
-    tasks = []
-    for rule in rules:
-        tasks.append(evaluate_rule(_id, system_version, rule))
-    await asyncio.gather(*tasks, return_exceptions=True)
+    for i in range(0, len(rules), 25):
+        tasks = []
+        chunk = rules[i:i+25]
+        for rule in chunk:
+            sleep_interval = float(len(chunk)/4)
+            tasks.append(evaluate_rule(_id, system_version, rule["_source"], sleep_interval=sleep_interval))
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def evaluate_user_rules_dataset(
@@ -175,11 +179,7 @@ def evaluate_user_rules_dataset(
     }
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
-
-    for i in range(0, len(rules), 25):
-        chunk = rules[i:i+25]
-        asyncio.run(run_tasks(chunk, objectid, system_version))
-
+    asyncio.run(run_tasks(rules, objectid, system_version))
     return True
 
 
