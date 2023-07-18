@@ -10,12 +10,15 @@ import json
 import time
 import backoff
 import socket
+import random
+import asyncio
 
 import hysds
 from hysds.celery import app
 from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es, get_grq_es
+from hysds.es_util_async import get_mozart_es_async, get_grq_es_async
 
 from elasticsearch import ElasticsearchException
 
@@ -29,6 +32,9 @@ USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
 
 mozart_es = get_mozart_es()
 grq_es = get_grq_es()
+
+mozart_es_async = get_mozart_es_async()
+grq_es_async = get_grq_es_async()
 
 
 @backoff.on_exception(
@@ -93,8 +99,59 @@ def update_query(_id, system_version, rule):
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def search_es(index, body):
-    return grq_es.es.search(index=index, body=body, request_timeout=30)
+async def search_es(index, body):
+    return await grq_es_async.es.search(index=index, body=body, request_timeout=30)
+
+
+async def evaluate_rule(_id, system_version, rule):
+    try:
+        updated_query = update_query(_id, system_version, rule)
+        rule["query"] = updated_query
+        rule["query_string"] = json.dumps(updated_query)
+    except (RuntimeError, Exception) as e:
+        logger.error("unable to update user_rule's query, skipping")
+        logger.error(e)
+        raise e
+
+    rule_name = rule["rule_name"]
+    job_type = rule["job_type"]  # set clean descriptive job name
+    final_qs = rule["query_string"]
+
+    index_pattern = rule.get("index_pattern", "")
+    if index_pattern is None:
+        index_pattern = ""
+    index_pattern = index_pattern.strip()
+    if not index_pattern or not validate_index_pattern(index_pattern):
+        logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
+        index_pattern = DATASET_ALIAS
+    logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
+
+    # await asyncio.sleep(random.uniform(0, 7))
+    await asyncio.sleep(1)
+    try:
+        result = await search_es(index=index_pattern, body=final_qs)
+        if result["hits"]["total"]["value"] == 0:
+            logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, _id, system_version))
+            return
+        doc_res = result["hits"]["hits"][0]
+    except (ElasticsearchException, Exception) as e:
+        logger.error("Failed to query ES")
+        logger.error(e)
+        raise e
+
+    if job_type.startswith("hysds-io-"):
+        job_type = job_type.replace("hysds-io-", "", 1)
+    job_name = "%s-%s" % (job_type, _id)
+
+    queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
+    logger.info("Trigger task submitted for %s (%s): %s" % (_id, system_version, job_type))
+
+
+async def run_tasks(rules, _id, system_version):
+    tasks = []
+    for rule in rules:
+        tasks.append(evaluate_rule(_id, system_version, rule))
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def evaluate_user_rules_dataset(
@@ -119,53 +176,10 @@ def evaluate_user_rules_dataset(
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
-    for document in rules:
-        time.sleep(1)  # sleep between queries
+    for i in range(0, len(rules), 25):
+        chunk = rules[i:i+25]
+        asyncio.run(run_tasks(chunk, objectid, system_version))
 
-        rule = document["_source"]
-        logger.info("rule: %s" % json.dumps(rule, indent=2))
-
-        try:
-            updated_query = update_query(objectid, system_version, rule)
-            rule["query"] = updated_query
-            rule["query_string"] = json.dumps(updated_query)
-        except (RuntimeError, Exception) as e:
-            logger.error("unable to update user_rule's query, skipping")
-            logger.error(e)
-            continue
-
-        rule_name = rule["rule_name"]
-        job_type = rule["job_type"]  # set clean descriptive job name
-        final_qs = rule["query_string"]
-
-        index_pattern = rule.get("index_pattern", "")
-        if index_pattern is None:
-            index_pattern = ""
-        index_pattern = index_pattern.strip()
-        if not index_pattern or not validate_index_pattern(index_pattern):
-            logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
-            index_pattern = DATASET_ALIAS
-        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
-
-        # check for matching rules
-        try:
-            result = search_es(index=index_pattern, body=final_qs)
-            if result["hits"]["total"]["value"] == 0:
-                logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
-                continue
-            doc_res = result["hits"]["hits"][0]
-            logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
-        except (ElasticsearchException, Exception) as e:
-            logger.error("Failed to query ES")
-            logger.error(e)
-            continue
-
-        if job_type.startswith("hysds-io-"):
-            job_type = job_type.replace("hysds-io-", "", 1)
-        job_name = "%s-%s" % (job_type, objectid)
-
-        queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
-        logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
     return True
 
 
