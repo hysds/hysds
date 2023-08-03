@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 
+import re
 import boto3
 from opensearchpy import AWSV4SignerAuth
 from elasticsearch import RequestsHttpConnection as RequestsHttpConnectionES
@@ -24,6 +25,8 @@ except (ImportError, ModuleNotFoundError):
 MOZART_ES = None
 GRQ_ES = None
 
+REGEX_PATTERN = r"\.([a-z]+-[a-z].+-\d+)\."
+
 
 def get_mozart_es():
     global MOZART_ES
@@ -31,10 +34,12 @@ def get_mozart_es():
         jobs_es_engine = app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("JOBS_AWS_ES", False)
         es_url = app.conf["JOBS_ES_URL"]
-        region = app.conf.get("AWS_REGION", "us-west-2")
+
+        m = re.search(REGEX_PATTERN, es_url)
+        region = m.group(1) if m else app.conf.get("AWS_REGION", "us-west-2")
 
         if jobs_es_engine == "opensearch":
-            if aws_es is True:
+            if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
                 MOZART_ES = OpenSearchUtility(
@@ -51,7 +56,7 @@ def get_mozart_es():
             else:
                 MOZART_ES = OpenSearchUtility(es_url)
         else:
-            if aws_es is True:
+            if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
                 MOZART_ES = ElasticsearchUtility(
@@ -77,10 +82,12 @@ def get_grq_es():
         grq_es_engine = app.conf.get("GRQ_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("GRQ_AWS_ES", False)
         es_url = app.conf["GRQ_ES_URL"]
-        region = app.conf.get("AWS_REGION", "us-west-2")
+
+        m = re.search(REGEX_PATTERN, es_url)
+        region = m.group(1) if m else app.conf.get("AWS_REGION", "us-west-2")
 
         if grq_es_engine == "opensearch":
-            if aws_es is True:
+            if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
                 GRQ_ES = OpenSearchUtility(
@@ -97,7 +104,7 @@ def get_grq_es():
             else:
                 GRQ_ES = OpenSearchUtility(es_url)
         else:
-            if aws_es is True:
+            if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
                 GRQ_ES = ElasticsearchUtility(

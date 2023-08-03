@@ -66,7 +66,11 @@ MOZART_REST_URL = "http://{{ MOZART_PVT_IP }}:8888/api/v0.1"
 
 JOBS_ES_ENGINE = "{{ JOBS_ES_ENGINE or 'elasticsearch' }}"
 JOBS_AWS_ES = {{ JOBS_AWS_ES or False }}
-JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if JOBS_AWS_ES == true else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
+{% if JOB_ES_PVT_IP.startswith('https://') %}
+JOBS_ES_URL = "{{ JOB_ES_PVT_IP }}"
+{% else %}
+JOBS_ES_URL = "{{ 'https://'~JOB_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in JOB_ES_PVT_IP else 'http://'~JOB_ES_PVT_IP~':9200' }}"
+{% endif %}
 
 JOBS_PROCESSED_QUEUE = "jobs_processed"
 USER_RULES_JOB_QUEUE = "user_rules_job"
@@ -82,7 +86,12 @@ GRQ_UPDATE_URL_BULK = "http://{{ GRQ_PVT_IP }}:{{ GRQ_PORT }}/api/v0.2/grq/datas
 
 GRQ_ES_ENGINE = "{{ GRQ_ES_ENGINE or 'elasticsearch' }}"
 GRQ_AWS_ES = {{ GRQ_AWS_ES or False }}
-GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true else 'http://'~GRQ_ES_PVT_IP~':9200' }}"
+{% if GRQ_ES_PVT_IP.startswith('https://') %}
+GRQ_ES_URL = "{{ GRQ_ES_PVT_IP }}"
+{% else %}
+GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true or 'es.amazonaws.com' in GRQ_ES_PVT_IP else 'http://'~GRQ_ES_PVT_IP~':9200' }}"
+{% endif %}
+
 
 
 CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
