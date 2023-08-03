@@ -11,12 +11,14 @@ import time
 import backoff
 import socket
 
+import elasticsearch.exceptions
+import opensearchpy.exceptions
+
 import hysds
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es
 
-from elasticsearch import ElasticsearchException
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -34,7 +36,11 @@ mozart_es = get_mozart_es()
 )
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    query = {"query": {"term": {"_id": job_id}}}
+    query = {
+        "query": {
+            "term": {"_id": job_id}
+        }
+    }
     logger.info("ensure_job_indexed: %s" % json.dumps(query))
     count = mozart_es.get_count(index=alias, body=query)
     if count == 0:
@@ -124,7 +130,7 @@ def evaluate_user_rules_job(job_id, index=None):
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
-        except ElasticsearchException as e:
+        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue

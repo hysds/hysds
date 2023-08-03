@@ -11,13 +11,15 @@ import time
 import backoff
 import socket
 
-import hysds
+import elasticsearch.exceptions
+import opensearchpy.exceptions
+
+# import hysds
+import hysds.task_worker
 from hysds.celery import app
 from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es, get_grq_es
-
-from elasticsearch import ElasticsearchException
 
 GRQ_ES_URL = app.conf.GRQ_ES_URL  # ES
 DATASET_ALIAS = app.conf.DATASET_ALIAS
@@ -47,21 +49,15 @@ def ensure_dataset_indexed(objectid, system_version, alias):
         }
     }
     logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
-
-    try:
-        count = grq_es.get_count(index=alias, body=query)
-        if count == 0:
-            error_message = "Failed to find indexed dataset: %s (%s)" % (
-                objectid,
-                system_version,
-            )
-            logger.error(error_message)
-            raise RuntimeError(error_message)
-        logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
-
-    except ElasticsearchException as e:
-        logger.error("Unable to execute query")
-        logger.error(e)
+    count = grq_es.get_count(index=alias, body=query)
+    if count == 0:
+        error_message = "Failed to find indexed dataset: %s (%s)" % (
+            objectid,
+            system_version,
+        )
+        logger.error(error_message)
+        raise RuntimeError(error_message)
+    logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
 
 
 def update_query(_id, system_version, rule):
@@ -90,9 +86,7 @@ def update_query(_id, system_version, rule):
     return final_query
 
 
-@backoff.on_exception(
-    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
-)
+@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
 def search_es(index, body):
     return grq_es.es.search(index=index, body=body, request_timeout=30)
 
@@ -155,7 +149,7 @@ def evaluate_user_rules_dataset(
                 continue
             doc_res = result["hits"]["hits"][0]
             logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
-        except (ElasticsearchException, Exception) as e:
+        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
