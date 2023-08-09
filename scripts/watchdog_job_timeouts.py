@@ -79,7 +79,7 @@ def tag_timedout_jobs(url, timeout):
             worker_query = {
                 "query": {"term": {"_id": celery_hostname}},
                 "_source": ["status", "tags"],
-                "sort": ["@timestamp:desc"]
+                "sort": [{"@timestamp": "desc"}]
             }
 
             worker_res = job_utils.es_query(worker_query, index="worker_status-current")
