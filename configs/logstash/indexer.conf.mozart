@@ -1,7 +1,9 @@
 input {
   redis {
     host => "{{ MOZART_REDIS_PVT_IP }}"
-    {% if MOZART_REDIS_PASSWORD != "" %}password => "{{ MOZART_REDIS_PASSWORD }}"{% endif %}
+    {%- if MOZART_REDIS_PASSWORD != "" %}
+    password => "{{ MOZART_REDIS_PASSWORD }}"
+    {%- endif %}
     # these settings should match the output of the agent
     data_type => "list"
     key => "logstash"
@@ -50,28 +52,68 @@ output {
   #stdout { codec => rubydebug }
 
   if [resource] == "job" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' or MOZART_AWS_ES == true else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+      {% else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      {%- endif %}
       index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
+      {%- if MOZART_AWS_ES %}
+      auth_type => {
+        type => 'aws_iam'
+        region => "{{ AWS_REGION or 'us-west-2' }}"
+      }
+      {%- endif %}
     }
   } else if [resource] == "worker" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' or MOZART_AWS_ES == true else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+      {% else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      {%- endif %}
       index => "worker_status-%{+YYYY.MM.dd}"
       document_id => "%{celery_hostname}"
+      {%- if MOZART_AWS_ES %}
+      auth_type => {
+        type => 'aws_iam'
+        region => "{{ AWS_REGION or 'us-west-2' }}"
+      }
+      {%- endif %}
     }
   } else if [resource] == "task" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' or MOZART_AWS_ES == true else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+      {% else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      {%- endif %}
       index => "%{index}"
       document_id => "%{uuid}"
+      {%- if MOZART_AWS_ES %}
+      auth_type => {
+        type => 'aws_iam'
+        region => "{{ AWS_REGION or 'us-west-2' }}"
+      }
+      {%- endif %}
     }
   } else if [resource] == "event" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' or MOZART_AWS_ES == true else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+      {% else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      {%- endif %}
       index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
+      {%- if MOZART_AWS_ES %}
+      auth_type => {
+        type => 'aws_iam'
+        region => "{{ AWS_REGION or 'us-west-2' }}"
+      }
+      {%- endif %}
     }
   } else {}
 }
