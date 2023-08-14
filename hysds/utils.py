@@ -183,7 +183,7 @@ def download_file(url, path, cache=False):
             if os.path.exists(path + ".osaka.locked.json"):
                 logger.warning(".osaka.locked.json file found, rolling back...")
                 shutil.rmtree(path + ".osaka.locked.json")
-            raise
+            raise Exception(f"Error downloading file through osaks: {e}")
 
 
 def find_cache_dir(cache_dir):
