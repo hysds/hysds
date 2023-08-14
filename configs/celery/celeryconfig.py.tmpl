@@ -64,12 +64,12 @@ PYMONITOREDRUNNER_CFG = {
 MOZART_URL = "https://{{ MOZART_PVT_IP }}/mozart/"
 MOZART_REST_URL = "http://{{ MOZART_PVT_IP }}:8888/api/v0.1"
 
-JOBS_ES_ENGINE = "{{ JOBS_ES_ENGINE or 'elasticsearch' }}"
-JOBS_AWS_ES = {{ JOBS_AWS_ES or False }}
-{% if JOB_ES_PVT_IP.startswith('https://') %}
-JOBS_ES_URL = "{{ JOB_ES_PVT_IP }}"
+JOBS_ES_ENGINE = "{{ MOZART_ES_ENGINE or 'elasticsearch' }}"
+JOBS_AWS_ES = {{ MOZART_AWS_ES or False }}
+{% if MOZART_ES_PVT_IP.startswith('https://') %}
+JOBS_ES_URL = "{{ MOZART_ES_PVT_IP }}"
 {% else %}
-JOBS_ES_URL = "{{ 'https://'~JOB_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in JOB_ES_PVT_IP else 'http://'~JOB_ES_PVT_IP~':9200' }}"
+JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
 {% endif %}
 
 JOBS_PROCESSED_QUEUE = "jobs_processed"
