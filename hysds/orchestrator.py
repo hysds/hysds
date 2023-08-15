@@ -424,32 +424,59 @@ def submit_job(j):
             # generate celery task id
             job_json["task_id"] = uuid()
 
-            # log queued status
-            job_status_json = {
-                "uuid": job_json["task_id"],
-                "job_id": job_json["job_id"],
-                "payload_id": task_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-queued",
-                "job": job_json,
-            }
-            log_job_status(job_status_json)
-
-            # submit job
-            res = run_job.apply_async(
-                (job_json,),
-                queue=queue,
-                time_limit=time_limit,
-                soft_time_limit=soft_time_limit,
-                priority=priority,
-                task_id=job_json["task_id"],
-            )
-
-            # append result
-            results.append(job_json["task_id"])
+            try:
+                # submit job
+                res = do_run_job(job_json,
+                                 queue=queue,
+                                 time_limit=time_limit,
+                                 soft_time_limit=soft_time_limit,
+                                 priority=priority)
+                # log queued status
+                job_status_json = {
+                    "uuid": job_json["task_id"],
+                    "job_id": job_json["job_id"],
+                    "payload_id": task_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-queued",
+                    "job": job_json,
+                }
+                log_job_status(job_status_json)
+                # append result
+                results.append(job_json["task_id"])
+            except Exception as e:
+                # Set the job to job-failed if we could not queue up the job properly
+                error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=str(e))
+                job_status_json = {
+                    "uuid": job_json["task_id"],
+                    "job_id": job_json["job_id"],
+                    "payload_id": task_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-failed",
+                    "job": job_json,
+                    "context": context,
+                    "error": error_info,
+                    "short_error": get_short_error(error_info),
+                    "traceback": traceback.format_exc(),
+                }
+                log_job_status(job_status_json)
 
     return results
+
+
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def do_run_job(job_json, queue, time_limit, soft_time_limit, priority):
+    return run_job.apply_async(
+        (job_json,),
+        queue=queue,
+        time_limit=time_limit,
+        soft_time_limit=soft_time_limit,
+        priority=priority,
+        task_id=job_json["task_id"],
+    )
 
 
 @backoff.on_exception(
