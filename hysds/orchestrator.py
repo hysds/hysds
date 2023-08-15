@@ -469,6 +469,16 @@ def submit_job(j):
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def do_run_job(job_json, queue, time_limit, soft_time_limit, priority):
+    """
+    Run job wrapper with exponential backoff and full jitter.
+
+    :param job_json:
+    :param queue:
+    :param time_limit:
+    :param soft_time_limit:
+    :param priority:
+    :return:
+    """
     return run_job.apply_async(
         (job_json,),
         queue=queue,
