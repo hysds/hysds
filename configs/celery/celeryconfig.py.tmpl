@@ -69,7 +69,7 @@ JOBS_AWS_ES = {{ MOZART_AWS_ES or False }}
 {% if MOZART_ES_PVT_IP.startswith('https://') %}
 JOBS_ES_URL = "{{ MOZART_ES_PVT_IP }}"
 {% else %}
-JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if JOB_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
+JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
 {% endif %}
 
 JOBS_PROCESSED_QUEUE = "jobs_processed"
