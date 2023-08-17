@@ -28,9 +28,9 @@ def install_mozart_template(name, template_file):
 
         # elasticsearch-oss
         if build_flavor == "oss" and distribution != "opensearch":
-            if version_number <= MIN_ES_OSS_ISM_VERSION:
+            if version_number < MIN_ES_OSS_ISM_VERSION:
                 warnings.warn("ISM in Open Distro < 1.13.0 requires the policy to added to the template")
-                template["template"]["settings"]["opendistro.index_state_management.policy_id": "policy_id"] = POLICY_NAME
+                template["template"]["settings"]["opendistro.index_state_management.policy_id"] = POLICY_NAME
         elif distribution == "opensearch":
             # the policy should populate the ISM if the index patterns match
             warnings.warn("Opensearch 1.13+ ISM does not require the policy to added to the template")
@@ -39,10 +39,9 @@ def install_mozart_template(name, template_file):
                 "name": "ilm_policy_mozart"
             }
             template["template"]["settings"]["index"]["lifecycle"] = ilm_lifecycle
-        print(json.dumps(template, indent=2))
 
-        res = mozart_es.es.indices.put_index_template(name=name, body=template, ignore=[400])
-        print(json.dumps(res, indent=2))
+        res = mozart_es.es.indices.put_index_template(name=name, body=template)
+        print(json.dumps(res))
 
 
 if __name__ == "__main__":
