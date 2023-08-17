@@ -62,7 +62,7 @@ def fail_job(event, uuid, exc, short_error):
     time_end = datetime.utcnow().isoformat() + "Z"
     job_status.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
     log_job_status(job_status)
-
+    queue_finished_job(uuid, index=res["_index"])
 
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value

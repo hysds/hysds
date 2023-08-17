@@ -461,6 +461,7 @@ def submit_job(j):
                     "traceback": traceback.format_exc(),
                 }
                 log_job_status(job_status_json)
+                queue_finished_job(task_id, index=job_json["job_info"]["index"])
 
     return results
 
