@@ -43,6 +43,7 @@ from hysds.utils import (
 )
 from hysds.user_rules_dataset import queue_dataset_evaluation
 
+from user_rules_job import queue_finished_job
 
 # error template
 ERROR_TMPL = Template("Error queueing job from $orch_queue: $error")
