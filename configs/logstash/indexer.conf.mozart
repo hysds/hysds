@@ -53,70 +53,30 @@ output {
 
   if [resource] == "job" {
     opensearch {
-      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
-      hosts => ["{{ MOZART_ES_PVT_IP }}"]
-      {% else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
-      {%- endif %}
+      hosts => ["{{ MOZART_PVT_IP }}:9200"]
       index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
-      {%- if MOZART_AWS_ES %}
-      auth_type => {
-        type => 'aws_iam'
-        region => "{{ AWS_REGION or 'us-west-2' }}"
-      }
-      {%- endif %}
       ecs_compatibility => disabled
     }
   } else if [resource] == "worker" {
     opensearch {
-      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
-      hosts => ["{{ MOZART_ES_PVT_IP }}"]
-      {% else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
-      {%- endif %}
+      hosts => ["{{ MOZART_PVT_IP }}:9200"]
       index => "worker_status-%{+YYYY.MM.dd}"
       document_id => "%{celery_hostname}"
-      {%- if MOZART_AWS_ES %}
-      auth_type => {
-        type => 'aws_iam'
-        region => "{{ AWS_REGION or 'us-west-2' }}"
-      }
-      {%- endif %}
       ecs_compatibility => disabled
     }
   } else if [resource] == "task" {
     opensearch {
-      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
-      hosts => ["{{ MOZART_ES_PVT_IP }}"]
-      {% else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
-      {%- endif %}
+      hosts => ["{{ MOZART_PVT_IP }}:9200"]
       index => "%{index}"
       document_id => "%{uuid}"
-      {%- if MOZART_AWS_ES %}
-      auth_type => {
-        type => 'aws_iam'
-        region => "{{ AWS_REGION or 'us-west-2' }}"
-      }
-      {%- endif %}
       ecs_compatibility => disabled
     }
   } else if [resource] == "event" {
     opensearch {
-      {%- if MOZART_ES_PVT_IP.startswith('https://') -%}
-      hosts => ["{{ MOZART_ES_PVT_IP }}"]
-      {% else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
-      {%- endif %}
+      hosts => ["{{ MOZART_PVT_IP }}:9200"]
       index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
-      {%- if MOZART_AWS_ES %}
-      auth_type => {
-        type => 'aws_iam'
-        region => "{{ AWS_REGION or 'us-west-2' }}"
-      }
-      {%- endif %}
       ecs_compatibility => disabled
     }
   } else {}
