@@ -25,7 +25,7 @@ from hysds.log_utils import (
     JOB_STATUS_KEY_TMPL,
 )
 from hysds.es_util import get_mozart_es
-
+from user_rules_job import queue_finished_job
 
 mozart_es = get_mozart_es()
 
