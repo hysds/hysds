@@ -31,7 +31,7 @@ mozart_es = get_mozart_es()
 
 
 @backoff.on_exception(
-    backoff.expo, Exception, max_tries=2, max_value=10
+    backoff.expo, Exception, max_tries=5, max_value=10
 )
 def fail_job(event, uuid, exc, short_error):
     """Set job status to job-failed."""
