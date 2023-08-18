@@ -396,7 +396,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         "query": {
             "bool": {
                 "must": [
-                    {"term": {"payload_hash": dedup_key}},
+                    {"term": {"payload_hash.keyword": dedup_key}},
                     {
                         "bool": {
                             "should": [
