@@ -66,7 +66,7 @@ def fail_job(event, uuid, exc, short_error):
         job_status.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
         log_job_status(job_status)
 
-        queue_finished_job(uuid, index=res["_index"])
+        queue_finished_job(job_status["payload_id"], index=res["_index"])
     else:
         logger.info(
             f"fail_job - {uuid}: Will not re-log and requeue job as job status is already set "
