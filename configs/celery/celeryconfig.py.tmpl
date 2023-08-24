@@ -18,11 +18,14 @@ task_queue_max_priority = 10
 
 task_reject_on_worker_lost = True
 
-broker_heartbeat = 120
+broker_heartbeat = 30
 broker_heartbeat_checkrate = 2
 
 broker_pool_limit = None
 broker_transport_options = { "confirm_publish": True }
+
+redis_socket_keepalive = True
+redis_backend_healh_check_interval = 30
 
 imports = [
     "hysds.task_worker",
