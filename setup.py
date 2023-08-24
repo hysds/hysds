@@ -15,7 +15,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1,<4.5.2",  # https://github.com/redis/redis-py/issues/2629
-        "celery>=5.2.2,<6.0.0,!=5.2.3",
+        "celery>=5.3.1,<6.0.0",
         "prompt-toolkit==1.0.18",  # TODO: celery uses new verison of click which broke this, wil remove later
         "requests>=2.20.0",
         "flower>=1.0.0",
