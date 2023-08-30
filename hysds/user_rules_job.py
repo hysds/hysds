@@ -14,7 +14,7 @@ import socket
 import elasticsearch.exceptions
 import opensearchpy.exceptions
 
-import hysds
+import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es
@@ -155,7 +155,7 @@ def queue_finished_job(_id, index=None):
         "args": [_id],
         "kwargs": {"index": index},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)  # noqa
 
 
 @backoff.on_exception(
@@ -169,4 +169,4 @@ def queue_job_trigger(doc_res, rule):
         "args": [doc_res, rule],
         "kwargs": {"component": "mozart"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa

@@ -14,8 +14,7 @@ import socket
 import elasticsearch.exceptions
 import opensearchpy.exceptions
 
-# import hysds
-import hysds.task_worker
+import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
@@ -173,7 +172,7 @@ def queue_dataset_evaluation(info):
         "function": "hysds.user_rules_dataset.evaluate_user_rules_dataset",
         "args": [info["id"], info["system_version"]],
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)  # noqa
 
 
 @backoff.on_exception(
@@ -187,4 +186,4 @@ def queue_dataset_trigger(doc_res, rule, job_name):
         "args": [doc_res, rule],
         "kwargs": {"job_name": job_name, "component": "grq"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa
