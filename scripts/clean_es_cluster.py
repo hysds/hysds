@@ -16,6 +16,7 @@ if __name__ == "__main__":
                 k.startswith("user_rules-") or \
                 k == "job_specs" or \
                 k == "containers":
+            print(f"deleted {k} index")
             mozart_es.es.indices.delete(index=k)
 
     mozart_es.es.indices.delete_index_template(name="job_status", ignore=404)
@@ -60,6 +61,7 @@ if __name__ == "__main__":
     aliases = grq_es.es.indices.get_alias()
     for k, _ in aliases.items():
         if k.startswith("grq_"):
+            print(f"deleted {k} index")
             grq_es.es.indices.delete(index=k)
 
     grq_es.es.indices.delete_template(name="grq", ignore=404)
