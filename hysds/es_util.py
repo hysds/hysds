@@ -60,6 +60,6 @@ def get_grq_es():
             if es_cluster_mode:
                 hosts = [app.conf.JOBS_ES_URL, app.conf.GRQ_ES_URL, app.conf.METRICS_ES_URL]
             else:
-                hosts = [app.conf.JOBS_ES_URL]
+                hosts = [es_url]
             GRQ_ES = ElasticsearchUtility(hosts, logger)
     return GRQ_ES
