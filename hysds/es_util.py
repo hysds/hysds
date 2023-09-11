@@ -21,7 +21,12 @@ GRQ_ES = None
 def get_mozart_es():
     global MOZART_ES
     if MOZART_ES is None:
-        MOZART_ES = ElasticsearchUtility(app.conf.JOBS_ES_URL, logger)
+        es_cluster_mode = app.conf['ES_CLUSTER_MODE']
+        if es_cluster_mode:
+            hosts = [app.conf.JOBS_ES_URL, app.conf.GRQ_ES_URL, app.conf.METRICS_ES_URL]
+        else:
+            hosts = [app.conf.JOBS_ES_URL]
+        MOZART_ES = ElasticsearchUtility(hosts, logger)
     return MOZART_ES
 
 
@@ -33,6 +38,7 @@ def get_grq_es():
         es_host = app.conf["GRQ_ES_HOST"]
         es_url = app.conf["GRQ_ES_URL"]
         region = app.conf["AWS_REGION"]
+        es_cluster_mode = app.conf['ES_CLUSTER_MODE']
 
         if aws_es is True:
             aws_auth = BotoAWSRequestsAuth(
@@ -51,5 +57,9 @@ def get_grq_es():
                 retry_on_timeout=True,
             )
         else:
-            GRQ_ES = ElasticsearchUtility(es_url, logger)
+            if es_cluster_mode:
+                hosts = [app.conf.JOBS_ES_URL, app.conf.GRQ_ES_URL, app.conf.METRICS_ES_URL]
+            else:
+                hosts = [es_url]
+            GRQ_ES = ElasticsearchUtility(hosts, logger)
     return GRQ_ES
