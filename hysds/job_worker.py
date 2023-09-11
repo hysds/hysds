@@ -1401,7 +1401,7 @@ def run_job(job, queue_when_finished=True):
             .get("job_specification", {})
             .get("disable_post_builtins", False)
         )
-        post_processors = [] if disable_post else list(POST_PROCESSORS)
+        post_processors = [] if disable_post or job_status_json["status"] == "job-deduped" else list(POST_PROCESSORS)
         post_processors.extend(
             job.get("params", {}).get("job_specification", {}).get("post", [])
         )
