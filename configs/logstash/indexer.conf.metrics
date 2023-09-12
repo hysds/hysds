@@ -33,9 +33,24 @@ input {
 output {
   #stdout { codec => rubydebug }
 
-  elasticsearch {
-    hosts => ["{{ METRICS_ES_PVT_IP }}:9200"]
+  opensearch {
+    {%- if METRICS_ES_PVT_IP is iterable and METRICS_ES_PVT_IP is not string %}
+    hosts => [
+      {%- for url in METRICS_ES_PVT_IP %}
+        {%- if url.startswith('https://') %}
+      "{{ url }}"{{ "," if not loop.last else "" }}
+        {%- else %}
+      "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        {%- endif %}
+      {%- endfor %}
+    ]
+    {%- else %}
+      {%- if METRICS_ES_PVT_IP.startswith('https://') %}
+    hosts => ["{{ METRICS_ES_PVT_IP }}"]
+      {%- else %}
+    hosts => ["{{ 'https://'~METRICS_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'http://'~METRICS_ES_PVT_IP~':9200' }}"]
+      {%- endif %}
+    {%- endif %}
     index => "%{[@index]}"
   }
 }
-
