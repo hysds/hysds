@@ -102,7 +102,12 @@ def get_grq_es():
                     retry_on_timeout=True,
                 )
             else:
-                GRQ_ES = OpenSearchUtility(es_url)
+                GRQ_ES = OpenSearchUtility(
+                    es_url,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True
+                )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
@@ -119,5 +124,10 @@ def get_grq_es():
                     retry_on_timeout=True,
                 )
             else:
-                GRQ_ES = ElasticsearchUtility(es_url)
+                GRQ_ES = ElasticsearchUtility(
+                    es_url,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True
+                )
     return GRQ_ES
