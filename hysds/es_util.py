@@ -3,7 +3,6 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 
-import re
 import boto3
 from opensearchpy import AWSV4SignerAuth
 from elasticsearch import RequestsHttpConnection as RequestsHttpConnectionES
@@ -34,9 +33,7 @@ def get_mozart_es():
         jobs_es_engine = app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("JOBS_AWS_ES", False)
         es_url = app.conf["JOBS_ES_URL"]
-
-        m = re.search(REGEX_PATTERN, es_url)
-        region = m.group(1) if m else app.conf.get("AWS_REGION", "us-west-2")
+        region = app.conf.get("AWS_REGION", "us-west-2")
 
         if jobs_es_engine == "opensearch":
             if aws_es is True or "es.amazonaws.com" in es_url:
@@ -82,9 +79,7 @@ def get_grq_es():
         grq_es_engine = app.conf.get("GRQ_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("GRQ_AWS_ES", False)
         es_url = app.conf["GRQ_ES_URL"]
-
-        m = re.search(REGEX_PATTERN, es_url)
-        region = m.group(1) if m else app.conf.get("AWS_REGION", "us-west-2")
+        region = app.conf.get("AWS_REGION", "us-west-2")
 
         if grq_es_engine == "opensearch":
             if aws_es is True or "es.amazonaws.com" in es_url:
