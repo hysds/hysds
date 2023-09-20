@@ -24,15 +24,13 @@ except (ImportError, ModuleNotFoundError):
 MOZART_ES = None
 GRQ_ES = None
 
-REGEX_PATTERN = r"\.([a-z]+-[a-z].+-\d+)\."
 
-
-def get_mozart_es():
+def get_mozart_es(hosts=None):
     global MOZART_ES
     if MOZART_ES is None:
         jobs_es_engine = app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("JOBS_AWS_ES", False)
-        es_url = app.conf["JOBS_ES_URL"]
+        es_url = hosts or app.conf["JOBS_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
 
         if jobs_es_engine == "opensearch":
@@ -72,13 +70,13 @@ def get_mozart_es():
     return MOZART_ES
 
 
-def get_grq_es():
+def get_grq_es(hosts=None):
     global GRQ_ES
 
     if GRQ_ES is None:
         grq_es_engine = app.conf.get("GRQ_ES_ENGINE", "elasticsearch")
         aws_es = app.conf.get("GRQ_AWS_ES", False)
-        es_url = app.conf["GRQ_ES_URL"]
+        es_url = hosts or app.conf["GRQ_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
 
         if grq_es_engine == "opensearch":
