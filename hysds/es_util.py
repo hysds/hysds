@@ -23,6 +23,7 @@ except (ImportError, ModuleNotFoundError):
 
 MOZART_ES = None
 GRQ_ES = None
+METRICS_ES = None
 
 
 def get_mozart_es(hosts=None):
@@ -124,3 +125,59 @@ def get_grq_es(hosts=None):
                     retry_on_timeout=True
                 )
     return GRQ_ES
+
+
+def get_metrics_es(hosts=None):
+    global METRICS_ES
+
+    if METRICS_ES is None:
+        grq_es_engine = app.conf.get("METRICS_ES_ENGINE", "elasticsearch")
+        aws_es = app.conf.get("METRICS_AWS_ES", False)
+        es_url = hosts or app.conf["METRICS_ES_URL"]
+        region = app.conf.get("AWS_REGION", "us-west-2")
+
+        if grq_es_engine == "opensearch":
+            if aws_es is True or "es.amazonaws.com" in es_url:
+                credentials = boto3.Session().get_credentials()
+                auth = AWSV4SignerAuth(credentials, region)
+                METRICS_ES = OpenSearchUtility(
+                    es_url,
+                    http_auth=auth,
+                    connection_class=RequestsHttpConnectionOS,
+                    use_ssl=True,
+                    verify_certs=False,
+                    ssl_show_warn=False,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True,
+                )
+            else:
+                METRICS_ES = OpenSearchUtility(
+                    es_url,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True
+                )
+        else:
+            if aws_es is True or "es.amazonaws.com" in es_url:
+                credentials = boto3.Session().get_credentials()
+                auth = AWSV4SignerAuth(credentials, region)
+                METRICS_ES = ElasticsearchUtility(
+                    es_url,
+                    http_auth=auth,
+                    connection_class=RequestsHttpConnectionES,
+                    use_ssl=True,
+                    verify_certs=False,
+                    ssl_show_warn=False,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True,
+                )
+            else:
+                METRICS_ES = ElasticsearchUtility(
+                    es_url,
+                    timeout=30,
+                    max_retries=10,
+                    retry_on_timeout=True
+                )
+    return METRICS_ES
