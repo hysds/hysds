@@ -33,7 +33,7 @@ input {
 output {
   #stdout { codec => rubydebug }
 
-  {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+  {{ 'opensearch' if METRICS_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
     {%- if METRICS_ES_PVT_IP is iterable and METRICS_ES_PVT_IP is not string %}
     hosts => [
       {%- for url in METRICS_ES_PVT_IP %}

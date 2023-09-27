@@ -47,16 +47,21 @@ def ensure_dataset_indexed(objectid, system_version, alias):
             }
         }
     }
+
     logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
-    count = grq_es.get_count(index=alias, body=query)
-    if count == 0:
-        error_message = "Failed to find indexed dataset: %s (%s)" % (
-            objectid,
-            system_version,
-        )
-        logger.error(error_message)
-        raise RuntimeError(error_message)
-    logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
+    try:
+        count = grq_es.get_count(index=alias, body=query)
+        if count == 0:
+            error_message = "Failed to find indexed dataset: %s (%s)" % (
+                objectid,
+                system_version,
+            )
+            logger.error(error_message)
+            raise RuntimeError(error_message)
+        logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
+    except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
+        logger.error(e)
+        raise e
 
 
 def update_query(_id, system_version, rule):
