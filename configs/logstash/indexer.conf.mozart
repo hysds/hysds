@@ -52,7 +52,7 @@ output {
   #stdout { codec => rubydebug }
 
   if [resource] == "job" {
-    opensearch {
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
       {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
       hosts => [
         {%- for url in MOZART_ES_PVT_IP %}
@@ -75,7 +75,7 @@ output {
       ecs_compatibility => disabled
     }
   } else if [resource] == "worker" {
-    opensearch {
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
       {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
       hosts => [
         {%- for url in MOZART_ES_PVT_IP %}
@@ -98,7 +98,7 @@ output {
       ecs_compatibility => disabled
     }
   } else if [resource] == "task" {
-    opensearch {
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
       {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
       hosts => [
         {%- for url in MOZART_ES_PVT_IP %}
@@ -121,7 +121,7 @@ output {
       ecs_compatibility => disabled
     }
   } else if [resource] == "event" {
-    opensearch {
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
       {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
       hosts => [
         {%- for url in MOZART_ES_PVT_IP %}
