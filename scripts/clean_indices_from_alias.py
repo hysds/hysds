@@ -7,36 +7,30 @@ from future import standard_library
 
 standard_library.install_aliases()
 import sys
-import requests
 import json
 import logging
 
+from hysds.es_util import get_mozart_es
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 
-def delete_job_status(es_url, alias):
+def delete_job_status(alias):
     """
     Finds the indices associated with the job_status-current alias.
     For each one found, delete it.
     """
+    mozart_es = get_mozart_es()
 
-    r = requests.get(f"{es_url}/_alias/{alias}")
-    if r.status_code == 404:
-        # If we get a 404, its safe to assume this is a fresh install
-        # and we don’t have to proceed with any subsequent request calls
-        logging.info(f"404 Client Error: Not Found for url: {es_url}/_alias/{alias}")
-    else:
-        scan_result = r.json()
-        logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(scan_result, indent=2)}")
-        for index in scan_result.keys():
+    res = mozart_es.es.indices.get_alias(name=alias, ignore=404)
+    if res["status"] != 404:
+        logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(res, indent=2)}")
+        for index in res.keys():
             logging.info(f"Deleting from Mozart ES: {index}")
-            r = requests.delete(f"{es_url}/{index}")
-            r.raise_for_status()
+            mozart_es.es.indices.delete(index=index)
 
 
 if __name__ == "__main__":
-    mozart_es_url = sys.argv[1]
-    alias_name = sys.argv[2]
-    delete_job_status(mozart_es_url, alias_name)
+    alias_name = sys.argv[1]
+    delete_job_status(alias_name)
