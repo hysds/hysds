@@ -48,7 +48,7 @@ output {
       {%- if METRICS_ES_PVT_IP.startswith('https://') %}
     hosts => ["{{ METRICS_ES_PVT_IP }}"]
       {%- else %}
-    hosts => ["{{ 'https://'~METRICS_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'http://'~METRICS_ES_PVT_IP~':9200' }}"]
+    hosts => ["{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'http://'~METRICS_ES_PVT_IP~':9200' }}"]
       {%- endif %}
     {%- endif %}
     index => "%{[@index]}"
