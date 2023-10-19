@@ -24,7 +24,9 @@ def delete_job_status(alias):
     mozart_es = get_mozart_es()
 
     res = mozart_es.es.indices.get_alias(name=alias, ignore=404)
-    if res["status"] != 404:
+    if res.get("status") == 404:
+        logging.info(f"404 Client Error: Not Found for querying for alias={alias}")
+    else:
         logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(res, indent=2)}")
         for index in res.keys():
             logging.info(f"Deleting from Mozart ES: {index}")
