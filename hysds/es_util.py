@@ -26,10 +26,14 @@ GRQ_ES = None
 METRICS_ES = None
 
 
+def get_mozart_es_engine():
+    return app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
+
+
 def get_mozart_es(hosts=None):
     global MOZART_ES
     if MOZART_ES is None:
-        jobs_es_engine = app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
+        jobs_es_engine = get_mozart_es_engine()
         aws_es = app.conf.get("JOBS_AWS_ES", False)
         es_url = hosts or app.conf["JOBS_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
@@ -85,11 +89,15 @@ def get_mozart_es(hosts=None):
     return MOZART_ES
 
 
+def get_grq_es_engine():
+    return app.conf.get("GRQ_ES_ENGINE", "elasticsearch")
+
+
 def get_grq_es(hosts=None):
     global GRQ_ES
 
     if GRQ_ES is None:
-        grq_es_engine = app.conf.get("GRQ_ES_ENGINE", "elasticsearch")
+        grq_es_engine = get_grq_es_engine()
         aws_es = app.conf.get("GRQ_AWS_ES", False)
         es_url = hosts or app.conf["GRQ_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
@@ -145,11 +153,15 @@ def get_grq_es(hosts=None):
     return GRQ_ES
 
 
+def get_metrics_es_engine():
+    return app.conf.get("METRICS_ES_ENGINE", "elasticsearch")
+
+
 def get_metrics_es(hosts=None):
     global METRICS_ES
 
     if METRICS_ES is None:
-        grq_es_engine = app.conf.get("METRICS_ES_ENGINE", "elasticsearch")
+        grq_es_engine = get_metrics_es_engine()
         aws_es = app.conf.get("METRICS_AWS_ES", False)
         es_url = hosts or app.conf["METRICS_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
