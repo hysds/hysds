@@ -28,9 +28,6 @@ JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
 USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
 
-mozart_es = get_mozart_es()
-grq_es = get_grq_es()
-
 
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
@@ -50,6 +47,7 @@ def ensure_dataset_indexed(objectid, system_version, alias):
 
     logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
     try:
+        grq_es = get_grq_es()
         count = grq_es.get_count(index=alias, body=query)
         if count == 0:
             error_message = "Failed to find indexed dataset: %s (%s)" % (
@@ -92,6 +90,7 @@ def update_query(_id, system_version, rule):
 
 @backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
 def search_es(index, body):
+    grq_es = get_grq_es()
     return grq_es.es.search(index=index, body=body, request_timeout=30)
 
 
@@ -114,6 +113,7 @@ def evaluate_user_rules_dataset(
             }
         }
     }
+    mozart_es = get_mozart_es()
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
