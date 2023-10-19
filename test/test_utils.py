@@ -5,7 +5,9 @@ try:
     import unittest.mock as umock
 except ImportError:
     import mock as umock
-import unittest
+# import unittest
+from unittest import TestCase
+from unittest.mock import patch
 import logging
 import tempfile
 import shutil
@@ -14,10 +16,11 @@ import os
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
 sys.modules["hysds.celery"] = umock.MagicMock()
+sys.modules['opensearchpy'] = umock.Mock()
 logging.basicConfig()
 
 
-class TestUtils(unittest.TestCase):
+class TestUtils(TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="tmp-")
         logging.info("self.tmp_dir: {}".format(self.tmp_dir))
@@ -58,30 +61,32 @@ class TestUtils(unittest.TestCase):
         return apparent_total_bytes
 
     def test_disk_usage(self):
-        import hysds.utils
+        with patch("elasticsearch.Elasticsearch", return_value=None), patch("opensearchpy.OpenSearch", return_value=None):
+            import hysds.utils
 
-        size_bytes = 1024 * 1024  # 1 MB
-        with open(os.path.join(self.tmp_dir, "test.bin"), "wb") as f:
-            f.write(os.urandom(size_bytes))
-        size = hysds.utils.get_disk_usage(self.tmp_dir)
-        self.assertTrue(size == self.get_disk_usage(self.tmp_dir))
+            size_bytes = 1024 * 1024  # 1 MB
+            with open(os.path.join(self.tmp_dir, "test.bin"), "wb") as f:
+                f.write(os.urandom(size_bytes))
+            size = hysds.utils.get_disk_usage(self.tmp_dir)
+            self.assertTrue(size == self.get_disk_usage(self.tmp_dir))
 
     def test_disk_usage_with_symlink(self):
-        import hysds.utils
+        with patch("elasticsearch.Elasticsearch", return_value=None), patch("opensearchpy.OpenSearch", return_value=None):
+            import hysds.utils
 
-        size_bytes = 1024 * 1024  # 1 MB
-        bin_file = os.path.join(self.tmp_dir, "test.bin")
-        with open(bin_file, "wb") as f:
-            f.write(os.urandom(size_bytes))
-        self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
-        sym_file = os.path.join(self.tmp_dir2, "test.bin")
-        os.symlink(bin_file, sym_file)
-        size = hysds.utils.get_disk_usage(self.tmp_dir2)
-        self.assertTrue(size == self.get_disk_usage(self.tmp_dir2))
-        shutil.rmtree(self.tmp_dir2)
+            size_bytes = 1024 * 1024  # 1 MB
+            bin_file = os.path.join(self.tmp_dir, "test.bin")
+            with open(bin_file, "wb") as f:
+                f.write(os.urandom(size_bytes))
+            self.tmp_dir2 = tempfile.mkdtemp(prefix="tmp-")
+            sym_file = os.path.join(self.tmp_dir2, "test.bin")
+            os.symlink(bin_file, sym_file)
+            size = hysds.utils.get_disk_usage(self.tmp_dir2)
+            self.assertTrue(size == self.get_disk_usage(self.tmp_dir2))
+            shutil.rmtree(self.tmp_dir2)
 
 
-class TestPublishDataset(unittest.TestCase):
+class TestPublishDataset(TestCase):
     def setUp(self):
         self.job_dir = tempfile.mkdtemp(prefix="job-")
         logging.info("self.job_dir: {}".format(self.job_dir))
@@ -144,53 +149,55 @@ class TestPublishDataset(unittest.TestCase):
         shutil.rmtree(self.job_dir)
 
     def test_publish_dataset(self):
-        import hysds.dataset_ingest
+        with patch("elasticsearch.Elasticsearch", return_value=None), patch("opensearchpy.OpenSearch", return_value=None):
+            import hysds.dataset_ingest
 
-        job_context = {}
-        job_context_file = os.path.join(self.job_dir, "_context.json")
-        with open(job_context_file, 'w') as f:
-            json.dump(job_context, f, indent=2, sort_keys=True)
-        self.job["job_info"]["context_file"] = job_context_file
+            job_context = {}
+            job_context_file = os.path.join(self.job_dir, "_context.json")
+            with open(job_context_file, 'w') as f:
+                json.dump(job_context, f, indent=2, sort_keys=True)
+            self.job["job_info"]["context_file"] = job_context_file
 
-        # Mocked data
-        ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
-        ingest_mock.return_value = (self.metrics, self.prod_json)
+            # Mocked data
+            ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
+            ingest_mock.return_value = (self.metrics, self.prod_json)
 
-        self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
+            self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
 
-        # assert called args
-        ingest_mock.assert_called_with(
-            'AOI_sacramento_valley',
-            self.datasets_cfg_file,
-            umock.ANY,
-            umock.ANY,
-            self.prod_dir,
-            self.job_dir,
-            force=False
-        )
+            # assert called args
+            ingest_mock.assert_called_with(
+                'AOI_sacramento_valley',
+                self.datasets_cfg_file,
+                umock.ANY,
+                umock.ANY,
+                self.prod_dir,
+                self.job_dir,
+                force=False
+            )
 
     def test_force_ingest(self):
-        import hysds.dataset_ingest
+        with patch("elasticsearch.Elasticsearch", return_value=None), patch("opensearchpy.OpenSearch", return_value=None):
+            import hysds.dataset_ingest
 
-        job_context = {'_force_ingest': True}
-        job_context_file = os.path.join(self.job_dir, "_context.json")
-        with open(job_context_file, 'w') as f:
-            json.dump(job_context, f, indent=2, sort_keys=True)
-        self.job["job_info"]["context_file"] = job_context_file
+            job_context = {'_force_ingest': True}
+            job_context_file = os.path.join(self.job_dir, "_context.json")
+            with open(job_context_file, 'w') as f:
+                json.dump(job_context, f, indent=2, sort_keys=True)
+            self.job["job_info"]["context_file"] = job_context_file
 
-        # Mocked data
-        ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
-        ingest_mock.return_value = (self.metrics, self.prod_json)
+            # Mocked data
+            ingest_mock = umock.patch("hysds.dataset_ingest.ingest").start()
+            ingest_mock.return_value = (self.metrics, self.prod_json)
 
-        self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
+            self.assertTrue(hysds.dataset_ingest.publish_datasets(self.job, job_context))
 
-        # assert that ingest function was called with force=True
-        ingest_mock.assert_called_with(
-            'AOI_sacramento_valley',
-            self.datasets_cfg_file,
-            umock.ANY,
-            umock.ANY,
-            self.prod_dir,
-            self.job_dir,
-            force=True
-        )
+            # assert that ingest function was called with force=True
+            ingest_mock.assert_called_with(
+                'AOI_sacramento_valley',
+                self.datasets_cfg_file,
+                umock.ANY,
+                umock.ANY,
+                self.prod_dir,
+                self.job_dir,
+                force=True
+            )
