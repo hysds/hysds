@@ -52,7 +52,7 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 MOZART_ES = OpenSearchUtility(
@@ -60,7 +60,7 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
@@ -76,7 +76,7 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 MOZART_ES = ElasticsearchUtility(
@@ -84,7 +84,7 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
     return MOZART_ES
 
@@ -116,7 +116,7 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 GRQ_ES = OpenSearchUtility(
@@ -124,7 +124,7 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
@@ -140,7 +140,7 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 GRQ_ES = ElasticsearchUtility(
@@ -148,7 +148,7 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
     return GRQ_ES
 
@@ -180,7 +180,7 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 METRICS_ES = OpenSearchUtility(
@@ -188,7 +188,7 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
@@ -204,7 +204,7 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
             else:
                 METRICS_ES = ElasticsearchUtility(
@@ -212,6 +212,6 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    # sniff_on_start=True,
+                    sniff_on_start=True,
                 )
     return METRICS_ES

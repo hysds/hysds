@@ -40,9 +40,6 @@ from hysds.es_util import get_grq_es, get_mozart_es
 
 import osaka.main
 
-grq_es = get_grq_es()
-mozart_es = get_mozart_es()
-
 # disk usage setting converter
 DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
 
@@ -282,7 +279,7 @@ def getXmlEtree(xml):
 
     parser = XMLParser(remove_blank_text=True)
     if xml.startswith("<?xml") or xml.startswith("<"):
-        return (parse(StringIO(xml), parser).getroot(), getNamespacePrefixDict(xml))
+        return parse(StringIO(xml), parser).getroot(), getNamespacePrefixDict(xml)
     else:
         if os.path.isfile(xml):
             xmlStr = open(xml).read()
@@ -413,6 +410,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         query["query"]["bool"]["must_not"] = {"term": {"uuid": filter_id}}
 
     logger.info("constructed query: %s" % json.dumps(query, indent=2))
+    mozart_es = get_mozart_es()
     j = mozart_es.search(index="job_status-current", body=query, ignore=404)
     logger.info(j)
     # Check for 404 status first and return None immediately as we had been before
@@ -457,7 +455,7 @@ def get_job_status(_id):
             }
         }
     }
-
+    mozart_es = get_mozart_es()
     res = mozart_es.search(index="job_status-current", body=query, _source_includes=["status"])
     if res["hits"]["total"]["value"] == 0:
         logger.warning("job not found, _id: %s" % _id)
@@ -483,6 +481,7 @@ def check_dataset(_id, es_index="grq"):
             }
         }
     }
+    grq_es = get_grq_es()
     count = grq_es.get_count(index=es_index, body=query)
     return count
 
