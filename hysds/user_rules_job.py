@@ -11,12 +11,14 @@ import time
 import backoff
 import socket
 
-import hysds
+import elasticsearch.exceptions
+import opensearchpy.exceptions
+
+import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es
 
-from elasticsearch import ElasticsearchException
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -26,16 +28,19 @@ USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
 JOB_STATUS_ALIAS = "job_status-current"
 
-mozart_es = get_mozart_es()
-
 
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    query = {"query": {"term": {"_id": job_id}}}
+    query = {
+        "query": {
+            "term": {"_id": job_id}
+        }
+    }
     logger.info("ensure_job_indexed: %s" % json.dumps(query))
+    mozart_es = get_mozart_es()
     count = mozart_es.get_count(index=alias, body=query)
     if count == 0:
         raise RuntimeError("Failed to find indexed job: {}".format(job_id))
@@ -96,6 +101,7 @@ def evaluate_user_rules_job(job_id, index=None):
             }
         }
     }
+    mozart_es = get_mozart_es()
     rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
@@ -120,11 +126,12 @@ def evaluate_user_rules_job(job_id, index=None):
 
         # check for matching rules
         try:
+            mozart_es = get_mozart_es()
             result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
-        except ElasticsearchException as e:
+        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
@@ -149,7 +156,7 @@ def queue_finished_job(_id, index=None):
         "args": [_id],
         "kwargs": {"index": index},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)  # noqa
 
 
 @backoff.on_exception(
@@ -163,4 +170,4 @@ def queue_job_trigger(doc_res, rule):
         "args": [doc_res, rule],
         "kwargs": {"component": "mozart"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa

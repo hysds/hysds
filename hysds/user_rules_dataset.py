@@ -11,13 +11,14 @@ import time
 import backoff
 import socket
 
-import hysds
+import elasticsearch.exceptions
+import opensearchpy.exceptions
+
+import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.utils import validate_index_pattern
 from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es, get_grq_es
-
-from elasticsearch import ElasticsearchException
 
 GRQ_ES_URL = app.conf.GRQ_ES_URL  # ES
 DATASET_ALIAS = app.conf.DATASET_ALIAS
@@ -26,9 +27,6 @@ USER_RULES_DATASET_INDEX = app.conf.USER_RULES_DATASET_INDEX
 JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
 USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
-
-mozart_es = get_mozart_es()
-grq_es = get_grq_es()
 
 
 @backoff.on_exception(
@@ -46,9 +44,10 @@ def ensure_dataset_indexed(objectid, system_version, alias):
             }
         }
     }
-    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
 
+    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
     try:
+        grq_es = get_grq_es()
         count = grq_es.get_count(index=alias, body=query)
         if count == 0:
             error_message = "Failed to find indexed dataset: %s (%s)" % (
@@ -58,10 +57,9 @@ def ensure_dataset_indexed(objectid, system_version, alias):
             logger.error(error_message)
             raise RuntimeError(error_message)
         logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
-
-    except ElasticsearchException as e:
-        logger.error("Unable to execute query")
+    except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
         logger.error(e)
+        raise e
 
 
 def update_query(_id, system_version, rule):
@@ -90,10 +88,9 @@ def update_query(_id, system_version, rule):
     return final_query
 
 
-@backoff.on_exception(
-    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
-)
+@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
 def search_es(index, body):
+    grq_es = get_grq_es()
     return grq_es.es.search(index=index, body=body, request_timeout=30)
 
 
@@ -116,6 +113,7 @@ def evaluate_user_rules_dataset(
             }
         }
     }
+    mozart_es = get_mozart_es()
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info("Total %d enabled rules to check." % len(rules))
 
@@ -155,7 +153,7 @@ def evaluate_user_rules_dataset(
                 continue
             doc_res = result["hits"]["hits"][0]
             logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
-        except (ElasticsearchException, Exception) as e:
+        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
@@ -179,7 +177,7 @@ def queue_dataset_evaluation(info):
         "function": "hysds.user_rules_dataset.evaluate_user_rules_dataset",
         "args": [info["id"], info["system_version"]],
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)  # noqa
 
 
 @backoff.on_exception(
@@ -193,4 +191,4 @@ def queue_dataset_trigger(doc_res, rule, job_name):
         "args": [doc_res, rule],
         "kwargs": {"job_name": job_name, "component": "grq"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)
+    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa

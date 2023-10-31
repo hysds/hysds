@@ -5,7 +5,7 @@ try:
     import unittest.mock as umock
 except ImportError:
     import mock as umock
-import unittest
+from unittest import TestCase
 import logging
 import tempfile
 import shutil
@@ -14,10 +14,11 @@ import os
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
 sys.modules["hysds.celery"] = umock.MagicMock()
+sys.modules['opensearchpy'] = umock.Mock()
 logging.basicConfig()
 
 
-class TestUtils(unittest.TestCase):
+class TestUtils(TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="tmp-")
         logging.info("self.tmp_dir: {}".format(self.tmp_dir))
@@ -81,7 +82,7 @@ class TestUtils(unittest.TestCase):
         shutil.rmtree(self.tmp_dir2)
 
 
-class TestPublishDataset(unittest.TestCase):
+class TestPublishDataset(TestCase):
     def setUp(self):
         self.job_dir = tempfile.mkdtemp(prefix="job-")
         logging.info("self.job_dir: {}".format(self.job_dir))
