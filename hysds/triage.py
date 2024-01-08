@@ -144,7 +144,6 @@ def triage(job, ctx):
     pub_triage_file = os.path.join(job_dir, "_triaged.json")
     with open(pub_triage_file, "w") as f:
         json.dump(prod_json, f, indent=2, sort_keys=True)
-    # Temporary kludge to test
-    time.sleep(120)
+
     # signal run_job() to continue
     return True
