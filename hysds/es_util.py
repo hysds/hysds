@@ -37,55 +37,51 @@ def get_mozart_es(hosts=None):
         aws_es = app.conf.get("JOBS_AWS_ES", False)
         es_url = hosts or app.conf["JOBS_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
+        es_ssl = app.conf.get("ES_SSL")
+
+        kwargs = {
+            "ssl_show_warn": False,
+            "timeout": 30,
+            "max_retries": 10,
+            "retry_on_timeout": True,
+        }
 
         if jobs_es_engine == "opensearch":
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                MOZART_ES = OpenSearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionOS,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                MOZART_ES = OpenSearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionOS
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["http_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])  # noqa
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            MOZART_ES = OpenSearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                MOZART_ES = ElasticsearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionES,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                MOZART_ES = ElasticsearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionES
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["basic_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            MOZART_ES = ElasticsearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
     return MOZART_ES
 
 
@@ -101,55 +97,51 @@ def get_grq_es(hosts=None):
         aws_es = app.conf.get("GRQ_AWS_ES", False)
         es_url = hosts or app.conf["GRQ_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
+        es_ssl = app.conf.get("ES_SSL")
+
+        kwargs = {
+            "ssl_show_warn": False,
+            "timeout": 30,
+            "max_retries": 10,
+            "retry_on_timeout": True,
+        }
 
         if grq_es_engine == "opensearch":
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                GRQ_ES = OpenSearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionOS,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                GRQ_ES = OpenSearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionOS
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["http_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            GRQ_ES = OpenSearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                GRQ_ES = ElasticsearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionES,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                GRQ_ES = ElasticsearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionES
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["basic_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            GRQ_ES = ElasticsearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
     return GRQ_ES
 
 
@@ -161,57 +153,53 @@ def get_metrics_es(hosts=None):
     global METRICS_ES
 
     if METRICS_ES is None:
-        grq_es_engine = get_metrics_es_engine()
+        metrics_es_engine = get_metrics_es_engine()
         aws_es = app.conf.get("METRICS_AWS_ES", False)
         es_url = hosts or app.conf["METRICS_ES_URL"]
         region = app.conf.get("AWS_REGION", "us-west-2")
+        es_ssl = app.conf.get("ES_SSL")
 
-        if grq_es_engine == "opensearch":
+        kwargs = {
+            "ssl_show_warn": False,
+            "timeout": 30,
+            "max_retries": 10,
+            "retry_on_timeout": True,
+        }
+
+        if metrics_es_engine == "opensearch":
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                METRICS_ES = OpenSearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionOS,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                METRICS_ES = OpenSearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionOS
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["http_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])  # noqa
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            METRICS_ES = OpenSearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
         else:
             if aws_es is True or "es.amazonaws.com" in es_url:
                 credentials = boto3.Session().get_credentials()
                 auth = AWSV4SignerAuth(credentials, region)
-                METRICS_ES = ElasticsearchUtility(
-                    es_url,
-                    http_auth=auth,
-                    connection_class=RequestsHttpConnectionES,
-                    use_ssl=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
-            else:
-                METRICS_ES = ElasticsearchUtility(
-                    es_url,
-                    timeout=30,
-                    max_retries=10,
-                    retry_on_timeout=True,
-                    # sniff_on_start=True,
-                )
+                kwargs["http_auth"] = auth
+                kwargs["connection_class"] = RequestsHttpConnectionES
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+            elif es_ssl is True:
+                kwargs["basic_auth"] = (app.conf["ES_USER"], app.conf["ES_PASSWORD"])
+                kwargs["use_ssl"] = True
+                kwargs["verify_certs"] = False
+
+            METRICS_ES = ElasticsearchUtility(
+                es_url,
+                **kwargs
+                # sniff_on_start=True,
+            )
     return METRICS_ES
