@@ -135,6 +135,8 @@ def triage(job, ctx):
                 )
 
     # publish
+    # HC-502: It's ok to clobber triage
+    ctx["_force_ingest"] = True
     prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
 
     # write published triage to file
