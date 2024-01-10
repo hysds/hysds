@@ -21,7 +21,7 @@ setup(
         "flower>=1.0.0",
         "eventlet>=0.17.2",
         "easywebdav>=1.2.0",
-        "lxml>=3.4.0,<5.1.0",
+        "lxml>=3.4.0,<5.0.0",
         "httplib2>=0.9",
         "gevent>=1.0.1",
         "psutil>=5.8.0",
