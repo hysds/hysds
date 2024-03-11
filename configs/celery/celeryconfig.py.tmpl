@@ -83,7 +83,7 @@ JOBS_ES_URL = [
     {%- if MOZART_ES_PVT_IP.startswith('https://') %}
 JOBS_ES_URL = "{{ MOZART_ES_PVT_IP }}"
     {%- else %}
-JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if ES_SSL == True or  MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
+JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if ES_SSL == True or MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
     {%- endif %}
 {%- endif %}
 
@@ -115,7 +115,7 @@ GRQ_ES_URL = [
     {%- if GRQ_ES_PVT_IP.startswith('https://') %}
 GRQ_ES_URL = "{{ GRQ_ES_PVT_IP }}"
     {%- else %}
-GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if ES_SSL == True or  if GRQ_AWS_ES == true or 'es.amazonaws.com' in GRQ_ES_PVT_IP else 'http://'~GRQ_ES_PVT_IP~':9200' }}"
+GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if ES_SSL == True or if GRQ_AWS_ES == true or 'es.amazonaws.com' in GRQ_ES_PVT_IP else 'http://'~GRQ_ES_PVT_IP~':9200' }}"
     {%- endif %}
 {%- endif %}
 
