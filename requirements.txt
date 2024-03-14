@@ -103,7 +103,7 @@ python-editor==1.0.4
 python-ldap==3.4.0
 python-magic==0.4.15
 PyYAML==5.4
-redis==3.3.11
+redis==4.4.4
 rsa==4.7
 s3transfer==0.3.0
 service-identity==18.1.0
