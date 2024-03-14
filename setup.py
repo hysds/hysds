@@ -15,12 +15,13 @@ setup(
     zip_safe=False,
     install_requires=[
         "redis>=3.2.1,<4.5.2",  # https://github.com/redis/redis-py/issues/2629
-        "celery>=5.2.2,<6.0.0,!=5.2.3",
+        "celery>=5.3.1,<6.0.0",
+        "prompt-toolkit==1.0.18",  # TODO: celery uses new verison of click which broke this, wil remove later
         "requests>=2.20.0",
         "flower>=1.0.0",
         "eventlet>=0.17.2",
         "easywebdav>=1.2.0",
-        "lxml>=3.4.0",
+        "lxml>=3.4.0,<5.0.0",
         "httplib2>=0.9",
         "gevent>=1.0.1",
         "psutil>=5.8.0",
@@ -39,11 +40,10 @@ setup(
         "atomicwrites>=1.1.5",
         "future>=0.17.1",
         "greenlet>=0.4.15",
-        "fabric3",
+        "fab-classic>=1.19.2",
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "aws-requests-auth>=0.4.3,<1.0.0",
         "pyyaml"
     ],
     setup_requires=["pytest-runner"],

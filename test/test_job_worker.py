@@ -1,16 +1,15 @@
 import os
 import sys
-import json
 
 try:
     import unittest.mock as umock
 except ImportError:
     import mock as umock
-import unittest
+from unittest import TestCase
+from unittest.mock import patch
 import logging
 import tempfile
 import shutil
-import glob
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
@@ -18,7 +17,7 @@ sys.modules["hysds.celery"] = umock.MagicMock()
 logging.basicConfig()
 
 
-class TestJobWorkerFuncs(unittest.TestCase):
+class TestJobWorkerFuncs(TestCase):
     def setUp(self):
         self.examples_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "examples"

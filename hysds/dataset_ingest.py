@@ -35,9 +35,10 @@ from tempfile import mkdtemp
 import hysds
 import osaka
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, get_func, parse_iso8601, \
-    log_prov_es, find_dataset_json
+    find_dataset_json
 from hysds.log_utils import (
     logger,
+    log_prov_es,
     log_publish_prov_es,
     backoff_max_value,
     backoff_max_tries,

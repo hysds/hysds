@@ -17,6 +17,7 @@ import requests
 import backoff
 import shutil
 import traceback
+import logging
 
 from glob import glob
 from datetime import datetime
@@ -29,7 +30,10 @@ from importlib import import_module
 
 from tempfile import mkdtemp
 
-from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_dataset_json
+from billiard import Manager, get_context  # noqa
+from billiard.pool import Pool, cpu_count  # noqa
+
+from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
     backoff_max_tries
 from hysds.celery import app
@@ -198,16 +202,8 @@ def parse_iso8601(t):
         return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
 
 
-def ingest_to_object_store(
-    objectid,
-    dsets_file,
-    prod_path,
-    job_path,
-    dry_run=False,
-    force=False,
-):
+def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=False, force=False):
     """Run dataset ingest."""
-    logger.info("#" * 80)
     logger.info("datasets: %s" % dsets_file)
     logger.info("prod_path: %s" % prod_path)
     logger.info("job_path: %s" % job_path)
@@ -759,6 +755,237 @@ def queue_dataset(dataset, update_json, queue_name):
     do_submit_job(payload, queue_name)
 
 
+def init_pool_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+
+def publish_files_wrapper(job, ctx, prod_dir, event=None):
+    """
+    publish single dataset given the product directory, can be used in both multiprocessing or synchronous
+    :param job [Dict] - job object
+    :param ctx [Dict] - job context
+    :param prod_dir [Str] - str; product directory
+    :param event [Event, Optional] - Event to halt tasks if previous failed, taken from multiprocessing Manager()
+    """
+    if event and event.is_set():
+        logger.warning("Previous publish task failed, skipping %s..." % prod_dir)
+        return
+
+    try:
+        # get job info
+        job_dir = job["job_info"]["job_dir"]
+        time_start_iso = job["job_info"]["time_start"]
+        context_file = job["job_info"]["context_file"]
+        datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
+
+        time_start = parse_iso8601(time_start_iso)  # time start
+
+        # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
+        # also overwrite merged PROV-ES JSON file
+        prod_id = os.path.basename(prod_dir)
+        prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
+        prov_es_info = {}
+        if os.path.exists(prov_es_file):
+            with open(prov_es_file) as f:
+                try:
+                    prov_es_info = json.load(f)
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    raise RuntimeError(
+                        "Failed to log PROV-ES from {}: {}\n{}".format(
+                            prov_es_file, str(e), tb
+                        )
+                    )
+            log_prov_es(job, prov_es_info, prov_es_file)
+
+        # copy _context.json
+        prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
+        shutil.copy(context_file, prod_context_file)
+
+        # force ingest? (i.e. disable no-clobber)
+        ingest_kwargs = {"force": False}
+        if ctx.get("_force_ingest", False):
+            logger.info("Flag _force_ingest set to True.")
+            ingest_kwargs["force"] = True
+
+        # upload
+        tx_t1 = datetime.utcnow()
+        metrics, prod_json = ingest_to_object_store(
+            *(
+                prod_id,
+                datasets_cfg_file,
+                prod_dir,
+                job_dir,
+            ),
+            **ingest_kwargs
+        )
+
+        tx_t2 = datetime.utcnow()
+        tx_dur = (tx_t2 - tx_t1).total_seconds()
+        prod_dir_usage = get_disk_usage(prod_dir)
+
+        # set product provenance
+        prod_prov = {
+            "product_type": metrics["ipath"],
+            "processing_start_time": time_start.isoformat() + "Z",
+            "availability_time": tx_t2.isoformat() + "Z",
+            "processing_latency": (tx_t2 - time_start).total_seconds() / 60.0,
+            "total_latency": (tx_t2 - time_start).total_seconds() / 60.0,
+        }
+        prod_prov_file = os.path.join(prod_dir, "%s.prod_prov.json" % prod_id)
+        if os.path.exists(prod_prov_file):
+            with open(prod_prov_file) as f:
+                prod_prov.update(json.load(f))
+        if "acquisition_start_time" in prod_prov:
+            if "source_production_time" in prod_prov:
+                prod_prov["ground_system_latency"] = (
+                    parse_iso8601(prod_prov["source_production_time"])
+                    - parse_iso8601(prod_prov["acquisition_start_time"])
+                ).total_seconds() / 60.0
+                prod_prov["total_latency"] += prod_prov["ground_system_latency"]
+                prod_prov["access_latency"] = (
+                    tx_t2 - parse_iso8601(prod_prov["source_production_time"])
+                ).total_seconds() / 60.0
+                prod_prov["total_latency"] += prod_prov["access_latency"]
+        # write product provenance of the last product; not writing to an array under the
+        # product because kibana table panel won't show them correctly:
+        # https://github.com/elasticsearch/kibana/issues/998
+        job["job_info"]["metrics"]["product_provenance"] = prod_prov
+
+        product_staged_metadata = {
+            "path": prod_dir,
+            "disk_usage": prod_dir_usage,
+            "time_start": tx_t1.isoformat() + "Z",
+            "time_end": tx_t2.isoformat() + "Z",
+            "duration": tx_dur,
+            "transfer_rate": prod_dir_usage / tx_dur,
+            "id": prod_json["id"],
+            "urls": prod_json["urls"],
+            "browse_urls": prod_json["browse_urls"],
+            "dataset": prod_json["dataset"],
+            "ipath": prod_json["ipath"],
+            "system_version": prod_json["system_version"],
+            "dataset_level": prod_json["dataset_level"],
+            "dataset_type": prod_json["dataset_type"],
+            "index": prod_json["grq_index_result"]["index"],
+        }
+
+        return prod_json, product_staged_metadata, metrics
+    except Exception as e:
+        if event:
+            event.set()
+        tb = traceback.format_exc()
+        logger.error(tb)
+        raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
+
+
+def delete_files(metrics):
+    if "pub_path_url" in metrics:
+        logger.info("deleting %s" % metrics["pub_path_url"])
+        delete_from_object_store(metrics["pub_path_url"])
+    if "browse_path" in metrics:
+        logger.info("deleting %s" % metrics["browse_path"])
+        delete_from_object_store(metrics["browse_path"])
+
+
+def publish_datasets_parallel(job, ctx):
+    """Publish a dataset. Track metrics."""
+
+    # if exit code of job command is non-zero, don't publish anything
+    exit_code = job["job_info"]["status"]
+    if exit_code != 0:
+        logger.info(
+            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
+        )
+        return True
+
+    # if job command never ran, don't publish anything
+    pid = job["job_info"]["pid"]
+    if pid == 0:
+        logger.info("Job command never ran. Bypassing dataset publishing.")
+        return True
+
+    job_dir = job["job_info"]["job_dir"]
+    datasets_list = find_non_localized_datasets(job_dir)
+
+    prods_ingested_to_obj_store = []
+    published_prods = []  # find and publish
+
+    async_tasks = []
+    num_procs = min(max(cpu_count() - 2, 1), len(datasets_list))
+    logger.info("multiprocessing procs used: %d" % num_procs)
+
+    with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
+        event = manager.Event()
+        for prod_dir in datasets_list:
+            signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
+            if os.path.exists(signal_file):
+                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                continue
+            async_task = pool.apply_async(publish_files_wrapper, args=(job, ctx, prod_dir, ), kwds={"event": event})
+            async_tasks.append(async_task)
+        pool.close()
+        logger.info("Waiting for dataset publishing tasks to complete...")
+        pool.join()
+        logger.handlers.clear()  # removing the handler to prevent broken pipe error
+
+    has_error, err = False, ""
+    for t in async_tasks:
+        if t.successful():
+            result = t.get()
+            if result:
+                prods_ingested_to_obj_store.append(result)
+        else:
+            has_error = True
+            logger.error(t._value)  # noqa
+            err = t._value  # noqa
+
+    if has_error is True:
+        with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
+            for _, _, metrics in prods_ingested_to_obj_store:
+                pool.apply_async(delete_files, args=(metrics,))
+            pool.close()
+            logger.warning("Rolling back datasets (file) ingest...")
+            pool.join()
+            logger.handlers.clear()
+        raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
+
+    if len(prods_ingested_to_obj_store) > 0:
+        try:
+            prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
+            logger.info(f"publishing %d dataset(s) to Elasticsearch" % len(prods_ingested_to_obj_store))
+            bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
+            published_prods.extend(prod_jsons)
+        except Exception:
+            with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
+                for _, _, metrics in prods_ingested_to_obj_store:
+                    pool.apply_async(delete_files, args=(metrics,))
+            pool.close()
+            logger.error("datasets failed to publish to Elasticsearch, deleting object(s) from data store")
+            pool.join()
+            logger.handlers.clear()
+            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+
+        if "products_staged" not in job["job_info"]["metrics"]:
+            job["job_info"]["metrics"]["products_staged"] = []
+
+        for prod_json, metadata, _ in prods_ingested_to_obj_store:
+            ipath = prod_json["ipath"]
+            queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
+            job["job_info"]["metrics"]["products_staged"].append(metadata)
+        logger.info("queued %d dataset(s) to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
+
+    # write published products to file
+    pub_prods_file = os.path.join(job_dir, "_datasets.json")
+    with open(pub_prods_file, "w") as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
+
+    return True
+
+
 def publish_datasets(job, ctx):
     """Publish a dataset. Track metrics."""
 
@@ -777,122 +1004,23 @@ def publish_datasets(job, ctx):
         return True
 
     job_dir = job["job_info"]["job_dir"]
-    time_start_iso = job["job_info"]["time_start"]
-    context_file = job["job_info"]["context_file"]
-    datasets_cfg_file = job["job_info"]["datasets_cfg_file"]
-
-    dataset_directories = list(find_dataset_json(job_dir))
-
-    time_start = parse_iso8601(time_start_iso) # time start
+    dataset_directories = find_non_localized_datasets(job_dir)
 
     prods_ingested_to_obj_store = []
     published_prods = []  # find and publish
 
     try:
-        for _, prod_dir in dataset_directories:
+        for prod_dir in dataset_directories:
             signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
             if os.path.exists(signal_file):
                 logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
                 continue
-
-            # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
-            # also overwrite merged PROV-ES JSON file
-            prod_id = os.path.basename(prod_dir)
-            prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
-            prov_es_info = {}
-            if os.path.exists(prov_es_file):
-                with open(prov_es_file) as f:
-                    try:
-                        prov_es_info = json.load(f)
-                    except Exception as e:
-                        tb = traceback.format_exc()
-                        raise RuntimeError(
-                            "Failed to log PROV-ES from {}: {}\n{}".format(
-                                prov_es_file, str(e), tb
-                            )
-                        )
-                log_prov_es(job, prov_es_info, prov_es_file)
-
-            # copy _context.json
-            prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
-            shutil.copy(context_file, prod_context_file)
-
-            # force ingest? (i.e. disable no-clobber)
-            ingest_kwargs = {"force": False}
-            if ctx.get("_force_ingest", False):
-                logger.info("Flag _force_ingest set to True.")
-                ingest_kwargs["force"] = True
-
-            # upload
-            tx_t1 = datetime.utcnow()
-            metrics, prod_json = ingest_to_object_store(
-                *(
-                    prod_id,
-                    datasets_cfg_file,
-                    prod_dir,
-                    job_dir,
-                ),
-                **ingest_kwargs
-            )
-
-            tx_t2 = datetime.utcnow()
-            tx_dur = (tx_t2 - tx_t1).total_seconds()
-            prod_dir_usage = get_disk_usage(prod_dir)
-
-            # set product provenance
-            prod_prov = {
-                "product_type": metrics["ipath"],
-                "processing_start_time": time_start.isoformat() + "Z",
-                "availability_time": tx_t2.isoformat() + "Z",
-                "processing_latency": (tx_t2 - time_start).total_seconds() / 60.0,
-                "total_latency": (tx_t2 - time_start).total_seconds() / 60.0,
-            }
-            prod_prov_file = os.path.join(prod_dir, "%s.prod_prov.json" % prod_id)
-            if os.path.exists(prod_prov_file):
-                with open(prod_prov_file) as f:
-                    prod_prov.update(json.load(f))
-            if "acquisition_start_time" in prod_prov:
-                if "source_production_time" in prod_prov:
-                    prod_prov["ground_system_latency"] = (
-                                                                 parse_iso8601(prod_prov["source_production_time"])
-                                                                 - parse_iso8601(prod_prov["acquisition_start_time"])
-                                                         ).total_seconds() / 60.0
-                    prod_prov["total_latency"] += prod_prov["ground_system_latency"]
-                    prod_prov["access_latency"] = (
-                                                          tx_t2 - parse_iso8601(prod_prov["source_production_time"])
-                                                  ).total_seconds() / 60.0
-                    prod_prov["total_latency"] += prod_prov["access_latency"]
-            # write product provenance of the last product; not writing to an array under the
-            # product because kibana table panel won't show them correctly:
-            # https://github.com/elasticsearch/kibana/issues/998
-            job["job_info"]["metrics"]["product_provenance"] = prod_prov
-
-            product_staged_metadata = {
-                "path": prod_dir,
-                "disk_usage": prod_dir_usage,
-                "time_start": tx_t1.isoformat() + "Z",
-                "time_end": tx_t2.isoformat() + "Z",
-                "duration": tx_dur,
-                "transfer_rate": prod_dir_usage / tx_dur,
-                "id": prod_json["id"],
-                "urls": prod_json["urls"],
-                "browse_urls": prod_json["browse_urls"],
-                "dataset": prod_json["dataset"],
-                "ipath": prod_json["ipath"],
-                "system_version": prod_json["system_version"],
-                "dataset_level": prod_json["dataset_level"],
-                "dataset_type": prod_json["dataset_type"],
-                "index": prod_json["grq_index_result"]["index"],
-            }
-
-            prods_ingested_to_obj_store.append((prod_json, product_staged_metadata, metrics))
+            published_metadata = publish_files_wrapper(job, ctx, prod_dir)
+            prods_ingested_to_obj_store.append(published_metadata)
     except Exception:
         logger.error("Product failed to ingest to data store: %s" % traceback.format_exc())
         for _, _, metrics in prods_ingested_to_obj_store:
-            if "pub_path_url" in metrics:
-                delete_from_object_store(metrics["pub_path_url"])
-            if "browse_path" in metrics:
-                delete_from_object_store(metrics["browse_path"])
+            delete_files(metrics)
         raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
 
     if len(prods_ingested_to_obj_store) > 0:
@@ -903,10 +1031,7 @@ def publish_datasets(job, ctx):
             published_prods.extend(prod_jsons)
         except Exception:
             for _, _, metrics in prods_ingested_to_obj_store:
-                if "pub_path_url" in metrics:
-                    delete_from_object_store(metrics["pub_path_url"])
-                if "browse_path" in metrics:
-                    delete_from_object_store(metrics["browse_path"])
+                delete_files(metrics)
             raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
 
         if "products_staged" not in job["job_info"]["metrics"]:
