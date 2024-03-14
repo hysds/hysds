@@ -1,7 +1,9 @@
 input {
   redis {
     host => "{{ MOZART_REDIS_PVT_IP }}"
-    {% if MOZART_REDIS_PASSWORD != "" %}password => "{{ MOZART_REDIS_PASSWORD }}"{% endif %}
+    {%- if MOZART_REDIS_PASSWORD != "" %}
+    password => "{{ MOZART_REDIS_PASSWORD }}"
+    {%- endif %}
     # these settings should match the output of the agent
     data_type => "list"
     key => "logstash"
@@ -50,28 +52,96 @@ output {
   #stdout { codec => rubydebug }
 
   if [resource] == "job" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+      hosts => [
+        {%- for url in MOZART_ES_PVT_IP %}
+          {%- if url.startswith('https://') %}
+        "{{ url }}"{{ "," if not loop.last else "" }}
+          {%- else %}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+          {%- endif %}
+        {%- endfor %}
+      ]
+      {%- else %}
+        {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+        {%- else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+        {%- endif %}
+      {%- endif %}
       index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
+      ecs_compatibility => disabled
     }
   } else if [resource] == "worker" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+      hosts => [
+        {%- for url in MOZART_ES_PVT_IP %}
+          {%- if url.startswith('https://') %}
+        "{{ url }}"{{ "," if not loop.last else "" }}
+          {%- else %}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+          {%- endif %}
+        {%- endfor %}
+      ]
+      {%- else %}
+        {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+        {%- else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+        {%- endif %}
+      {%- endif %}
       index => "worker_status-%{+YYYY.MM.dd}"
       document_id => "%{celery_hostname}"
+      ecs_compatibility => disabled
     }
   } else if [resource] == "task" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+      hosts => [
+        {%- for url in MOZART_ES_PVT_IP %}
+          {%- if url.startswith('https://') %}
+        "{{ url }}"{{ "," if not loop.last else "" }}
+          {%- else %}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+          {%- endif %}
+        {%- endfor %}
+      ]
+      {%- else %}
+        {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+        {%- else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+        {%- endif %}
+      {%- endif %}
       index => "%{index}"
       document_id => "%{uuid}"
+      ecs_compatibility => disabled
     }
   } else if [resource] == "event" {
-    elasticsearch {
-      hosts => ["{{ MOZART_ES_PVT_IP }}:9200"]
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+      hosts => [
+        {%- for url in MOZART_ES_PVT_IP %}
+          {%- if url.startswith('https://') %}
+        "{{ url }}"{{ "," if not loop.last else "" }}
+          {%- else %}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+          {%- endif %}
+        {%- endfor %}
+      ]
+      {%- else %}
+        {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+        {%- else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+        {%- endif %}
+      {%- endif %}
       index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
+      ecs_compatibility => disabled
     }
   } else {}
 }

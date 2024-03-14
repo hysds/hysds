@@ -28,7 +28,7 @@ from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
 
-import hysds  # TODO: may fix some cyclical import issues, will need to test more
+import hysds  # fixes some cyclical import issues
 from hysds.celery import app
 from hysds.log_utils import (
     logger,
@@ -61,13 +61,15 @@ from hysds.containers.factory import container_engine_factory
 
 # built-in pre-processors
 PRE_PROCESSORS = (
-    "hysds.utils.localize_urls",
+    "hysds.localize.localize_urls",
     "hysds.utils.mark_localized_datasets",
     "hysds.utils.validate_checksum_files",
 )
 
 # built-in post-processors
-POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
+POST_PROCESSORS = (
+    "hysds.dataset_ingest_bulk.publish_datasets",
+)
 
 # signal names
 SIG_NAMES = {
@@ -1399,7 +1401,7 @@ def run_job(job, queue_when_finished=True):
             .get("job_specification", {})
             .get("disable_post_builtins", False)
         )
-        post_processors = [] if disable_post else list(POST_PROCESSORS)
+        post_processors = [] if disable_post or job_status_json["status"] == "job-deduped" else list(POST_PROCESSORS)
         post_processors.extend(
             job.get("params", {}).get("job_specification", {}).get("post", [])
         )
@@ -1469,7 +1471,8 @@ def run_job(job, queue_when_finished=True):
                     str(e),
                     tb,
                 )
-                raise RuntimeError(err)
+                # raise RuntimeError(err)  # https://hysds-core.atlassian.net/browse/HC-468
+                logger.error(err)
         if len(usage_stats) > 0:
             job["job_info"]["metrics"]["usage_stats"].append(usage_stats)
 
@@ -1488,7 +1491,8 @@ def run_job(job, queue_when_finished=True):
 
         # queue job finished for user rules processing
         if queue_when_finished is True:
-            queue_finished_job(payload_id)
+            job_index = job.get("job_info", {}).get("index")
+            queue_finished_job(payload_id, index=job_index)
     except Exception as e:
         error = str(e)
         job_status_json = {

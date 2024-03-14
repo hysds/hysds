@@ -7,8 +7,6 @@ from builtins import int
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import sys
 import json
 import time
 import traceback
@@ -26,18 +24,6 @@ logging.basicConfig(format=log_format, level=logging.INFO)
 def tag_timedout_workers(url, timeout):
     """Tag workers stuck that have not sent a heartbeat within a certain threshold."""
 
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"terms": {"status": ["worker-heartbeat"]}},
-                    {"range": {"@timestamp": {"lt": "now-%ds" % timeout}}},
-                ]
-            }
-        },
-        "_source": ["status", "tags"],
-    }
-
     status = ["worker-heartbeat"]
     source_data = ["status", "tags"]
     query = job_utils.get_timedout_query(timeout, status, source_data)
@@ -52,24 +38,23 @@ def tag_timedout_workers(url, timeout):
 
     # tag each with timedout
     for res in results:
-        id = res["_id"]
+        _id = res["_id"]
+        _index = res["_index"]
         src = res.get("_source", {})
-        status = src["status"]
+        # status = src["status"]
         tags = src.get("tags", [])
 
         if "timedout" not in tags:
             tags.append("timedout")
             new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
-            response = job_utils.update_es(id, new_doc, index="worker_status-current")
+            response = job_utils.update_es(_id, new_doc, index=_index)
             if response["result"].strip() != "updated":
-                err_str = "Failed to update status for {} : {}".format(
-                    id, json.dumps(response, indent=2)
-                )
+                err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
                 logging.error(err_str)
                 raise Exception(err_str)
-            logging.info("Tagged %s as timedout." % id)
+            logging.info("Tagged %s as timedout." % _id)
         else:
-            logging.info("%s already tagged as timedout." % id)
+            logging.info("%s already tagged as timedout." % _id)
 
 
 def daemon(interval, url, timeout):

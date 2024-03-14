@@ -5,14 +5,13 @@ import shutil
 import hashlib
 import copy
 import pytest
+try:
+    import unittest.mock as umock
+except ImportError:
+    import mock as umock
 
-from hysds.utils import (
-    hashlib_mapper,
-    calculate_checksum_from_localized_file,
-    read_checksum_file,
-    generate_list_checksum_files,
-    validate_checksum_files,
-)
+sys.modules['opensearchpy'] = umock.Mock()
+sys.modules['opensearchpy.exceptions'] = umock.Mock()
 
 
 class TestPreProcessingChecksum:
@@ -75,6 +74,8 @@ class TestPreProcessingChecksum:
         shutil.rmtree(os.path.join("/tmp", self.test_directory))
 
     def test_hashlib_mapper(self):
+        from hysds.utils import hashlib_mapper
+
         with pytest.raises(Exception):
             hashlib_mapper("non-existing-hashing-algorithm")
 
@@ -112,6 +113,8 @@ class TestPreProcessingChecksum:
             assert hashlib_mapper("SHAKE_128").name == hashlib.shake_128().name
 
     def test_calculate_checksum_from_localized_file(self):
+        from hysds.utils import calculate_checksum_from_localized_file
+
         test_file_name = "/tmp/test_calculate_checksum_from_localized_file.zip"
         test_string = "testing testing 123"
 
@@ -181,6 +184,8 @@ class TestPreProcessingChecksum:
         os.remove(test_file_name)
 
     def test_generate_list_checksum_files(self):
+        from hysds.utils import generate_list_checksum_files
+
         self.constructor()
         self.create_test_directory_and_files()
         list_checksums = generate_list_checksum_files(self.test_job_json)
@@ -194,12 +199,16 @@ class TestPreProcessingChecksum:
             assert algo_type in algorithms_guaranteed
 
     def test_validate_checksum_files(self):
+        from hysds.utils import validate_checksum_files
+
         self.constructor()
         self.create_test_directory_and_files()
         validate_checksum_files(self.test_job_json, {})
         self.clear_test_directory_and_files()
 
     def test_validate_checksum_files_error(self):
+        from hysds.utils import validate_checksum_files
+
         self.constructor()
         self.create_test_directory_and_files()
 
@@ -217,7 +226,7 @@ class TestPreProcessingChecksum:
         test_job_json["localize_urls"].append({"url": error_test_file_md5})
 
         with pytest.raises(Exception):
-            self.validate_checksum_files(test_job_json)
+            validate_checksum_files(test_job_json)
 
         self.clear_test_directory_and_files()
         os.remove(error_test_file_md5)

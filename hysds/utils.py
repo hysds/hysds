@@ -21,6 +21,7 @@ import copy
 import errno
 import shutil
 import traceback
+import logging
 
 from datetime import datetime
 from subprocess import check_output
@@ -33,14 +34,11 @@ from celery.result import AsyncResult
 from atomicwrites import atomic_write
 from bisect import insort
 
-# import hysds
-from hysds.log_utils import logger, log_prov_es, payload_hash_exists
+from hysds.log_utils import logger, payload_hash_exists
 from hysds.celery import app
-from hysds.es_util import get_grq_es
+from hysds.es_util import get_grq_es, get_mozart_es
 
 import osaka.main
-
-grq_es = get_grq_es()
 
 # disk usage setting converter
 DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
@@ -123,7 +121,12 @@ def get_download_params(url):
 
 
 def download_file(url, path, cache=False):
-    """Download file/dir for input."""
+    """
+    Download file/dir for input
+    @param url: Str
+    @param path: Str
+    @param cache: Bool (default False) pull from cache
+    """
 
     params = get_download_params(url)
     if cache:
@@ -137,6 +140,7 @@ def download_file(url, path, cache=False):
         else:
             logger.info("cache miss for {}".format(url))
             try:
+                logger.info("downloading to cache %s" % url)
                 osaka.main.get(url, cache_dir, params=params)
             except Exception as e:
                 shutil.rmtree(cache_dir)
@@ -156,19 +160,27 @@ def download_file(url, path, cache=False):
                 dst = os.path.join(path, i) if os.path.isdir(path) else path
                 try:
                     os.symlink(cached_obj, dst)
-                except:
+                except Exception:
                     logger.error("Failed to soft link {} to {}".format(cached_obj, dst))
                     raise
             else:
                 try:
                     os.symlink(cached_obj, path)
-                except:
-                    logger.error(
-                        "Failed to soft link {} to {}".format(cached_obj, path)
-                    )
+                except Exception:
+                    logger.error("Failed to soft link {} to {}".format(cached_obj, path))
                     raise
     else:
-        return osaka.main.get(url, path, params=params)
+        try:
+            logger.info("downloading %s" % url)
+            return osaka.main.get(url, path, params=params)
+        except Exception as e:
+            logger.error(e)
+            logger.warning("rolling back localized data: {}".format(path))
+            shutil.rmtree(path, ignore_errors=True)
+            if os.path.exists(path + ".osaka.locked.json"):
+                logger.warning(".osaka.locked.json file found, rolling back...")
+                shutil.rmtree(path + ".osaka.locked.json")
+            raise
 
 
 def find_cache_dir(cache_dir):
@@ -267,7 +279,7 @@ def getXmlEtree(xml):
 
     parser = XMLParser(remove_blank_text=True)
     if xml.startswith("<?xml") or xml.startswith("<"):
-        return (parse(StringIO(xml), parser).getroot(), getNamespacePrefixDict(xml))
+        return parse(StringIO(xml), parser).getroot(), getNamespacePrefixDict(xml)
     else:
         if os.path.isfile(xml):
             xmlStr = open(xml).read()
@@ -398,20 +410,16 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         query["query"]["bool"]["must_not"] = {"term": {"uuid": filter_id}}
 
     logger.info("constructed query: %s" % json.dumps(query, indent=2))
-    es_url = "%s/job_status-current/_search" % app.conf["JOBS_ES_URL"]
+    mozart_es = get_mozart_es()
+    j = mozart_es.search(index="job_status-current", body=query, ignore=404)
+    logger.info(j)
+    # Check for 404 status first and return None immediately as we had been before
+    if "status" in j.keys() and j.get("status") == 404:
+        logger.info(
+            "status_code 404, job_status-current index probably does not exist, returning None"
+        )
+        return None
 
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(es_url, data=json.dumps(query), headers=headers)
-    if r.status_code != 200:
-        if r.status_code == 404:
-            logger.info(
-                "status_code 404, job_status-current index probably does not exist, returning None"
-            )
-            return None
-        else:
-            r.raise_for_status()
-    j = r.json()
-    logger.info("result: %s" % r.text)
     if j["hits"]["total"]["value"] == 0:
         if hash_exists_in_redis is True:
             if is_worker:
@@ -440,15 +448,22 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
 )
 def get_job_status(_id):
     """Get job status."""
+    query = {
+        "query": {
+            "bool": {
+                "must": [{"term": {"_id": _id}}]
+            }
+        }
+    }
+    mozart_es = get_mozart_es()
+    res = mozart_es.search(index="job_status-current", body=query, _source_includes=["status"])
+    if res["hits"]["total"]["value"] == 0:
+        logger.warning("job not found, _id: %s" % _id)
+        return None
 
-    es_url = "%s/job_status-current/_doc/%s" % (app.conf["JOBS_ES_URL"], _id)
-    r = requests.get(es_url, params={"_source": "status"})
-
-    logger.info("get_job_status status: %s" % r.status_code)
-    result = r.json()
-
-    logger.info("get_job_status result: %s" % json.dumps(result, indent=2))
-    return result["_source"]["status"] if result["found"] else None
+    logger.info("get_job_status result: %s" % json.dumps(res, indent=2))
+    doc = res["hits"]["hits"][0]
+    return doc["_source"]["status"]
 
 
 @backoff.on_exception(
@@ -466,6 +481,7 @@ def check_dataset(_id, es_index="grq"):
             }
         }
     }
+    grq_es = get_grq_es()
     count = grq_es.get_count(index=es_index, body=query)
     return count
 
@@ -475,51 +491,11 @@ def dataset_exists(_id, es_index="grq"):
     return True if check_dataset(_id, es_index) > 0 else False
 
 
-def localize_urls(job, ctx):
-    """Localize urls for job inputs. Track metrics."""
-
-    # get job info
-    job_dir = job["job_info"]["job_dir"]
-
-    # localize urls
-    for i in job["localize_urls"]:
-        url = i["url"]
-        path = i.get("local_path", None)
-        cache = i.get("cache", True)
-        if path is None:
-            path = "%s/" % job_dir
-        else:
-            if path.startswith("/"):
-                pass
-            else:
-                path = os.path.join(job_dir, path)
-        if os.path.isdir(path) or path.endswith("/"):
-            path = os.path.join(path, os.path.basename(url))
-        dir_path = os.path.dirname(path)
-        makedirs(dir_path)
-        loc_t1 = datetime.utcnow()
-        try:
-            download_file(url, path, cache=cache)
-        except Exception as e:
-            tb = traceback.format_exc()
-            raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
-        loc_t2 = datetime.utcnow()
-        loc_dur = (loc_t2 - loc_t1).total_seconds()
-        path_disk_usage = get_disk_usage(path)
-        job["job_info"]["metrics"]["inputs_localized"].append(
-            {
-                "url": url,
-                "path": path,
-                "disk_usage": path_disk_usage,
-                "time_start": loc_t1.isoformat() + "Z",
-                "time_end": loc_t2.isoformat() + "Z",
-                "duration": loc_dur,
-                "transfer_rate": path_disk_usage / loc_dur,
-            }
-        )
-
-    # signal run_job() to continue
-    return True
+def init_pool_logger():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
 
 
 def find_dataset_json(work_dir):
@@ -546,6 +522,15 @@ def find_dataset_json(work_dir):
                     )
                 else:
                     yield dataset_file, prod_dir
+
+
+def find_non_localized_datasets(work_dir):
+    """
+    :param work_dir - Str; work directory to traverse for dataset directories
+    :return: List[str] - list of dataset directories
+    """
+    datasets_list = find_dataset_json(work_dir)
+    return [prod_dir for _, prod_dir in datasets_list if not os.path.isfile(os.path.join(prod_dir, ".localized"))]
 
 
 def mark_localized_datasets(job, ctx):
@@ -647,8 +632,7 @@ def read_checksum_file(file_path):
 
 def generate_list_checksum_files(job):
     """
-    :param job:
-    :param cxt:
+    :param job: Dict
     :return: list of all checksum files, so we can compare one by one
              ex. list of dictionaries: [ {'file_path': '/home/ops/hysds/...', 'algo': 'md5'}, { ... } ]
     """
@@ -671,9 +655,7 @@ def generate_list_checksum_files(job):
             path = os.path.join(path, os.path.basename(url))
         dir_path = os.path.dirname(path)
 
-        if os.path.isdir(
-            path
-        ):  # if path is a directory, loop through each file in directory
+        if os.path.isdir(path):  # if path is a directory, loop through each file in directory
             for file in os.listdir(path):
                 full_file_path = os.path.join(path, file)
                 hash_algo = check_file_is_checksum(full_file_path)
@@ -734,4 +716,20 @@ def validate_checksum_files(job, cxt):
         raise Exception(exception_string)
     else:
         logger.info("checksum preprocessing completed successfully")
+    return True
+
+
+def validate_index_pattern(index):
+    """
+    validates the elasticsearch index pattern
+        - no trailing commas
+        - no broad wildcards, ex. '*' or "**"
+    :param index: [Str] ES index pattern
+    :return: Boolean
+    """
+    index = index.strip()
+    if index.startswith(',') or index.endswith(','):
+        return False
+    if ''.join(set(index)) == '*':
+        return False
     return True

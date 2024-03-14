@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import absolute_import
 
+import time
 from builtins import str
 from builtins import open
 from future import standard_library
@@ -135,6 +136,8 @@ def triage(job, ctx):
                 )
 
     # publish
+    # HC-502: It's ok to clobber triage
+    ctx["_force_ingest"] = True
     prod_json = publish_dataset(triage_dir, ds_file, job, ctx)
 
     # write published triage to file
