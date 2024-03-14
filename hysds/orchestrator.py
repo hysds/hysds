@@ -43,6 +43,7 @@ from hysds.utils import (
 )
 from hysds.user_rules_dataset import queue_dataset_evaluation
 
+from hysds.user_rules_job import queue_finished_job
 
 # error template
 ERROR_TMPL = Template("Error queueing job from $orch_queue: $error")
@@ -164,6 +165,9 @@ def submit_job(j):
         "name": task_id,
         "job_info": j,
     }
+
+    current_time = datetime.utcnow()
+    job["job_info"]["index"] = f"job_status-{current_time.strftime('%Y.%m.%d')}"
 
     # set job type
     if "job_type" in j:
@@ -403,12 +407,11 @@ def submit_job(j):
                 job_json["username"] = username
 
             # set job_info
-            time_queued = datetime.utcnow()
             job_json["job_info"] = {
                 "id": job_json["job_id"],
                 "job_queue": queue,
-                "time_queued": time_queued.isoformat() + "Z",
-                "index": f"job_status-{time_queued.strftime('%Y.%m.%d')}",
+                "time_queued": current_time.isoformat() + "Z",
+                "index": f"job_status-{current_time.strftime('%Y.%m.%d')}",
                 "time_limit": time_limit,
                 "soft_time_limit": soft_time_limit,
                 "payload_hash": payload_hash,
@@ -422,32 +425,70 @@ def submit_job(j):
             # generate celery task id
             job_json["task_id"] = uuid()
 
-            # log queued status
-            job_status_json = {
-                "uuid": job_json["task_id"],
-                "job_id": job_json["job_id"],
-                "payload_id": task_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-queued",
-                "job": job_json,
-            }
-            log_job_status(job_status_json)
-
-            # submit job
-            res = run_job.apply_async(
-                (job_json,),
-                queue=queue,
-                time_limit=time_limit,
-                soft_time_limit=soft_time_limit,
-                priority=priority,
-                task_id=job_json["task_id"],
-            )
-
-            # append result
-            results.append(job_json["task_id"])
+            try:
+                # submit job
+                res = do_run_job(job_json,
+                                 queue=queue,
+                                 time_limit=time_limit,
+                                 soft_time_limit=soft_time_limit,
+                                 priority=priority)
+                # log queued status
+                job_status_json = {
+                    "uuid": job_json["task_id"],
+                    "job_id": job_json["job_id"],
+                    "payload_id": task_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-queued",
+                    "job": job_json,
+                }
+                log_job_status(job_status_json)
+                # append result
+                results.append(job_json["task_id"])
+            except Exception as e:
+                # Set the job to job-failed if we could not queue up the job properly
+                error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=str(e))
+                job_status_json = {
+                    "uuid": job_json["task_id"],
+                    "job_id": job_json["job_id"],
+                    "payload_id": task_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-failed",
+                    "job": job_json,
+                    "context": context,
+                    "error": error_info,
+                    "short_error": get_short_error(error_info),
+                    "traceback": traceback.format_exc(),
+                }
+                log_job_status(job_status_json)
+                queue_finished_job(task_id, index=job_json["job_info"]["index"])
 
     return results
+
+
+@backoff.on_exception(
+    backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def do_run_job(job_json, queue, time_limit, soft_time_limit, priority):
+    """
+    Run job wrapper with exponential backoff and full jitter.
+
+    :param job_json:
+    :param queue:
+    :param time_limit:
+    :param soft_time_limit:
+    :param priority:
+    :return:
+    """
+    return run_job.apply_async(
+        (job_json,),
+        queue=queue,
+        time_limit=time_limit,
+        soft_time_limit=soft_time_limit,
+        priority=priority,
+        task_id=job_json["task_id"],
+    )
 
 
 @backoff.on_exception(

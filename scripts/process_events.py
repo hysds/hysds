@@ -41,7 +41,7 @@ ORCH_NAME_RE = re.compile(r"^hysds.orchestrator.submit_job")
 
 # regex for task-failed errors that won't be updated in ES because
 # worker had no chance to send update
-TASK_FAILED_RE = re.compile(r"^(WorkerLostError|TimeLimitExceeded)")
+TASK_FAILED_RE = re.compile(r"(WorkerLostError|TimeLimitExceeded|ConnectionError)")
 
 # regex for extracting type and hostname from worker
 TYPE_RE = re.compile(r"'type': '(.+?)',")
