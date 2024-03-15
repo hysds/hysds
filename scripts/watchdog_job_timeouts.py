@@ -17,12 +17,14 @@ import argparse
 import random
 from datetime import datetime
 
-from hysds.utils import parse_iso8601
+from hysds.utils import parse_iso8601, get_short_error
 from hysds.celery import app
 import job_utils
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
+
+UNDETERMINED_BY_WATCHDOG = "undetermined by watchdog"
 
 
 def tag_timedout_jobs(url, timeout):
@@ -62,12 +64,17 @@ def tag_timedout_jobs(url, timeout):
         logging.info("time_start: {}".format(time_start))
         time_now = datetime.utcnow()
         logging.info("time_now: {}".format(time_now))
-        duration = (time_now - time_start).seconds
+        duration = (time_now - time_start).total_seconds()
         logging.info("duration: {}".format(duration))
 
         if status == "job-started":
-            # get task info
-            task_query = {"query": {"term": {"_id": task_id}}, "_source": ["status"]}
+            # get task info, sort by latest since we only look at the first hit
+            task_query = {
+                "query": {
+                    "term": {"_id": task_id}},
+                    "_source": ["status", "event"],
+                    "sort": [{"@timestamp": {"order": "desc"}}]
+            }
             task_res = job_utils.es_query(task_query, index="task_status-current")
 
             if len(task_res["hits"]["hits"]) == 0:
@@ -91,7 +98,9 @@ def tag_timedout_jobs(url, timeout):
                 )
 
             logging.info("worker_res: {}".format(json.dumps(worker_res)))
-
+            error = None
+            short_error = None
+            traceback = None
             # determine new status
             new_status = status
             if len(worker_res["hits"]["hits"]) == 0 and duration > time_limit:
@@ -106,6 +115,9 @@ def tag_timedout_jobs(url, timeout):
                 task_info = task_res["hits"]["hits"][0]
                 if task_info["_source"]["status"] == "task-failed":
                     new_status = "job-failed"
+                    error = task_info.get("_source", {}).get("event", {}).get("exception", UNDETERMINED_BY_WATCHDOG)
+                    short_error = get_short_error(error)
+                    traceback = task_info.get("_source", {}).get("event", {}).get("traceback", UNDETERMINED_BY_WATCHDOG)
 
             # update status
             if status != new_status:
@@ -113,8 +125,13 @@ def tag_timedout_jobs(url, timeout):
                 if duration > time_limit and "timedout" not in tags:
                     logging.info("adding 'timedout' to tag, %s/%s" % (_index, _id))
                     tags.append("timedout")
+                updated_doc = {"status": new_status, "tags": tags}
+                if error:
+                    updated_doc["error"] = error
+                    updated_doc["short_error"] = short_error
+                    updated_doc["traceback"] = traceback
                 new_doc = {
-                    "doc": {"status": new_status, "tags": tags},
+                    "doc": updated_doc,
                     "doc_as_upsert": True,
                 }
                 logging.info(json.dumps(new_doc, indent=2))
