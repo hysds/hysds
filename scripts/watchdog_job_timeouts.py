@@ -69,7 +69,7 @@ def tag_timedout_jobs(url, timeout):
 
         if status == "job-started":
             # get task info
-            task_query = {"query": {"term": {"_id": task_id}}, "_source": ["status, event"]}
+            task_query = {"query": {"term": {"_id": task_id}}, "_source": ["status", "event"]}
             task_res = job_utils.es_query(task_query, index="task_status-current")
 
             if len(task_res["hits"]["hits"]) == 0:
