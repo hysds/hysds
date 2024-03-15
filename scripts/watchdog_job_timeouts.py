@@ -68,8 +68,7 @@ def tag_timedout_jobs(url, timeout):
         logging.info("duration: {}".format(duration))
 
         if status == "job-started":
-            # get task info
-            # {"sort": [{product_received_time: {"order": "asc"}}]}
+            # get task info, sort by latest since we only look at the first hit
             task_query = {
                 "query": {
                     "term": {"_id": task_id}},
