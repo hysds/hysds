@@ -5,6 +5,9 @@ try:
     import unittest.mock as umock
 except ImportError:
     import mock as umock
+
+sys.modules["hysds.celery"] = umock.MagicMock()
+
 import unittest
 import logging
 import tempfile
