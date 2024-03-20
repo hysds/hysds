@@ -94,7 +94,7 @@ def triage(job, ctx):
     if triage_partition_format:
         index_met = {
             "index": {
-                "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}"
+                "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}_triaged_job"
             }
         }
         ds.update(index_met)
