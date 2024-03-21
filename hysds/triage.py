@@ -92,7 +92,7 @@ def triage(job, ctx):
     }
     triage_partition_format = app.conf.get("TRIAGE_PARTITION_FORMAT", None)
     logger.info(f"****triage_partition_format={triage_partition_format}")
-    if triage_partition_format:
+    if triage_partition_format and isinstance(triage_partition_format, str):
         index_met = {
             "index": {
                 "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}_triaged_job"
