@@ -1,8 +1,6 @@
 import sys
 import json
 
-from hysds.celery import app
-
 try:
     import unittest.mock as umock
 except ImportError:
