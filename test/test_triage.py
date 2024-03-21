@@ -43,9 +43,10 @@ class TestTriage(unittest.TestCase):
         job_context = {"_triage_disabled": True}
         self.assertTrue(hysds.triage.triage(job, job_context))
 
-    def test_triage_default_triage_id(self):
+    @umock.patch("hysds.celery.app")
+    def test_triage_default_triage_id(self, mock_celery_app):
         import hysds.triage
-
+        mock_celery_app.conf.return_value = {}
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
         triage_name = f"triaged_job-boogaloo_task-{_id}"
