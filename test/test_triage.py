@@ -73,6 +73,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
+        # Mocked data
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
+
         # Test execution
         result = hysds.triage.triage(job, job_context)
 

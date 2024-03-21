@@ -26,6 +26,10 @@ from hysds.dataset_ingest import publish_dataset
 from hysds.celery import app
 
 
+def get_triage_partition_format():
+    return app.conf.get("TRIAGE_PARTITION_FORMAT", None)
+
+
 def triage(job, ctx):
     """Triage failed job's context and job json as well as _run.sh."""
 
@@ -90,9 +94,9 @@ def triage(job, ctx):
         "version": "v{}".format(hysds.__version__),
         "label": "triage for job {}".format(parsed_job_id),
     }
-    triage_partition_format = app.conf.get("TRIAGE_PARTITION_FORMAT", None)
+    triage_partition_format = get_triage_partition_format()
     logger.info(f"****triage_partition_format={triage_partition_format}")
-    if triage_partition_format and isinstance(triage_partition_format, str):
+    if triage_partition_format:
         index_met = {
             "index": {
                 "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}_triaged_job"
