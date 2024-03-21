@@ -13,6 +13,9 @@ import shutil
 import glob
 import os
 
+# hysds.celery searches for configuration on import. So we need to make sure we
+# mock it out before the first time it is imported
+sys.modules["hysds.celery"] = umock.MagicMock()
 sys.modules['opensearchpy'] = umock.Mock()
 sys.modules['opensearchpy.exceptions'] = umock.Mock()
 logging.basicConfig()
