@@ -43,7 +43,6 @@ class TestTriage(unittest.TestCase):
         job_context = {"_triage_disabled": True}
         self.assertTrue(hysds.triage.triage(job, job_context))
 
-    @umock.patch("hysds.celery")
     def test_triage_default_triage_id(self, mock_celery_app):
         mock_celery_app.conf.return_value = {}
         # Test case data
@@ -74,6 +73,8 @@ class TestTriage(unittest.TestCase):
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
+        celery_app_mock = umock.patch("hysds.celery.app.conf").start()
+        celery_app_mock.return_value = {}
         # Test execution
         result = hysds.triage.triage(job, job_context)
 
