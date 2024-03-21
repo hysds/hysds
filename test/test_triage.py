@@ -20,6 +20,8 @@ sys.modules['opensearchpy'] = umock.Mock()
 sys.modules['opensearchpy.exceptions'] = umock.Mock()
 logging.basicConfig()
 
+import hysds.triage
+
 
 class TestTriage(unittest.TestCase):
     def setUp(self):
@@ -31,21 +33,18 @@ class TestTriage(unittest.TestCase):
         shutil.rmtree(self.job_dir)
 
     def test_triage_job_succeeded(self):
-        import hysds.triage
 
         job = {"job_info": {"status": 0}}
         self.assertTrue(hysds.triage.triage(job, None))
 
     def test_triage_disabled(self):
-        import hysds.triage
 
         job = {"job_info": {"status": 1}}
         job_context = {"_triage_disabled": True}
         self.assertTrue(hysds.triage.triage(job, job_context))
 
-    @umock.patch("hysds.celery.app")
+    @umock.patch("hysds.celery")
     def test_triage_default_triage_id(self, mock_celery_app):
-        import hysds.triage
         mock_celery_app.conf.return_value = {}
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -87,7 +86,6 @@ class TestTriage(unittest.TestCase):
 
     @umock.patch("hysds.dataset_ingest.publish_dataset")
     def test_triage_bad_custom_format_uses_default(self, publish_dataset_mock):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -131,7 +129,6 @@ class TestTriage(unittest.TestCase):
 
     @umock.patch("hysds.dataset_ingest.publish_dataset")
     def test_triage_custom_triage_id(self, publish_dataset_mock):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -174,7 +171,6 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_no_time_start(self):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -214,7 +210,6 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_dataset_generation(self):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -267,7 +262,6 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(os.path.exists(expected_triage_json_filename))
 
     def test_triage_overlap(self):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -341,7 +335,6 @@ class TestTriage(unittest.TestCase):
         )
 
     def test_triage_on_triage_dataset(self):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
@@ -382,7 +375,6 @@ class TestTriage(unittest.TestCase):
         open_mock.assert_any_call(expected_triage_json_filename, umock.ANY)
 
     def test_triage_invalid_path(self):
-        import hysds.triage
 
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
