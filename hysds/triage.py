@@ -91,6 +91,7 @@ def triage(job, ctx):
         "label": "triage for job {}".format(parsed_job_id),
     }
     triage_partition_format = app.conf.get("TRIAGE_PARTITION_FORMAT", None)
+    logger.info(f"****triage_partition_format={triage_partition_format}")
     if triage_partition_format:
         index_met = {
             "index": {
