@@ -5,6 +5,7 @@ try:
     import unittest.mock as umock
 except ImportError:
     import mock as umock
+
 import unittest
 import logging
 import tempfile
@@ -44,7 +45,6 @@ class TestTriage(unittest.TestCase):
 
     def test_triage_default_triage_id(self):
         import hysds.triage
-
         # Test case data
         _id = "da9be25e-e281-4d3c-a7d8-e3c0c8342972"
         triage_name = f"triaged_job-boogaloo_task-{_id}"
@@ -72,6 +72,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_dataset_filename = self.job_dir + f"/{triage_name}/{triage_name}.dataset.json"
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
+
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
 
         # Test execution
         result = hysds.triage.triage(job, job_context)
@@ -117,6 +121,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
+
         # Test execution
         result = hysds.triage.triage(job, job_context)
 
@@ -161,6 +169,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_met_filename = self.job_dir + f"/{boogaloo_ts}/{boogaloo_ts}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
 
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
+
         # Test execution
         result = hysds.triage.triage(job, job_context)
 
@@ -200,6 +212,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_dataset_filename = self.job_dir + f"/{triage_name}/{triage_name}.dataset.json"
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
+
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
 
         # Test execution
         result = hysds.triage.triage(job, job_context)
@@ -254,6 +270,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_dataset_filename = self.job_dir + f"/{triage_name}/{triage_name}.dataset.json"
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
+
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
 
         # Test execution
         result = hysds.triage.triage(job, job_context)
@@ -324,6 +344,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_log_file1 = expected_triage_dataset + "/test.log"
         expected_triage_log_file2 = expected_triage_dataset + "/sub_dir/test.log"
 
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
+
         # Test execution
         result = hysds.triage.triage(job, job_context)
 
@@ -368,6 +392,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_dataset_filename = self.job_dir + f"/{triage_name}/{triage_name}.dataset.json"
         expected_triage_met_filename = self.job_dir + f"/{triage_name}/{triage_name}.met.json"
         expected_triage_json_filename = self.job_dir + "/_triaged.json"
+
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
 
         # Test execution
         result = hysds.triage.triage(job, job_context)
@@ -435,6 +463,10 @@ class TestTriage(unittest.TestCase):
         expected_triage_log_file1 = expected_triage_dataset + "/test.log"
         expected_triage_subdir1 = expected_triage_dataset + "/sub_dir"
         expected_triage_subdir2 = expected_triage_dataset + "/sub_dir2"
+
+        # Mock the return value of get_triage_partition_format()
+        triage_partition_format_mock = umock.patch("hysds.triage.get_triage_partition_format").start()
+        triage_partition_format_mock.return_value = {}
 
         # Test execution
         try:

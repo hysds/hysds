@@ -23,6 +23,11 @@ import hysds
 from hysds.utils import makedirs
 from hysds.log_utils import logger
 from hysds.dataset_ingest import publish_dataset
+from hysds.celery import app
+
+
+def get_triage_partition_format():
+    return app.conf.get("TRIAGE_PARTITION_FORMAT", None)
 
 
 def triage(job, ctx):
@@ -89,6 +94,15 @@ def triage(job, ctx):
         "version": "v{}".format(hysds.__version__),
         "label": "triage for job {}".format(parsed_job_id),
     }
+    triage_partition_format = get_triage_partition_format()
+    if triage_partition_format:
+        index_met = {
+            "index": {
+                "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}_triaged_job"
+            }
+        }
+        ds.update(index_met)
+    logger.info(f"dataset info:\n{json.dumps(ds, indent=2)}")
     if "cmd_start" in job["job_info"]:
         ds["starttime"] = job["job_info"]["cmd_start"]
     if "cmd_end" in job["job_info"]:
