@@ -1141,13 +1141,13 @@ def run_job(job, queue_when_finished=True):
                 runtime_options=dep_img.get("runtime_options", {}),
             )
 
-        container_params_file = os.path.join(job_dir, f"_{container_engine_name}_params.json")  # dump container params to file
+        container_params_file = os.path.join(job_dir, f"_docker_params.json")  # dump container params to file
         try:
             with open(container_params_file, "w") as f:
                 json.dump(container_params, f, indent=2, sort_keys=True)
         except Exception as e:
             tb = traceback.format_exc()
-            err = "Failed to dump container params to file %s: %s\n%s" % (
+            err = "Failed to dump docker params to file %s: %s\n%s" % (
                 container_params_file,
                 str(e),
                 tb,
