@@ -197,10 +197,10 @@ def find_pge_metrics(work_dir):
                 yield os.path.join(root, file)
 
 
-def find_usage_stats(work_dir, container_engine_name="docker"):
-    """Search for container stats file i.e. _docker_stats.json files."""
+def find_usage_stats(work_dir):
+    """Search for _docker_stats.json files."""
 
-    stats_re = re.compile(r"_{}_stats\.json$".format(container_engine_name))
+    stats_re = re.compile(r"_docker_stats\.json$")
     for root, dirs, files in os.walk(work_dir, followlinks=True):
         files.sort()
         dirs.sort()
@@ -1461,7 +1461,7 @@ def run_job(job, queue_when_finished=True):
         job_status_json["msg_details"] = msg_details
 
     # store usage stats
-    for usage_stats_file in find_usage_stats(job_dir, container_engine_name):
+    for usage_stats_file in find_usage_stats(job_dir):
         usage_stats = {}
         with open(usage_stats_file) as f:
             try:
