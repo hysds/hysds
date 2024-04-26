@@ -1141,7 +1141,9 @@ def run_job(job, queue_when_finished=True):
                 runtime_options=dep_img.get("runtime_options", {}),
             )
 
-        container_params_file = os.path.join(job_dir, f"_docker_params.json")  # dump container params to file
+        # TODO: Change to _container_params.json since we want to support
+        #  multiple container engines
+        container_params_file = os.path.join(job_dir, "_docker_params.json")  # dump container params to file
         try:
             with open(container_params_file, "w") as f:
                 json.dump(container_params, f, indent=2, sort_keys=True)

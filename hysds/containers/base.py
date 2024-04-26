@@ -10,7 +10,7 @@ from future import standard_library
 
 standard_library.install_aliases()
 
-import pwd
+import getpass
 import os
 import sys
 import json
@@ -153,7 +153,7 @@ class Base:
             "image_url": image_url,
             "uid": os.getuid(),
             "gid": os.getgid(),
-            "user_name": pwd.getpwuid(os.getuid())[0],
+            "user_name": getpass.getuser(),
             "working_dir": job_dir,
             "volumes": [
                 (root_jobs_dir, root_jobs_dir),
