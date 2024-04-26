@@ -287,3 +287,16 @@ class Base:
             image_info = cls.inspect_image(image_name)
         logger.info("image info for %s: %s" % (image_name, image_info.decode()))
         return json.loads(image_info)[0]
+
+    @classmethod
+    def get_container_cmd(cls, params, cmd_line_list):
+        """
+        Parse given params and build base container command line list.
+            ex. [ "docker", "run", "--init", "--rm", "-u", ... ]
+        :return: List[str]
+        """
+        container_cmd = cls.create_base_cmd(params)
+        # set command
+        container_cmd.extend([str(i) for i in cmd_line_list])
+
+        return container_cmd
