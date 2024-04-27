@@ -73,7 +73,7 @@ class Podman(Base):
             "--userns=keep-id",
             "--security-opt",
             "label=disable",
-            f"--passwd-entry={params['user_name']:*:{params['uid']}:{params['gid']}::{app.get('VERDI_HOME')}:{app.get('VERDI_SHELL')}}"
+            f"--passwd-entry={params['user_name']:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME')}:{app.conf.get('VERDI_SHELL')}}"
         ]
 
         # add runtime options
