@@ -5,8 +5,8 @@ from hysds.containers.base import Base
 
 
 class Docker(Base):
-    @staticmethod
-    def inspect_image(image):
+
+    def inspect_image(self, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -14,26 +14,23 @@ class Docker(Base):
         """
         return check_output(["docker", "inspect", image])
 
-    @classmethod
     @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
-    def inspect_image_with_backoff(cls, image):
+    def inspect_image_with_backoff(self, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
         :return: byte str
         """
-        return cls.inspect_image(image)
+        return self.inspect_image(image)
 
-    @staticmethod
-    def pull_image(image):
+    def pull_image(self, image):
         """
         run "docker pull <image>" command
         :param image: str; docker image name
         """
         return check_output(["docker", "pull", image])
 
-    @staticmethod
-    def tag_image(registry_url, image):
+    def tag_image(self, registry_url, image):
         """
         run "docker tag <image>" command
         :param registry_url;
@@ -41,8 +38,7 @@ class Docker(Base):
         """
         return check_output(["docker", "tag", registry_url, image])
 
-    @staticmethod
-    def load_image(image_file):
+    def load_image(self, image_file):
         """
         Loads image into the container engine, ex. "docker load -i <image_file>"
         :param image_file: str, file location of docker image
@@ -50,8 +46,7 @@ class Docker(Base):
         """
         return Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
 
-    @classmethod
-    def create_base_cmd(cls, params):
+    def create_base_cmd(self, params):
         """
         Parse docker params and build base docker command line list
         params input must have "uid" and "gid" key
@@ -81,8 +76,7 @@ class Docker(Base):
 
         return docker_cmd_base
 
-    @classmethod
-    def create_container_params(cls, image_name, image_url, image_mappings, root_work_dir, job_dir,
+    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
                                 runtime_options=None):
         """
         Builds docker params

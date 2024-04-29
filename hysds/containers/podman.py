@@ -6,65 +6,76 @@ from hysds.celery import app
 
 
 class Podman(Base):
-    @staticmethod
-    def inspect_image(image):
+    def __init__(self):
+        super().__init__()
+        self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
+
+    def __create_podman_socket_cmd(self):
+        podman_socket_cmd = [
+            "podman",
+            "--remote",
+            "--url",
+            f"unix:{self.podman_sock}"
+        ]
+        return podman_socket_cmd
+
+    def inspect_image(self, image):
         """
         inspect the container image; ex. podman inspect <image>
         :param image: str
         :return: byte str
         """
-        return check_output(["podman", "inspect", image])
+        cmd = self.__create_podman_socket_cmd()
+        cmd.extend(["inspect", image])
+        return check_output(cmd)
 
-    @classmethod
     @backoff.on_exception(backoff.expo, Exception, max_time=Base.IMAGE_LOAD_TIME_MAX)
-    def inspect_image_with_backoff(cls, image):
+    def inspect_image_with_backoff(self, image):
         """
         inspect the container image; ex. podman inspect <image>
         :param image: str
         :return: byte str
         """
-        return cls.inspect_image(image)
+        return self.inspect_image(image)
 
-    @staticmethod
-    def pull_image(image):
+    def pull_image(self, image):
         """
         run "podman pull <image>" command
         :param image: str; podman image name
         """
-        return check_output(["podman", "pull", image])
+        cmd = self.__create_podman_socket_cmd()
+        cmd.extend(["pull", image])
+        return check_output(cmd)
 
-    @staticmethod
-    def tag_image(registry_url, image):
+    def tag_image(self, registry_url, image):
         """
         run "podman tag <image>" command
         :param registry_url;
         :param image: str; podman image name
         """
-        return check_output(["podman", "tag", registry_url, image])
+        cmd = self.__create_podman_socket_cmd()
+        cmd.extend(["tag", registry_url, image])
+        return check_output(cmd)
 
-    @staticmethod
-    def load_image(image_file):
+    def load_image(self, image_file):
         """
         Loads image into the container engine, ex. "podman load -i <image_file>"
         :param image_file: str, file location of podman image
         :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
         """
-        return Popen(["podman", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
+        cmd = self.__create_podman_socket_cmd()
+        cmd.extend([ "load", "-i", image_file])
+        return Popen(cmd, stderr=PIPE, stdout=PIPE)
 
-    @classmethod
-    def create_base_cmd(cls, params):
+    def create_base_cmd(self, params):
         """
         Parse podman params and build base podman command line list
         params input must have "uid" and "gid" key
         :param params: Dict[str, any]
         :return: List[str]
         """
-
-        podman_cmd_base = [
-            "podman",
-            "--remote",
-            "--url",
-            f"unix:{params['podman_sock']}",
+        podman_cmd_base = self.__create_podman_socket_cmd()
+        podman_cmd_base.extend([
             "run",
             "--init",
             "--rm",
@@ -74,7 +85,7 @@ class Podman(Base):
             "--security-opt",
             "label=disable",
             f"--passwd-entry={params['user_name']:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME')}:{app.conf.get('VERDI_SHELL')}}"
-        ]
+        ])
 
         # add runtime options
         for k, v in params["runtime_options"].items():
@@ -89,8 +100,7 @@ class Podman(Base):
 
         return podman_cmd_base
 
-    @classmethod
-    def create_container_params(cls, image_name, image_url, image_mappings, root_work_dir, job_dir,
+    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
                                 runtime_options=None):
         """
         Builds podman params
@@ -104,7 +114,6 @@ class Podman(Base):
         """
         params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
                                                  runtime_options)
-        podman_sock = f"/run/user/{params['uid']}/podman/podman.sock"
-        params['podman_sock'] = podman_sock
-        params['volumes'].insert(0, (podman_sock, podman_sock, ))
+        params['podman_sock'] = self.podman_sock
+        params['volumes'].insert(0, (self.podman_sock, self.podman_sock, ))
         return params
