@@ -10,8 +10,8 @@ def container_engine_factory(engine=None):
     :return: Docker, Podman, Singularity class
     """
     if engine == "docker":
-        return Docker
+        return Docker()
     elif engine == "podman":
-        return Podman
+        return Podman()
     else:
         raise ValueError(f"Unsupported container engine: {engine}")
