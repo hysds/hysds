@@ -1062,7 +1062,7 @@ def run_job(job, queue_when_finished=True):
         runtime_options = job.get("runtime_options", {})
 
         container_engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
-        container_engine_name = container_engine.__name__.lower()
+        container_engine_name = container_engine.__class__.__name__.lower()
 
         if image_name is not None:
             image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
