@@ -214,6 +214,7 @@ class Base(ABC):
                 k = self.copy_mount(k, mnt_dir)
             # This will ensure that host paths are specified in the volume source mounts
             # rather than paths found only in the verdi container
+            print(f"host_home={host_home}")
             host_k = k.replace(verdi_home, host_home)
             logger.info(f"Replacing {k} with {host_k} in the volume mount")
             params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
