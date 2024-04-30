@@ -138,7 +138,7 @@ class Base(ABC):
         return os.path.join(mnt_dir, os.path.basename(path))
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None):
+                                runtime_options=None, verdi_home=None, host_home=None):
         """
         Build container params for runtime.
         :param image_name: str
@@ -147,6 +147,8 @@ class Base(ABC):
         :param root_work_dir: str
         :param job_dir: str
         :param runtime_options: None/dict
+        :param verdi_home: str
+        :param host_home: str
         :return:
         """
         root_jobs_dir = os.path.join(root_work_dir, "jobs")
@@ -210,7 +212,11 @@ class Base(ABC):
                 mnt = os.path.join(job_dir, v)
             if mnt_dir is not None:
                 k = self.copy_mount(k, mnt_dir)
-            params["volumes"].append((k, "%s:%s" % (mnt, mode)))
+            # This will ensure that host paths are specified in the volume source mounts
+            # rather than paths found only in the verdi container
+            host_k = k.replace(verdi_home, host_home)
+            logger.info(f"Replacing {k} with {host_k} in the volume mount")
+            params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
 
         # add runtime resources
         params["runtime_options"] = dict()
@@ -232,19 +238,19 @@ class Base(ABC):
             # Custom edit to load image from registry
             try:
                 if registry is not None:
-                    logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
+                    logger.info("Trying to load image {} from registry '{}'".format(image_name, registry))
                     registry_url = os.path.join(registry, image_name)
-                    logger.info("docker pull {}".format(registry_url))
+                    logger.info(f"{self.__class__.__name__.lower()} pull {registry_url}")
                     self.pull_image(registry_url)
-                    logger.info("docker tag {} {}".format(registry_url, image_name))
+                    logger.info(f"{self.__class__.__name__.lower()} tag {registry_url} {image_name}")
                     self.tag_image(registry_url, image_name)
             except Exception as e:
-                logger.warn("Unable to load docker image from registry '{}': {}".format(registry, e))
+                logger.warn("Unable to load image from registry '{}': {}".format(registry, e))
 
             image_info = self.inspect_image(image_name)
-            logger.info("Docker image %s cached in repo" % image_name)
+            logger.info("Container image %s cached in repo" % image_name)
         except Exception as e:
-            logger.info("Failed to inspect docker image %s: %s" % (image_name, str(e)))
+            logger.info("Failed to inspect image %s: %s" % (image_name, str(e)))
 
             # pull image from url
             if image_url is not None:
