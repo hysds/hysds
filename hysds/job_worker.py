@@ -1112,7 +1112,7 @@ def run_job(job, queue_when_finished=True):
         for env in job["command"]["env"]:
             execEnv[env["key"]] = env["value"]
         logger.info(" cmdLineList: %s" % cmdLineList)
-
+        logger.info(f"environment keys: {dict(os.environ).keys()}")
         # check if job needs to run in a container
         container_params = {}
         if image_name is not None:
