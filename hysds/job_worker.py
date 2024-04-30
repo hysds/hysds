@@ -1116,7 +1116,7 @@ def run_job(job, queue_when_finished=True):
         # check if job needs to run in a container
         container_params = {}
         if image_name is not None:
-            print(f"HOST_HOME={os.environ.get('HOST_HOME')}")
+            print(f"HOST_HOME={os.environ.get('HOST_HOME', '/home/ops')}")
             container_params[image_name] = container_engine.create_container_params(
                 image_name,
                 image_url,
