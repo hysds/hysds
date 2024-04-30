@@ -1167,7 +1167,12 @@ def run_job(job, queue_when_finished=True):
             f.write("#!/bin/bash\n\n")
             # dump entire env for info
             for env_var, env_val in list(execEnv.items()):
-                f.write("#%s=%s\n" % (env_var, env_val))
+                # This will filter out any newline characters from the environment variable value
+                # i.e. BASH_FUNC_which%%=() {  ( alias;
+                #  eval ${which_declare} ) | /usr/bin/which --tty-only --read-alias --read-functions --show-tilde
+                #  --show-dot $@
+                # }
+                f.write("#%s=%s\n" % (env_var, env_val.replace("\n", "")))
             f.write("\n")
             # dump job env for execution
             for env in job["command"]["env"]:
