@@ -79,13 +79,24 @@ class Podman(Base):
             "run",
             "--init",
             "--rm",
-            "-u",
-            "%s:%s" % (params["uid"], params["gid"]),
-            "--userns=keep-id",
-            "--security-opt",
-            "label=disable",
-            f"--passwd-entry={params['user_name']}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME')}:{app.conf.get('VERDI_SHELL')}"
         ])
+
+        cfg = app.conf.get('PODMAN_CFG', {})
+
+        # set the -u if set
+        if cfg.get("set_uid_gid", False) is True:
+            podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])
+
+        # set the --passwd-entry if set
+        if cfg.get("set_passwd_entry", False) is True:
+            podman_cmd_base.append(f"--passwd-entry={params['user_name']}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME')}:{app.conf.get('VERDI_SHELL')}")
+
+        # add some base runtime options as defined in the celeryconfig
+        for k, v in cfg.get("cmd_base", {}).items():
+            if k == "userns":
+                podman_cmd_base.append(f"--{k}={v}")
+            else:
+                podman_cmd_base.extend(["--{}".format(k), v])
 
         # add runtime options
         for k, v in params["runtime_options"].items():
