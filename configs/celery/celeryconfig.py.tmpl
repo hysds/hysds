@@ -122,8 +122,8 @@ GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true or 'es.amazonaws
 CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
 
 PODMAN_CFG = {
-  "set_uid_gid": true,
-  "set_passwd_entry": true,
+  "set_uid_gid": True,
+  "set_passwd_entry": True,
   "cmd_base": {
     "userns": "keep-id",
     "security-opt": "label=disable"
