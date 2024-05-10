@@ -138,7 +138,7 @@ class Base(ABC):
         return os.path.join(mnt_dir, os.path.basename(path))
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_home=None):
+                                runtime_options=None, verdi_home=None, host_verdi_home=None):
         """
         Build container params for runtime.
         :param image_name: str
@@ -148,7 +148,7 @@ class Base(ABC):
         :param job_dir: str
         :param runtime_options: None/dict
         :param verdi_home: str
-        :param host_home: str
+        :param host_verdi_home: str
         :return:
         """
         root_jobs_dir = os.path.join(root_work_dir, "jobs")
@@ -214,8 +214,8 @@ class Base(ABC):
                 k = self.copy_mount(k, mnt_dir)
             # This will ensure that host paths are specified in the volume source mounts
             # rather than paths found only in the verdi container
-            print(f"verdi_home={verdi_home}, host_home={host_home}")
-            host_k = k.replace(verdi_home, host_home)
+            print(f"verdi_home={verdi_home}, host_home={host_verdi_home}")
+            host_k = k.replace(verdi_home, host_verdi_home)
             logger.info(f"Replacing {k} with {host_k} in the volume mount")
             params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
 

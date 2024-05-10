@@ -1,4 +1,5 @@
 import backoff
+import os
 from subprocess import check_output, Popen, PIPE
 
 from hysds.containers.base import Base
@@ -89,7 +90,7 @@ class Podman(Base):
 
         # set the --passwd-entry if set
         if cfg.get("set_passwd_entry", False) is True:
-            podman_cmd_base.append(f"--passwd-entry={params['user_name']}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME')}:{app.conf.get('VERDI_SHELL')}")
+            podman_cmd_base.append(f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME', '/home/ops')}:{app.conf.get('VERDI_SHELL', '/bin/bash')}")
 
         # add some base runtime options as defined in the celeryconfig
         for k, v in cfg.get("cmd_base", {}).items():
@@ -112,7 +113,7 @@ class Podman(Base):
         return podman_cmd_base
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_home=None):
+                                runtime_options=None, verdi_home=None, host_verdi_home=None):
         """
         Builds podman params
         :param image_name:
@@ -122,11 +123,11 @@ class Podman(Base):
         :param job_dir:
         :param runtime_options: THe specific flags to run with
         :param verdi_home: The verdi home
-        :param host_home: The home dir on the host
+        :param host_verdi_home: The home dir on the host
         :return:
         """
         params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                                 runtime_options, verdi_home, host_home)
+                                                 runtime_options, verdi_home, host_verdi_home)
         params['podman_sock'] = self.podman_sock
         params['volumes'].insert(0, (self.podman_sock, self.podman_sock, ))
         return params

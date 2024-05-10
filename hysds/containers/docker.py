@@ -77,7 +77,7 @@ class Docker(Base):
         return docker_cmd_base
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_home=None):
+                                runtime_options=None, verdi_home=None, host_verdi_home=None):
         """
         Builds docker params
         :param image_name:
@@ -87,11 +87,11 @@ class Docker(Base):
         :param job_dir:
         :param runtime_options:
         :param verdi_home:
-        :param host_home:
+        :param host_verdi_home:
         :return:
         """
         params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                                 runtime_options, verdi_home, host_home)
+                                                 runtime_options, verdi_home, host_verdi_home)
         docker_sock = "/var/run/docker.sock"
         params['volumes'].insert(0, (docker_sock, docker_sock, ))
         return params
