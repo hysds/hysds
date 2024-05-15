@@ -4,6 +4,7 @@ from subprocess import check_output, Popen, PIPE
 
 from hysds.containers.base import Base
 from hysds.celery import app
+from hysds.log_utils import logger
 
 
 class Podman(Base):
@@ -86,8 +87,10 @@ class Podman(Base):
 
         # Persist any environment variables defined in the celery config
         for env_var in cfg.get("environment", {}):
-            podman_cmd_base.append(f"-e{env_var}=${env_var}")
-
+            if env_var in os.environ:
+                podman_cmd_base.append(f"-e{env_var}=${env_var}")
+            else:
+                logger.warning(f"{env_var} does not exist. Won't include in podman command.")
         # set the -u if set
         if cfg.get("set_uid_gid", False) is True:
             podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])
