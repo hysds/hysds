@@ -88,7 +88,7 @@ class Podman(Base):
         # Persist any environment variables defined in the celery config
         for env_var in cfg.get("environment", {}):
             if env_var in os.environ:
-                podman_cmd_base.append(f"-e{env_var}=${env_var}")
+                podman_cmd_base.append(f"-e {env_var}=${env_var}")
             else:
                 logger.warning(f"{env_var} does not exist. Won't include in podman command.")
         # set the -u if set
