@@ -84,6 +84,10 @@ class Podman(Base):
 
         cfg = app.conf.get('PODMAN_CFG', {})
 
+        # Persist any environment variables defined in the celery config
+        for env_var in cfg.get("environment", {}):
+            podman_cmd_base.append(f"-e{env_var}=${env_var}")
+
         # set the -u if set
         if cfg.get("set_uid_gid", False) is True:
             podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])

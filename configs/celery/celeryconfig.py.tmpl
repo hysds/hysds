@@ -127,7 +127,11 @@ PODMAN_CFG = {
   "cmd_base": {
     "userns": "keep-id",
     "security-opt": "label=disable"
-  }
+  },
+  "environment": [
+    "HOST_HOME",
+    "HOST_USER"
+  ]
 }
 
 DATASET_PROCESSED_QUEUE = "dataset_processed"
