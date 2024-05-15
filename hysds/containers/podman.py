@@ -9,7 +9,7 @@ from hysds.log_utils import logger
 
 class Podman(Base):
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
         # This allows us to override the 'set_passwd_entry' setting in the
         # celeryconfig.py if needed
