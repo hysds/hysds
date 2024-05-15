@@ -8,9 +8,12 @@ from hysds.log_utils import logger
 
 
 class Podman(Base):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
         self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
+        # This allows us to override the 'set_passwd_entry' setting in the
+        # celeryconfig.py if needed
+        self.__set_passwd_entry = kwargs.get("set_passwd_entry")
 
     def __create_podman_socket_cmd(self):
         podman_socket_cmd = [
@@ -96,7 +99,7 @@ class Podman(Base):
             podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])
 
         # set the --passwd-entry if set
-        if cfg.get("set_passwd_entry", False) is True:
+        if cfg.get("set_passwd_entry", False) is True and self.__set_passwd_entry is True:
             podman_cmd_base.append(f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME', '/home/ops')}:{app.conf.get('VERDI_SHELL', '/bin/bash')}")
 
         # add some base runtime options as defined in the celeryconfig
