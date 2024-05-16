@@ -5,8 +5,8 @@ from hysds.containers.base import Base
 
 
 class Docker(Base):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self):
+        super().__init__()
 
     def inspect_image(self, image):
         """

@@ -31,7 +31,7 @@ from abc import ABC, abstractmethod
 class Base(ABC):
     IMAGE_LOAD_TIME_MAX = 600
 
-    def __init__(self, **kwargs):
+    def __init__(self):
         self._uid = os.getuid()
         self._gid = os.getgid()
         self._user = getpass.getuser()
