@@ -15,7 +15,7 @@ class Podman(Base):
         cfg = app.conf.get('PODMAN_CFG', {})
         self._environment = cfg.get("environment", {})
         self._set_uid_gid = cfg.get("set_uid_gid", False)
-        self._set_passwd_entry = cfg.get("set_uid_gid", False)
+        self._set_passwd_entry = cfg.get("set_passwd_entry", False)
         self._verdi_home = app.conf.get('VERDI_HOME', '/home/ops')
         self._verdi_shell = app.conf.get('VERDI_SHELL', '/bin/bash')
         self._cmd_base = cfg.get("cmd_base", {})
