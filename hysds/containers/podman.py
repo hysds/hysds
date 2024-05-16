@@ -11,12 +11,17 @@ class Podman(Base):
     def __init__(self):
         super().__init__()
         self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
-        # This allows us to override the 'set_passwd_entry' setting in the
-        # celeryconfig.py if needed
-        self.__set_passwd_entry_override = True
 
-    def set_passwd_entry_override(self, bool_value):
-        self.__set_passwd_entry_override = bool_value
+        cfg = app.conf.get('PODMAN_CFG', {})
+        self._environment = cfg.get("environment", {})
+        self._set_uid_gid = cfg.get("set_uid_gid", False)
+        self._set_passwd_entry = cfg.get("set_uid_gid", False)
+        self._verdi_home = app.conf.get('VERDI_HOME', '/home/ops')
+        self._verdi_shell = app.conf.get('VERDI_SHELL', '/bin/bash')
+        self._cmd_base = cfg.get("cmd_base", {})
+
+    def set_passwd_entry(self, bool_value):
+        self._set_passwd_entry = bool_value
 
     def __create_podman_socket_cmd(self):
         podman_socket_cmd = [
@@ -89,24 +94,22 @@ class Podman(Base):
             "--rm",
         ])
 
-        cfg = app.conf.get('PODMAN_CFG', {})
-
         # Persist any environment variables defined in the celery config
-        for env_var in cfg.get("environment", {}):
+        for env_var in self._environment:
             if env_var in os.environ:
                 podman_cmd_base.append(f"-e {env_var}=${env_var}")
             else:
                 logger.warning(f"{env_var} does not exist. Won't include in podman command.")
         # set the -u if set
-        if cfg.get("set_uid_gid", False) is True:
+        if self._set_uid_gid is True:
             podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])
 
         # set the --passwd-entry if set
-        if cfg.get("set_passwd_entry", False) is True and self.__set_passwd_entry_override is True:
-            podman_cmd_base.append(f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{app.conf.get('VERDI_HOME', '/home/ops')}:{app.conf.get('VERDI_SHELL', '/bin/bash')}")
+        if self._set_passwd_entry:
+            podman_cmd_base.append(f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{self._verdi_home}:{self._verdi_shell}")
 
         # add some base runtime options as defined in the celeryconfig
-        for k, v in cfg.get("cmd_base", {}).items():
+        for k, v in self._cmd_base.items():
             if k == "userns":
                 podman_cmd_base.append(f"--{k}={v}")
             else:
