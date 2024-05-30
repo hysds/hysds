@@ -44,7 +44,9 @@ setup(
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "pyyaml"
+        "pyyaml",
+        # pin setuptools until this is fixed: https://github.com/pypa/setuptools/issues/4399
+        "setuptools<70.0.0"
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
