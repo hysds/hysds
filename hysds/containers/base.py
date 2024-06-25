@@ -9,6 +9,8 @@ from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
+
+import getpass
 import os
 import sys
 import json
@@ -23,12 +25,19 @@ from hysds.celery import app
 
 import osaka.main
 
+from abc import ABC, abstractmethod
 
-class Base:
+
+class Base(ABC):
     IMAGE_LOAD_TIME_MAX = 600
 
-    @staticmethod
-    def inspect_image(image):
+    def __init__(self):
+        self._uid = os.getuid()
+        self._gid = os.getgid()
+        self._user = getpass.getuser()
+
+    @abstractmethod
+    def inspect_image(self, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -36,8 +45,8 @@ class Base:
         """
         raise RuntimeError("method 'inspect_image' must be defined in the derived class")
 
-    @classmethod
-    def inspect_image_with_backoff(cls, image):
+    @abstractmethod
+    def inspect_image_with_backoff(self, image):
         """
         inspect the container image; ex. docker inspect <image>
         :param image: str
@@ -45,8 +54,8 @@ class Base:
         """
         raise RuntimeError("method 'inspect_image' must be defined in the derived class")
 
-    @staticmethod
-    def pull_image(image):
+    @abstractmethod
+    def pull_image(self, image):
         """
         Pulls image, ex. run the 'docker pull <image>' command
         :param image:
@@ -54,8 +63,9 @@ class Base:
         """
         raise RuntimeError("method 'pull_image' must be defined in the derived class")
 
-    @staticmethod
-    def tag_image(registry_url, image):
+
+    @abstractmethod
+    def tag_image(self, registry_url, image):
         """
         Tags your image, ex. 'docker tag <image>' command
         :param registry_url: str
@@ -64,8 +74,8 @@ class Base:
         """
         raise RuntimeError("method 'tag_image' must be defined in the derived class")
 
-    @staticmethod
-    def load_image(image_file):
+    @abstractmethod
+    def load_image(self, image_file):
         """
         Loads image into the container engine, ex. "docker load -i <image_file>"
         :param image_file: str, file location of docker image
@@ -73,8 +83,8 @@ class Base:
         """
         raise RuntimeError("method 'load_image' must be defined in the derived class")
 
-    @classmethod
-    def create_base_cmd(cls, params):
+    @abstractmethod
+    def create_base_cmd(self, params):
         """
         Parse docker params and build base docker command line list.
             ex. [ "docker", "run", "--init", "--rm", "-u", ... ]
@@ -82,8 +92,7 @@ class Base:
         """
         raise RuntimeError("method 'create_base_cmd' must be defined in the derived class")
 
-    @classmethod
-    def create_container_cmd(cls, params, cmd_line_list):
+    def create_container_cmd(self, params, cmd_line_list):
         """
         builds the final command which will run in the container
             ex. [ "docker", "run", "--init", "--rm", "-u", "0:0", "python", "foo.py", "args" ]
@@ -91,7 +100,7 @@ class Base:
         :param cmd_line_list: List[str]
         :return:
         """
-        docker_cmd = cls.create_base_cmd(params)  # build command
+        docker_cmd = self.create_base_cmd(params)  # build command
         docker_cmd.extend([str(i) for i in cmd_line_list])  # set command
         return docker_cmd
 
@@ -128,9 +137,8 @@ class Base:
         logger.info("Copied container mount {} to {}.".format(path, mnt_path))
         return os.path.join(mnt_dir, os.path.basename(path))
 
-    @classmethod
-    def create_container_params(cls, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None):
+    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
+                                runtime_options=None, verdi_home=None, host_verdi_home=None):
         """
         Build container params for runtime.
         :param image_name: str
@@ -139,6 +147,8 @@ class Base:
         :param root_work_dir: str
         :param job_dir: str
         :param runtime_options: None/dict
+        :param verdi_home: str
+        :param host_verdi_home: str
         :return:
         """
         root_jobs_dir = os.path.join(root_work_dir, "jobs")
@@ -149,8 +159,9 @@ class Base:
         params = {
             "image_name": image_name,
             "image_url": image_url,
-            "uid": os.getuid(),
-            "gid": os.getgid(),
+            "uid": self._uid,
+            "gid": self._gid,
+            "user_name": self._user,
             "working_dir": job_dir,
             "volumes": [
                 (root_jobs_dir, root_jobs_dir),
@@ -185,7 +196,7 @@ class Base:
         # add user-defined image mappings
         for k, v in list(image_mappings.items()):
             k = os.path.expandvars(k)
-            cls.verify_container_mount(k, blacklist)
+            self.verify_container_mount(k, blacklist)
 
             mode = "ro"
             if isinstance(v, list):
@@ -200,8 +211,24 @@ class Base:
             else:
                 mnt = os.path.join(job_dir, v)
             if mnt_dir is not None:
-                k = cls.copy_mount(k, mnt_dir)
-            params["volumes"].append((k, "%s:%s" % (mnt, mode)))
+                k = self.copy_mount(k, mnt_dir)
+            # This will ensure that host paths are specified in the volume source mounts
+            # rather than paths found only in the verdi container
+            host_k = k
+            if verdi_home and host_verdi_home:
+                logger.info(f"verdi_home={verdi_home}, host_home={host_verdi_home}")
+                if verdi_home in k:
+                    host_k = k.replace(verdi_home, host_verdi_home)
+                    logger.info(f"Replacing {k} with {host_k} in the volume mount")
+                else:
+                    logger.info(f"Could not find {verdi_home} in {k}. Nothing to replace")
+            else:
+                logger.info(
+                    f"verdi_home and/or host_home are not set. So will not convert source "
+                    f"volume mount to point to a location on the host: {k}"
+                )
+
+            params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
 
         # add runtime resources
         params["runtime_options"] = dict()
@@ -214,8 +241,7 @@ class Base:
             params["runtime_options"][k] = v
         return params
 
-    @classmethod
-    def ensure_image_loaded(cls, image_name, image_url, cache_dir):
+    def ensure_image_loaded(self, image_name, image_url, cache_dir):
         """Pull docker image into local repo."""
 
         # check if image is in local docker repo
@@ -224,19 +250,19 @@ class Base:
             # Custom edit to load image from registry
             try:
                 if registry is not None:
-                    logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
+                    logger.info("Trying to load image {} from registry '{}'".format(image_name, registry))
                     registry_url = os.path.join(registry, image_name)
-                    logger.info("docker pull {}".format(registry_url))
-                    cls.pull_image(registry_url)
-                    logger.info("docker tag {} {}".format(registry_url, image_name))
-                    cls.tag_image(registry_url, image_name)
+                    logger.info(f"{self.__class__.__name__.lower()} pull {registry_url}")
+                    self.pull_image(registry_url)
+                    logger.info(f"{self.__class__.__name__.lower()} tag {registry_url} {image_name}")
+                    self.tag_image(registry_url, image_name)
             except Exception as e:
-                logger.warn("Unable to load docker image from registry '{}': {}".format(registry, e))
+                logger.warn("Unable to load image from registry '{}': {}".format(registry, e))
 
-            image_info = cls.inspect_image(image_name)
-            logger.info("Docker image %s cached in repo" % image_name)
+            image_info = self.inspect_image(image_name)
+            logger.info("Container image %s cached in repo" % image_name)
         except Exception as e:
-            logger.info("Failed to inspect docker image %s: %s" % (image_name, str(e)))
+            logger.info("Failed to inspect image %s: %s" % (image_name, str(e)))
 
             # pull image from url
             if image_url is not None:
@@ -253,7 +279,7 @@ class Base:
                     with atomic_write(load_lock) as f:
                         f.write("%sZ\n" % datetime.utcnow().isoformat())
                     logger.info("Loading image %s (%s)" % (image_file, image_name))
-                    p = cls.load_image(image_file)
+                    p = self.load_image(image_file)
                     stdout, stderr = p.communicate()
                     if p.returncode != 0:
                         raise RuntimeError(
@@ -273,14 +299,26 @@ class Base:
                 except OSError as e:
                     if e.errno == 17:
                         logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
-                        cls.inspect_image_with_backoff(image_name)
+                        self.inspect_image_with_backoff(image_name)
                     else:
                         raise
             else:
                 # pull image from docker hub
                 logger.info("Pulling image %s from docker hub" % image_name)
-                cls.pull_image(image_name)
+                self.pull_image(image_name)
                 logger.info("Pulled image %s from docker hub" % image_name)
-            image_info = cls.inspect_image(image_name)
+            image_info = self.inspect_image(image_name)
         logger.info("image info for %s: %s" % (image_name, image_info.decode()))
         return json.loads(image_info)[0]
+
+    def get_container_cmd(self, params, cmd_line_list):
+        """
+        Parse given params and build base container command line list.
+            ex. [ "docker", "run", "--init", "--rm", "-u", ... ]
+        :return: List[str]
+        """
+        container_cmd = self.create_base_cmd(params)
+        # set command
+        container_cmd.extend([str(i) for i in cmd_line_list])
+
+        return container_cmd

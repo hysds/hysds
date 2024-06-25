@@ -121,6 +121,19 @@ GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true or 'es.amazonaws
 
 CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
 
+PODMAN_CFG = {
+  "set_uid_gid": True,
+  "set_passwd_entry": True,
+  "cmd_base": {
+    "userns": "keep-id",
+    "security-opt": "label=disable"
+  },
+  "environment": [
+    "HOST_VERDI_HOME",
+    "HOST_USER"
+  ]
+}
+
 DATASET_PROCESSED_QUEUE = "dataset_processed"
 USER_RULES_DATASET_QUEUE = "user_rules_dataset"
 ON_DEMAND_DATASET_QUEUE = "on_demand_dataset"
@@ -185,3 +198,7 @@ AWS_REGION = "{{ AWS_REGION }}"
 ES_CLUSTER_MODE = {{ ES_CLUSTER_MODE or False }}
 
 TRIAGE_PARTITION_FORMAT = {{ TRIAGE_PARTITION_FORMAT or None }}
+
+VERDI_HOME = "{{ VERDI_HOME or '/home/ops' }}"
+
+VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"

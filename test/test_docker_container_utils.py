@@ -103,7 +103,8 @@ class TestContainerUtils(unittest.TestCase):
         # get docker params
         docker_params = {}
         with cm:
-            docker_params[image_name] = hysds.containers.docker.Docker.create_container_params(
+            docker = hysds.containers.docker.Docker()
+            docker_params[image_name] = docker.create_container_params(
                 image_name,
                 image_url,
                 image_mappings,
@@ -133,7 +134,8 @@ class TestContainerUtils(unittest.TestCase):
                 cmd_line_list.extend(arg)
             else:
                 cmd_line_list.append(arg)
-        cmd_line_list = hysds.containers.docker.Docker.create_container_cmd(params, cmd_line_list)
+        docker = hysds.containers.docker.Docker()
+        cmd_line_list = docker.create_container_cmd(params, cmd_line_list)
         cmd_line_list = [str(i) for i in cmd_line_list]
         cmd_line = " ".join(cmd_line_list)
         logging.info("cmd_line: {}".format(cmd_line))
