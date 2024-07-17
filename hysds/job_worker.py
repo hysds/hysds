@@ -1062,6 +1062,7 @@ def run_job(job, queue_when_finished=True):
         runtime_options = job.get("runtime_options", {})
 
         container_engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
+        container_engine_name = container_engine.__class__.__name__.lower()
 
         if image_name is not None:
             image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
@@ -1111,43 +1112,50 @@ def run_job(job, queue_when_finished=True):
         for env in job["command"]["env"]:
             execEnv[env["key"]] = env["value"]
         logger.info(" cmdLineList: %s" % cmdLineList)
-
+        logger.info(f"environment keys: {dict(os.environ).keys()}")
         # check if job needs to run in a container
-        docker_params = {}
+        container_params = {}
         if image_name is not None:
-            docker_params[image_name] = container_engine.create_container_params(
+            print(f"HOST_HOME={os.environ.get('HOST_HOME', '/home/ops')}")
+            container_params[image_name] = container_engine.create_container_params(
                 image_name,
                 image_url,
                 image_mappings,
                 root_work_dir,
                 job_dir,
                 runtime_options=runtime_options,
+                verdi_home=app.conf.get("VERDI_HOME", "/home/ops"),
+                host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
             )
 
             # get command-line list
-            cmdLineList = container_engine.create_container_cmd(docker_params[image_name], cmdLineList)
-            logger.info(" docker cmdLineList: %s" % cmdLineList)
+            cmdLineList = container_engine.create_container_cmd(container_params[image_name], cmdLineList)
+            logger.info(f" {container_engine_name} cmdLineList: %s" % cmdLineList)
 
-        # build docker params for dependency containers
+        # build container params for dependency containers
         for dep_img in job.get("dependency_images", []):
             dependency_image_name = dep_img["container_image_name"]
-            docker_params[dependency_image_name] = container_engine.create_container_params(
+            container_params[dependency_image_name] = container_engine.create_container_params(
                 dep_img["container_image_name"],
                 dep_img["container_image_url"],
                 dep_img["container_mappings"],
                 root_work_dir,
                 job_dir,
                 runtime_options=dep_img.get("runtime_options", {}),
+                verdi_home=app.conf.get("VERDI_HOME", "/home/ops"),
+                host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
             )
 
-        docker_params_file = os.path.join(job_dir, "_docker_params.json")  # dump docker params to file
+        # TODO: Change to _container_params.json since we want to support
+        #  multiple container engines
+        container_params_file = os.path.join(job_dir, "_docker_params.json")  # dump container params to file
         try:
-            with open(docker_params_file, "w") as f:
-                json.dump(docker_params, f, indent=2, sort_keys=True)
+            with open(container_params_file, "w") as f:
+                json.dump(container_params, f, indent=2, sort_keys=True)
         except Exception as e:
             tb = traceback.format_exc()
             err = "Failed to dump docker params to file %s: %s\n%s" % (
-                docker_params_file,
+                container_params_file,
                 str(e),
                 tb,
             )
@@ -1164,7 +1172,12 @@ def run_job(job, queue_when_finished=True):
             f.write("#!/bin/bash\n\n")
             # dump entire env for info
             for env_var, env_val in list(execEnv.items()):
-                f.write("#%s=%s\n" % (env_var, env_val))
+                # This will filter out any newline characters from the environment variable value
+                # i.e. BASH_FUNC_which%%=() {  ( alias;
+                #  eval ${which_declare} ) | /usr/bin/which --tty-only --read-alias --read-functions --show-tilde
+                #  --show-dot $@
+                # }
+                f.write("#%s=%s\n" % (env_var, env_val.replace("\n", "")))
             f.write("\n")
             # dump job env for execution
             for env in job["command"]["env"]:
