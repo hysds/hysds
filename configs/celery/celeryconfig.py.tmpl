@@ -134,6 +134,10 @@ PODMAN_CFG = {
   ]
 }
 
+# Use the PODMAN_SOCK setting if the UID in the container is expected to be different
+# than outside the container
+# PODMAN_SOCK = /run/user/01234/podman/podman.sock
+
 DATASET_PROCESSED_QUEUE = "dataset_processed"
 USER_RULES_DATASET_QUEUE = "user_rules_dataset"
 ON_DEMAND_DATASET_QUEUE = "on_demand_dataset"
