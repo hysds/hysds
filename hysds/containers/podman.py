@@ -10,7 +10,9 @@ from hysds.log_utils import logger
 class Podman(Base):
     def __init__(self):
         super().__init__()
-        self.podman_sock = app.conf.get('PODMAN_SOCK', f"/run/user/{self._uid}/podman/podman.sock")
+        # Get the podman sock from the host environment. Otherwise, fallback to this default.
+        self._uid = os.environ.get("HOST_UID", self._uid)
+        self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
 
         cfg = app.conf.get('PODMAN_CFG', {})
         self._environment = cfg.get("environment", {})
