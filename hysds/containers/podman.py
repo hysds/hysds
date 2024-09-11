@@ -15,7 +15,7 @@ class Podman(Base):
         self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
 
         cfg = app.conf.get('PODMAN_CFG', {})
-        self._environment = cfg.get("environment", {})
+        self._environment = cfg.get("environment", [])
         self._set_uid_gid = cfg.get("set_uid_gid", False)
         self._set_passwd_entry = cfg.get("set_passwd_entry", False)
         self._verdi_home = app.conf.get('VERDI_HOME', '/home/ops')
@@ -99,7 +99,7 @@ class Podman(Base):
         # Persist any environment variables defined in the celery config
         for env_var in self._environment:
             if env_var in os.environ:
-                podman_cmd_base.append(f"-e {env_var}=${env_var}")
+                podman_cmd_base.append(f"-e {env_var}={os.environ.get(env_var)}")
             else:
                 logger.warning(f"{env_var} does not exist. Won't include in podman command.")
         # set the -u if set
