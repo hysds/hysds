@@ -123,7 +123,7 @@ CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
 
 PODMAN_CFG = {
   "set_uid_gid": False,
-  "set_passwd_entry": True,
+  "set_passwd_entry": False,
   "cmd_base": {
     # Commenting the userns setting out, but leaving it in here in case it needs to be set
     # "userns": "keep-id",
