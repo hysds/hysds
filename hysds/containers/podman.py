@@ -131,7 +131,7 @@ class Podman(Base):
         return podman_cmd_base
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_verdi_home=None):
+                                runtime_options=None, verdi_home=None, host_verdi_home=None, volume_mounts=None):
         """
         Builds podman params
         :param image_name:
@@ -142,10 +142,11 @@ class Podman(Base):
         :param runtime_options: THe specific flags to run with
         :param verdi_home: The verdi home
         :param host_verdi_home: The home dir on the host
+        :param volume_mounts: Additional volume mounts to set that can't be hardcoded in the job spec
         :return:
         """
         params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                                 runtime_options, verdi_home, host_verdi_home)
+                                                 runtime_options, verdi_home, host_verdi_home, volume_mounts)
         params['podman_sock'] = self.podman_sock
         params['volumes'].insert(0, (self.podman_sock, self.podman_sock, ))
         return params

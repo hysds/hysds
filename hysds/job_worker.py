@@ -1144,6 +1144,7 @@ def run_job(job, queue_when_finished=True):
                 runtime_options=dep_img.get("runtime_options", {}),
                 verdi_home=app.conf.get("VERDI_HOME", "/home/ops"),
                 host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
+
             )
 
         # TODO: Change to _container_params.json since we want to support
