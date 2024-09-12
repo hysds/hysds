@@ -24,6 +24,7 @@ from datetime import datetime
 from string import Template
 from inspect import getargspec
 from celery import uuid
+from functools import lru_cache
 
 from hysds.celery import app
 from hysds.log_utils import (
@@ -81,7 +82,7 @@ def get_timestamp(fraction=True):
         )
     return s
 
-
+@lru_cache(maxsize=32)
 def get_function(func_str, add_to_sys_path=None):
     """Automatically parse a function call string to import any libraries
     and return a pointer to the function.  Define add_to_sys_path to prepend a
