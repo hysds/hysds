@@ -123,7 +123,7 @@ CONTAINER_ENGINE = "{{ CONTAINER_ENGINE or 'docker' }}"
 
 # This is intended to be used for setting additional volume mount specifications
 # that can change depending on where the worker is running
-ADDITIONAL_CONTAINER_MOUNTS = {}
+CONTAINER_VOLUME_MOUNTS = {}
 
 PODMAN_CFG = {
   "set_uid_gid": False,
