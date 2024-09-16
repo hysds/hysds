@@ -138,7 +138,7 @@ class Base(ABC):
         return os.path.join(mnt_dir, os.path.basename(path))
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_verdi_home=None, volume_mounts=None):
+                                runtime_options=None, verdi_home=None, host_verdi_home=None):
         """
         Build container params for runtime.
         :param image_name: str
@@ -149,7 +149,6 @@ class Base(ABC):
         :param runtime_options: None/dict
         :param verdi_home: str
         :param host_verdi_home: str
-        :param volume_mounts: dict
         :return:
         """
         root_jobs_dir = os.path.join(root_work_dir, "jobs")
@@ -193,10 +192,6 @@ class Base(ABC):
                     image_mappings[f] = f
             blacklist = [i for i in blacklist if i != "/etc"]
             mnt_dir = mkdtemp(prefix=".container_mounts-", dir=job_dir)
-
-        # Add additional volume mounts if specified
-        if volume_mounts:
-            image_mappings.update(volume_mounts)
 
         # add user-defined image mappings
         for k, v in list(image_mappings.items()):
