@@ -1142,8 +1142,8 @@ def run_job(job, queue_when_finished=True):
                 root_work_dir,
                 job_dir,
                 runtime_options=dep_img.get("runtime_options", {}),
-                verdi_home=app.conf.get("VERDI_HOME", "/home/ops"),
-                host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops")
+                verdi_home=app.conf.get("VERDI_HOME", "/root"),
+                host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
 
             )
 
