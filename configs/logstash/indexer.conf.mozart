@@ -65,9 +65,9 @@ filter {
        "
     }
     mutate {
-      gsub => [
-        "[job][job_info][index]", "job_status-", "job_failed-"
-      ]
+      update_field => {
+        "[job][job_info][index]" => "job_failed-%{+YYYY.MM}"
+      }
     }
   }
   #if [resource] == "job" {
