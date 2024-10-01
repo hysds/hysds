@@ -46,6 +46,65 @@ filter {
       add_field => { "id" => "%{celery_hostname}" }
     }
   }
+
+  # Sets a flag to tell logstash to delete the original document
+  # if we move from job_status to job_failed
+  ruby {
+    code => "
+      event.set('delete_document', 'false')
+    "
+  }
+
+  if [resource] == "job" and [status] == "job-failed" {
+    ruby {
+      code => "
+         logger.info('Processing event for job-failed status: ' + event.get('payload_id').to_s);
+         original_index = event.get('[job][job_info][index]');
+         event.set('original_index', original_index)
+         event.set('delete_document', 'true')
+       "
+    }
+    mutate {
+      gsub => [
+        "[job][job_info][index]", "job_status-", "job_failed-"
+      ]
+    }
+  }
+  #if [resource] == "job" {
+  # if [status] == "job-failed" and [job][job_info][index] =~ "^job_status-" {
+  #   ruby {
+  #     code => "
+  #       logger.info('Processing event for job-failed status);
+  #       logger.info('Resource: ' + event.get('resource').to_s);
+  #       logger.info('Status: ' + event.get('status').to_s);
+  #       original_index = event.get('[job][job_info][index]');
+  #       event.set('original_index', original_index)
+  #       event.set('delete_document', 'true')
+  #     "
+  #   }
+  #   mutate {
+  #     gsub => [
+  #       "[job][job_info][index]", "job_status-", "job_failed-"
+  #     ]
+  #   }
+  #  } else if [status] == "job-started" and [job][job_info][index] =~ "^job_failed-" {
+  #    ruby {
+  #      code => "
+  #        logger.info('Processing event for job queued/started status and it's in the job-failed index);
+  #        logger.info('Resource: ' + event.get('resource').to_s);
+  #        logger.info('Status: ' + event.get('status').to_s);
+  #        original_index = event.get('[job][job_info][index]');
+  #        event.set('original_index', original_index)
+  #        event.set('delete_document', 'true')
+  #      "
+  #    }
+  #    mutate {
+  #      gsub => [
+  #        "[job][job_info][index]", "job_failed-", "job_status-"
+  #      ]
+  #    }
+  #  }
+  #}
 }
 
 output {
@@ -73,6 +132,31 @@ output {
       index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
       ecs_compatibility => disabled
+    }
+    if [delete_document] == "true" {
+      {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+        {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+        hosts => [
+          {%- for url in MOZART_ES_PVT_IP %}
+            {%- if url.startswith('https://') %}
+              "{{ url }}"{{ "," if not loop.last else "" }}
+            {%- else %}
+            "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+            {%- endif %}
+          {%- endfor %}
+        ]
+        {%- else %}
+          {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+            hosts => ["{{ MOZART_ES_PVT_IP }}"]
+          {%- else %}
+            hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+          {%- endif %}
+        {%- endif %}
+        index => "%{[original_index]}"
+        document_id => "%{payload_id}"
+        action => "delete"
+        ecs_compatibility => disabled
+      }
     }
   } else if [resource] == "worker" {
     {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
