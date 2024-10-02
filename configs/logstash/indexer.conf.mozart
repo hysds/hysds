@@ -64,7 +64,7 @@ filter {
        "
     }
     mutate {
-      update_field => {
+      replace => {
         "[job][job_info][index]" => "job_failed"
       }
     }
