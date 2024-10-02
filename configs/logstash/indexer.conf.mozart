@@ -58,7 +58,6 @@ filter {
   if [resource] == "job" and [status] == "job-failed" {
     ruby {
       code => "
-         logger.info('Processing event for job-failed status: ' + event.get('payload_id').to_s);
          original_index = event.get('[job][job_info][index]');
          event.set('original_index', original_index)
          event.set('delete_document', 'true')
@@ -66,45 +65,10 @@ filter {
     }
     mutate {
       update_field => {
-        "[job][job_info][index]" => "job_failed-%{+YYYY.MM}"
+        "[job][job_info][index]" => "job_failed"
       }
     }
   }
-  #if [resource] == "job" {
-  # if [status] == "job-failed" and [job][job_info][index] =~ "^job_status-" {
-  #   ruby {
-  #     code => "
-  #       logger.info('Processing event for job-failed status);
-  #       logger.info('Resource: ' + event.get('resource').to_s);
-  #       logger.info('Status: ' + event.get('status').to_s);
-  #       original_index = event.get('[job][job_info][index]');
-  #       event.set('original_index', original_index)
-  #       event.set('delete_document', 'true')
-  #     "
-  #   }
-  #   mutate {
-  #     gsub => [
-  #       "[job][job_info][index]", "job_status-", "job_failed-"
-  #     ]
-  #   }
-  #  } else if [status] == "job-started" and [job][job_info][index] =~ "^job_failed-" {
-  #    ruby {
-  #      code => "
-  #        logger.info('Processing event for job queued/started status and it's in the job-failed index);
-  #        logger.info('Resource: ' + event.get('resource').to_s);
-  #        logger.info('Status: ' + event.get('status').to_s);
-  #        original_index = event.get('[job][job_info][index]');
-  #        event.set('original_index', original_index)
-  #        event.set('delete_document', 'true')
-  #      "
-  #    }
-  #    mutate {
-  #      gsub => [
-  #        "[job][job_info][index]", "job_failed-", "job_status-"
-  #      ]
-  #    }
-  #  }
-  #}
 }
 
 output {
