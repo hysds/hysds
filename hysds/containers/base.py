@@ -217,7 +217,7 @@ class Base(ABC):
             host_k = k
             if verdi_home and host_verdi_home:
                 logger.info(f"verdi_home={verdi_home}, host_home={host_verdi_home}")
-                if verdi_home in k:
+                if k.startswith(verdi_home):
                     host_k = k.replace(verdi_home, host_verdi_home)
                     logger.info(f"Replacing {k} with {host_k} in the volume mount")
                 else:
