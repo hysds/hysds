@@ -141,7 +141,7 @@ def evaluate_user_rules_job(job_id, index=None):
 
         # If job is under the job_failed index, delete it
         if doc_res["_index"].startswith("job_failed"):
-            mozart_es.delete_by_id(index=index, id=job_id)
+            mozart_es.delete_by_id(index=doc_res["_index"], id=job_id)
 
         # submit trigger task
         queue_job_trigger(doc_res, rule)
