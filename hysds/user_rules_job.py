@@ -127,7 +127,7 @@ def evaluate_user_rules_job(job_id, index=None):
         # check for matching rules
         try:
             mozart_es = get_mozart_es()
-            result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs, ignore=404)
+            result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
                 logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
                 continue
