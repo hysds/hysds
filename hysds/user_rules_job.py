@@ -91,7 +91,7 @@ def evaluate_user_rules_job(job_id, index=None):
     """
 
     time.sleep(7)  # sleep 7 seconds to allow ES documents to be indexed
-    ensure_job_indexed(job_id, JOB_STATUS_ALIAS)  # ensure job is indexed
+    ensure_job_indexed(job_id, index=index or JOB_STATUS_ALIAS)  # ensure job is indexed
 
     # get all enabled user rules
     query = {
