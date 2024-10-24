@@ -1506,6 +1506,8 @@ def run_job(job, queue_when_finished=True):
         # queue job finished for user rules processing
         if queue_when_finished is True:
             job_index = job.get("job_info", {}).get("index")
+            if job_status_json["status"] == "job-failed":
+                job_index = f"{job_index},job_failed"
             queue_finished_job(payload_id, index=job_index)
     except Exception as e:
         error = str(e)
