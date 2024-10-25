@@ -55,7 +55,7 @@ filter {
     "
   }
 
-  if [resource] == "job" and [status] == "job-failed" {
+  if [resource] == "job" and ([status] == "job-failed" or [status] == "job-revoked") {
     ruby {
       code => "
          original_index = event.get('[job][job_info][index]');
