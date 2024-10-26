@@ -55,7 +55,7 @@ filter {
     "
   }
 
-  if [resource] == "job" and ([status] == "job-failed" or [status] == "job-revoked") {
+  if [resource] == "job" and [status] == "job-failed" {
     ruby {
       code => "
          original_index = event.get('[job][job_info][index]');
@@ -64,17 +64,21 @@ filter {
        "
     }
 
-    ruby {
-    code => "
-       payload_id = event.get('payload_id')
-       status = event.get('status')
-       puts 'Processing job: status=#{status}, payload_id=#{payload_id}'
-    "
-    }
     mutate {
       replace => {
         "[job][job_info][index]" => "job_failed"
       }
+    }
+  }
+
+  if [resource] == "job" {
+    ruby {
+      code => "
+       current_time = Time.now.strftime('%Y-%m-%d %H:%M:%S.%N')
+       payload_id = event.get('payload_id').to_s
+       status = event.get('status').to_s
+       puts 'Processing job at ' + current_time + ': status=' + status + ', payload_id=' + payload_id
+     "
     }
   }
 }
@@ -105,14 +109,6 @@ output {
       document_id => "%{payload_id}"
       ecs_compatibility => disabled
     }
-    ruby {
-      code => "
-       index = event.get('[job][job_info][index]')
-       payload_id = event.get('payload_id')
-       status = event.get('status')
-       puts 'Updated record in job: status=#{status}, payload_id=#{payload_id}, index=#{index}'
-      "
-    }
     if [delete_document] == "true" {
       {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
         {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
@@ -137,14 +133,6 @@ output {
         action => "delete"
         ecs_compatibility => disabled
       }
-    }
-    ruby {
-      code => "
-       index = event.get('original_index')
-       payload_id = event.get('payload_id')
-       status = event.get('status')
-       puts 'Deleted record in job: status=#{status}, payload_id=#{payload_id}, index=#{index}'
-      "
     }
   } else if [resource] == "worker" {
     {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
