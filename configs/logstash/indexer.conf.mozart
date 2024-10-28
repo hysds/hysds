@@ -71,20 +71,20 @@ filter {
     }
   }
 
-  if [resource] == "job" {
-    ruby {
-      code => "
-       current_time = Time.now.strftime('%Y-%m-%d %H:%M:%S.%N')
-       payload_id = event.get('payload_id').to_s
-       status = event.get('status').to_s
-       puts 'Processing job at ' + current_time + ': status=' + status + ', payload_id=' + payload_id
-     "
-    }
-  }
+  #if [resource] == "job" {
+  #  ruby {
+  #    code => "
+  #     current_time = Time.now.strftime('%Y-%m-%d %H:%M:%S.%N')
+  #     payload_id = event.get('payload_id').to_s
+  #     status = event.get('status').to_s
+  #     puts 'Processing job at ' + current_time + ': status=' + status + ', payload_id=' + payload_id
+  #   "
+  #  }
+  #}
 }
 
 output {
-  stdout { codec => rubydebug }
+  #stdout { codec => rubydebug }
 
   if [resource] == "job" {
     {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
