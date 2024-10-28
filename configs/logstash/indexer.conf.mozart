@@ -63,14 +63,15 @@ filter {
          event.set('delete_document', 'true')
        "
     }
-
     mutate {
       replace => {
         "[job][job_info][index]" => "job_failed"
       }
     }
   }
-
+  # This block adds a debugging message to the logstash_indexer.log in case we need to analyze the
+  # arrival of the messages coming into it. Need to uncomment out the codec => rubydebug statement
+  # in the output area in order to see this message.
   #if [resource] == "job" {
   #  ruby {
   #    code => "
