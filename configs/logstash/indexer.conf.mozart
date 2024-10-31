@@ -69,6 +69,19 @@ filter {
       }
     }
   }
+  # This block adds a debugging message to the logstash_indexer.log in case we need to analyze the
+  # arrival of the messages coming into it. Need to uncomment out the codec => rubydebug statement
+  # in the output area in order to see this message.
+  #if [resource] == "job" {
+  #  ruby {
+  #    code => "
+  #     current_time = Time.now.strftime('%Y-%m-%d %H:%M:%S.%N')
+  #     payload_id = event.get('payload_id').to_s
+  #     status = event.get('status').to_s
+  #     puts 'Processing job at ' + current_time + ': status=' + status + ', payload_id=' + payload_id
+  #   "
+  #  }
+  #}
 }
 
 output {

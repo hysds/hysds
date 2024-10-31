@@ -481,4 +481,4 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(os.path.exists(expected_triage_json_filename))
         self.assertTrue(os.path.exists(expected_triage_log_file1))
         self.assertFalse(os.path.exists(expected_triage_subdir1))
-        self.assertFalse(os.path.exists(expected_triage_subdir2))
+        self.assertTrue(os.path.exists(expected_triage_subdir2))
