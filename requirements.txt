@@ -73,7 +73,7 @@ jmespath==0.9.4
 jsonschema==3.2.0
 kombu==4.6.7
 limits==1.4.1
-Mako==1.1.0
+Mako==1.2.2
 MarkupSafe==2.0.1
 monotonic==1.5
 more-itertools==8.1.0
