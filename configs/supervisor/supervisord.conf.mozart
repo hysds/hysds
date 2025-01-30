@@ -121,6 +121,8 @@ startsecs=10
 [program:mozart_job_management]
 directory={{ OPS_HOME }}/mozart/ops/mozart
 command=gunicorn -w4 -b 0.0.0.0:8888 -k gevent --timeout=3600
+        --keyfile=/etc/pki/tls/private/localhost.key
+        --certfile=/etc/pki/tls/certs/localhost.crt
         --graceful-timeout=3600 --log-level=debug
         --limit-request-line=0 mozart:app
 process_name=%(program_name)s
