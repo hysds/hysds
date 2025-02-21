@@ -1,5 +1,5 @@
-broker_url = "amqp://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672//"
-result_backend = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}"
+broker_url = "amqps://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672/"
+result_backend = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}/?ssl_cert_reqs=CERT_NONE"
 
 task_serializer = "msgpack"
 result_serializer = "msgpack"
@@ -169,11 +169,11 @@ METRICS_ES_URL = "{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or '
     {%- endif %}
 {%- endif %}
 
-REDIS_JOB_STATUS_URL = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}"
+REDIS_JOB_STATUS_URL = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}/?ssl_cert_reqs=CERT_NONE"
 REDIS_JOB_STATUS_KEY = "logstash"
-REDIS_JOB_INFO_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }}"
+REDIS_JOB_INFO_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }}/?ssl_cert_reqs=CERT_NONE"
 REDIS_JOB_INFO_KEY = "logstash"
-REDIS_INSTANCE_METRICS_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }}"
+REDIS_INSTANCE_METRICS_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }/?ssl_cert_reqs=CERT_NONE}"
 REDIS_INSTANCE_METRICS_KEY = "logstash"
 REDIS_UNIX_DOMAIN_SOCKET = "unix://:{{ MOZART_REDIS_PASSWORD }}@/tmp/redis.sock"
 
