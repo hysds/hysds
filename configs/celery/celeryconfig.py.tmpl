@@ -1,4 +1,4 @@
-broker_url = "amqps://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672/"
+broker_url = "amqp://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5672/"
 result_backend = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}/?ssl_cert_reqs=CERT_NONE"
 
 task_serializer = "msgpack"
