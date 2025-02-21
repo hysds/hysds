@@ -37,10 +37,7 @@ def set_redis_pool(redis_url):
     if POOL is None:
         POOL = BlockingConnectionPool.from_url(
             url=redis_url,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none"
         )
 
 

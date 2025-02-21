@@ -91,10 +91,7 @@ def set_redis_job_status_pool():
     if JOB_STATUS_POOL is None:
         JOB_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none",
         )
 
 
@@ -105,10 +102,7 @@ def set_redis_job_info_pool():
     if JOB_INFO_POOL is None:
         JOB_INFO_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_INFO_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none",
         )
 
 
@@ -119,10 +113,7 @@ def set_redis_worker_status_pool():
     if WORKER_STATUS_POOL is None:
         WORKER_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none",
         )
 
 
@@ -133,10 +124,7 @@ def set_redis_event_status_pool():
     if EVENT_STATUS_POOL is None:
         EVENT_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none"
         )
 
 
@@ -155,10 +143,7 @@ def set_redis_revoked_task_pool():
     if REVOKED_TASK_POOL is None:
         REVOKED_TASK_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none",
         )
 
 
@@ -168,10 +153,7 @@ def set_redis_payload_hash_pool():
     if PAYLOAD_HASH_POOL is None:
         PAYLOAD_HASH_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="required",
-            ssl_keyfile="/etc/pki/tls/private/localhost.key",
-            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
-            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+            ssl_cert_reqs="none",
         )
 
 
