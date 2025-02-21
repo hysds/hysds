@@ -35,7 +35,13 @@ def set_redis_pool(redis_url):
 
     global POOL
     if POOL is None:
-        POOL = BlockingConnectionPool.from_url(redis_url)
+        POOL = BlockingConnectionPool.from_url(
+            url=redis_url,
+            ssl_cert_reqs="required",
+            ssl_keyfile="/etc/pki/tls/private/localhost.key",
+            ssl_certfile="/etc/pki/tls/certs/localhost.crt",
+            ssl_ca_certs="/etc/pki/tls/certs/ca-bundle.crt"
+        )
 
 
 def log_instance_stats(redis_url, redis_key, instance_stats):
