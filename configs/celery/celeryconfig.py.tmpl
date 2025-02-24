@@ -1,3 +1,12 @@
+import ssl
+broker_use_ssl = {
+    'keyfile': "/etc/pki/tls/private/localhost.key",
+    'certfile': "/etc/pki/tls/certs/localhost.crt",
+    'ca_certs': "/etc/pki/tls/certs/ca-bundle.crt",
+    'cert_reqs': ssl.CERT_NONE,
+    'ciphers': "DHE-RSA-AES128-GCM-SHA256"
+}
+
 broker_url = "amqps://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5671/"
 result_backend = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}/?ssl_cert_reqs=CERT_NONE"
 
