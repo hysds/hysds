@@ -11,6 +11,7 @@ input {
     # We use the 'msgpack' codec here because we expect to read
     # msgpack events from redis.
     codec => msgpack
+    ssl => true
   }
 }
 
