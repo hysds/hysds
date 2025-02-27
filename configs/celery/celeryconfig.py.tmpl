@@ -1,7 +1,5 @@
 import ssl
 broker_use_ssl = {
-    'keyfile': "/etc/pki/tls/private/localhost.key",
-    'certfile': "/etc/pki/tls/certs/localhost.crt",
     'ca_certs': "/etc/pki/tls/certs/ca-bundle.crt",
     'cert_reqs': ssl.CERT_NONE,
     'ciphers': "DHE-RSA-AES128-GCM-SHA256"
