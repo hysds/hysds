@@ -97,7 +97,8 @@ def log_task_event(event_type, event, uuid=[]):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=POOL)
+    r = StrictRedis(connection_pool=POOL,
+                    ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
 
     # print log
@@ -124,7 +125,8 @@ def log_worker_event(event_type, event, uuid=[]):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=POOL)
+    r = StrictRedis(connection_pool=POOL,
+                    ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
 
     # print log
@@ -141,7 +143,8 @@ def log_worker_status(worker, status):
     global POOL
 
     # send update to redis; set at the heartbeat-interval of celery workers
-    r = StrictRedis(connection_pool=POOL)
+    r = StrictRedis(connection_pool=POOL,
+                    ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
     r.setex(WORKER_STATUS_KEY_TMPL % worker, 60, status)
 
     # print log
@@ -213,7 +216,8 @@ def event_monitor(app):
     def worker_offline(event):
         set_redis_pool()
         global POOL
-        rd = StrictRedis(connection_pool=POOL)
+        rd = StrictRedis(connection_pool=POOL,
+                         ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
         state.event(event)
         if ORCH_HOST_RE.search(event["hostname"]):
             return

@@ -54,7 +54,8 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=POOL)
+    r = StrictRedis(connection_pool=POOL,
+                    ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
     r.rpush(redis_key, msgpack.dumps(instance_stats))
 
     # print log

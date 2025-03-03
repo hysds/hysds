@@ -49,7 +49,8 @@ def offline_orphaned_jobs(es_url, dry_run=False):
     # get redis connection
     set_redis_pool()
     global POOL
-    rd = StrictRedis(connection_pool=POOL)
+    rd = StrictRedis(connection_pool=POOL,
+                     ssl_ciphers="DHE-RSA-AES128-GCM-SHA256")
 
     # get celery task result serializer
     content_type, content_encoding, encoder = registry._encoders[
