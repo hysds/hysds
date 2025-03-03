@@ -14,7 +14,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        "redis=5.2.1",
+        "redis==5.2.1",
         "celery>=5.3.1,<6.0.0",
         "prompt-toolkit==1.0.18",  # TODO: celery uses new verison of click which broke this, wil remove later
         "requests>=2.20.0",
