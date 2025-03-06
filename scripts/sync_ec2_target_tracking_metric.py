@@ -16,6 +16,8 @@ import argparse
 import boto3
 import botocore
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 import backoff
 
 from hysds.celery import app
@@ -24,6 +26,12 @@ from hysds.celery import app
 log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
+# class for custom cipher for rabbitmq
+class CustomCipherAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        ssl_context = create_urllib3_context(ciphers="DHE-RSA-AES128-GCM-SHA256")
+        kwargs['ssl_context'] = ssl_context
+        return super(CustomCipherAdapter, self).init_poolmanager(*args, **kwargs)
 
 def get_job_count(queue, user="guest", password="guest", total_jobs=False):
     """Return number of waiting jobs for a queue. If total_jobs is set 
@@ -37,8 +45,11 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
     )
 
     # get number of jobs
-    url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
-    r = requests.get(url, auth=(user, password))
+    session = requests.Session()
+    session.mount("https://", CustomCipherAdapter())
+
+    url = "https://%s:15672/api/queues/%%2f/%s" % (host, queue)
+    r = session.get(url, auth=(user, password), verify=None)
     # r.raise_for_status()
     if r.status_code == 200:
         return r.json()["messages" if total_jobs else "messages_ready"]
