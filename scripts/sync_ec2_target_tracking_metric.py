@@ -16,6 +16,7 @@ import argparse
 import boto3
 import botocore
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 import backoff
