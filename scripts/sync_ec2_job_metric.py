@@ -46,8 +46,8 @@ def get_waiting_job_count(job, user="guest", password="guest"):
     session.mount("https://", CustomCipherAdapter())
 
     # get number of jobs waiting (ready)
-    url = "https://%s:15672/api/queues/%%2f/%s" % (host, job)
-    r = session.get(url, auth=(user, password), verify=None)
+    url = "https://%s:15673/api/queues/%%2f/%s" % (host, job)
+    r = session.get(url, auth=(user, password), verify=False)
     # r.raise_for_status()
     if r.status_code == 200:
         return r.json()["messages_ready"]

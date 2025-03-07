@@ -49,8 +49,8 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
     session = requests.Session()
     session.mount("https://", CustomCipherAdapter())
 
-    url = "https://%s:15672/api/queues/%%2f/%s" % (host, queue)
-    r = session.get(url, auth=(user, password), verify=None)
+    url = "https://%s:15673/api/queues/%%2f/%s" % (host, queue)
+    r = session.get(url, auth=(user, password), verify=False)
     # r.raise_for_status()
     if r.status_code == 200:
         return r.json()["messages" if total_jobs else "messages_ready"]
