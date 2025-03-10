@@ -24,7 +24,7 @@ setup(
         "lxml>=3.4.0,<5.0.0",
         "httplib2>=0.9",
         "gevent>=1.0.1",
-        "psutil>=5.8.0",
+        "psutil>=5.8.0,<6.0.0",
         "filechunkio>=1.6.0",
         "boto>=2.38.0",
         "msgpack>=1.0.0",
