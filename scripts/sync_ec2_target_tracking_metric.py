@@ -25,9 +25,8 @@ log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 
-def get_job_count(queue, user="guest", password="guest", total_jobs=False):
-    """Return number of waiting jobs for a queue. If total_jobs is set 
-       to True, then the total number of jobs for a queue is returned."""
+def get_queue_info(queue, user="guest", password="guest"):
+    """Return RabbitMQ queue information."""
 
     # get rabbitmq admin api host
     host = (
@@ -36,12 +35,35 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
         .get("hostname", "localhost")
     )
 
-    # get number of jobs
+    # request info for queue
     url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
     r = requests.get(url, auth=(user, password))
-    # r.raise_for_status()
-    if r.status_code == 200:
+    status_code = r.status_code
+    if status_code == 200:
+        return status_code, r.json()
+    else:
+        return status_code, None
+
+
+def get_job_count(queue, user="guest", password="guest", total_jobs=False):
+    """Return number of waiting jobs for a queue. If total_jobs is set
+       to True, then the total number of jobs for a queue is returned."""
+
+    # get number of jobs
+    status_code, resp = get_queue_info(queue, user, password)
+    if status_code == 200:
         return r.json()["messages" if total_jobs else "messages_ready"]
+    else:
+        return 0
+
+
+def get_consumer_count(queue, user="guest", password="guest"):
+    """Return number of consumers for a queue."""
+
+    # get number of jobs
+    status_code, resp = get_queue_info(queue, user, password)
+    if status_code == 200:
+        return r.json()["consumers"]
     else:
         return 0
 
@@ -122,7 +144,7 @@ def submit_metric(queue, asg, metric, metric_ns, total_jobs=False):
 
 
 def daemon(
-    queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False
+    queue, asg, interval, namespace, user="guest", password="guest", total_jobs=False, use_consumer_count=False
 ):
     """Submit EC2 custom metric for an ASG's target tracking policy."""
 
@@ -136,20 +158,28 @@ def daemon(
                 logging.info("jobs_total for %s queue: %s" % (queue, job_count))
             else:
                 logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
-            desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
-            if desired_capacity == 0:
-                if job_count > 0:
-                    desired_capacity = float(
-                        bootstrap_asg(
-                            asg, max_size if job_count > max_size else job_count
+
+            # calculate target tracking metric
+            if use_consumer_count:
+                # use consumer count
+                consumer_count = float(get_consumer_count(queue, user, password))
+                metric = job_count / (1.0 if consumer_count == 0. else consumer_count)
+            else:
+                # use ASG instance count
+                desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
+                if desired_capacity == 0:
+                    if job_count > 0:
+                        desired_capacity = float(
+                            bootstrap_asg(
+                                asg, max_size if job_count > max_size else job_count
+                            )
                         )
-                    )
-                    logging.info(
-                        "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
-                    )
-                else:
-                    desired_capacity = 1.0
-            metric = job_count / desired_capacity
+                        logging.info(
+                            "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
+                        )
+                    else:
+                        desired_capacity = 1.0
+                metric = job_count / desired_capacity
             submit_metric(queue, asg, metric, namespace, total_jobs)
         except Exception as e:
             logging.error("Got error: %s" % e)
@@ -176,6 +206,12 @@ if __name__ == "__main__":
         action="store_true",
         help="use total job count instead of waiting job count (default)",
     )
+    parser.add_argument(
+        "-c",
+        "--consumer_count",
+        action="store_true",
+        help="use RabbitMQ queue consumer count instead of ASG desired value (default)",
+    )
     args = parser.parse_args()
     daemon(
         args.queue,
@@ -185,4 +221,5 @@ if __name__ == "__main__":
         args.user,
         args.password,
         args.total_jobs,
+        args.consumer_count,
     )
