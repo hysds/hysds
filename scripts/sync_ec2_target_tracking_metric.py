@@ -52,7 +52,7 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
     # get number of jobs
     status_code, resp = get_queue_info(queue, user, password)
     if status_code == 200:
-        return r.json()["messages" if total_jobs else "messages_ready"]
+        return resp["messages" if total_jobs else "messages_ready"]
     else:
         return 0
 
@@ -63,7 +63,7 @@ def get_consumer_count(queue, user="guest", password="guest"):
     # get number of jobs
     status_code, resp = get_queue_info(queue, user, password)
     if status_code == 200:
-        return r.json()["consumers"]
+        return resp["consumers"]
     else:
         return 0
 
@@ -103,7 +103,7 @@ def bootstrap_asg(asg, desired):
     """Bootstrap ASG's desired capacity."""
 
     c = boto3.client("autoscaling")
-    r = set_desired_capacity(c, asg, desired)
+    set_desired_capacity(c, asg, desired)
     return desired
 
 
