@@ -82,7 +82,7 @@ JOBS_ES_URL = [
         {%- if url.startswith('https://') %}
     "{{ url }}",
         {%- else %}
-    "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}",
+    "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}",
         {%- endif %}
     {%- endfor %}
 ]
@@ -90,7 +90,7 @@ JOBS_ES_URL = [
     {%- if MOZART_ES_PVT_IP.startswith('https://') %}
 JOBS_ES_URL = "{{ MOZART_ES_PVT_IP }}"
     {%- else %}
-JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"
+JOBS_ES_URL = "{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"
     {%- endif %}
 {%- endif %}
 
@@ -114,7 +114,7 @@ GRQ_ES_URL = [
         {%- if url.startswith('https://') %}
     "{{ url }}",
         {%- else %}
-    "{{ 'https://'~url if GRQ_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}",
+    "{{ 'https://'~url if GRQ_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}",
         {%- endif %}
     {%- endfor %}
 ]
@@ -122,7 +122,7 @@ GRQ_ES_URL = [
     {%- if GRQ_ES_PVT_IP.startswith('https://') %}
 GRQ_ES_URL = "{{ GRQ_ES_PVT_IP }}"
     {%- else %}
-GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true or 'es.amazonaws.com' in GRQ_ES_PVT_IP else 'http://'~GRQ_ES_PVT_IP~':9200' }}"
+GRQ_ES_URL = "{{ 'https://'~GRQ_ES_PVT_IP if GRQ_AWS_ES == true or 'es.amazonaws.com' in GRQ_ES_PVT_IP else 'https://'~GRQ_ES_PVT_IP~':9200' }}"
     {%- endif %}
 {%- endif %}
 
@@ -164,7 +164,7 @@ METRICS_ES_URL = [
         {%- if url.startswith('https://') %}
     "{{ url }}",
         {%- else %}
-    "{{ 'https://'~url if METRICS_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}",
+    "{{ 'https://'~url if METRICS_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}",
         {%- endif %}
     {%- endfor %}
 ]
@@ -172,7 +172,7 @@ METRICS_ES_URL = [
     {%- if METRICS_ES_PVT_IP.startswith('https://') %}
 METRICS_ES_URL = "{{ METRICS_ES_PVT_IP }}"
     {%- else %}
-METRICS_ES_URL = "{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'http://'~METRICS_ES_PVT_IP~':9200' }}"
+METRICS_ES_URL = "{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'https://'~METRICS_ES_PVT_IP~':9200' }}"
     {%- endif %}
 {%- endif %}
 

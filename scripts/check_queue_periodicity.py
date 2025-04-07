@@ -355,7 +355,7 @@ def check_queue_execution(
 
 
 if __name__ == "__main__":
-    host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
+    host = app.conf.get("JOBS_ES_URL", "https://localhost:9200")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("rabbitmq_admin_url", help="RabbitMQ Admin Url")
     parser.add_argument(

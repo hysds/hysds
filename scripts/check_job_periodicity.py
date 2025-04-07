@@ -304,7 +304,7 @@ def check_job_execution(job_type, periodicity=0, slack_url=None, email=None):
 
 
 if __name__ == "__main__":
-    host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
+    host = app.conf.get("JOBS_ES_URL", "https://localhost:9200")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("job_type", help="HySDS job type to watchdog")
     parser.add_argument(

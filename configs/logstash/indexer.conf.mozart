@@ -96,7 +96,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -104,7 +104,7 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "%{[job][job_info][index]}"
@@ -119,7 +119,7 @@ output {
             {%- if url.startswith('https://') %}
               "{{ url }}"{{ "," if not loop.last else "" }}
             {%- else %}
-            "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+            "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
             {%- endif %}
           {%- endfor %}
         ]
@@ -127,7 +127,7 @@ output {
           {%- if MOZART_ES_PVT_IP.startswith('https://') %}
             hosts => ["{{ MOZART_ES_PVT_IP }}"]
           {%- else %}
-            hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+            hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
           {%- endif %}
         {%- endif %}
         index => "%{[original_index]}"
@@ -144,7 +144,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -152,7 +152,7 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "worker_status-%{+YYYY.MM.dd}"
@@ -167,7 +167,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -175,7 +175,7 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "%{index}"
@@ -190,7 +190,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -198,7 +198,7 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "event_status-%{+YYYY.MM.dd}"
