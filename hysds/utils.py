@@ -120,18 +120,22 @@ def get_download_params(url):
     return params
 
 
-def download_file(url, path, cache=False):
+def download_file(url, path, cache=False, cache_base_dir=None):
     """
     Download file/dir for input
     @param url: Str
     @param path: Str
     @param cache: Bool (default False) pull from cache
+    @param cache_base_dir: Str Use a different cache base directory
     """
 
     params = get_download_params(url)
     if cache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
-        hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, "cache", *url_hash[0:4])
+        if cache_base_dir:
+            hash_dir = os.path.join(os.path.abspath(cache_base_dir), "cache", *url_hash[0:4])
+        else:
+            hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, "cache", *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
         signal_file = os.path.join(cache_dir, ".localized")
