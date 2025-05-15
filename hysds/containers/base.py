@@ -167,9 +167,13 @@ class Base(ABC):
                 (root_jobs_dir, root_jobs_dir),
                 (root_tasks_dir, root_tasks_dir),
                 (root_workers_dir, root_workers_dir),
-                (root_cache_dir, "{}:ro".format(root_cache_dir)),
             ],
         }
+
+        if app.conf.get("CACHE_READ_ONLY", True) is True:
+            params["volumes"].append((root_cache_dir, f"{root_cache_dir}:ro"))
+        else:
+            params["volumes"].append((root_cache_dir, f"{root_cache_dir}"))
 
         # add default image mappings
         celery_cfg_file = os.environ.get("HYSDS_CELERY_CFG", app.conf.__file__)
