@@ -126,7 +126,7 @@ def download_file(url, path, cache=False, root_work_dir=None):
     @param url: Str
     @param path: Str
     @param cache: Bool (default False) pull from cache
-    @param cache_base_dir: Str Use a different cache base directory
+    @param root_work_dir: Str Use a different root work dir for the cache
     """
 
     params = get_download_params(url)
