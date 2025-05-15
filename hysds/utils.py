@@ -120,7 +120,7 @@ def get_download_params(url):
     return params
 
 
-def download_file(url, path, cache=False, cache_base_dir=None):
+def download_file(url, path, cache=False, root_work_dir=None):
     """
     Download file/dir for input
     @param url: Str
@@ -132,8 +132,8 @@ def download_file(url, path, cache=False, cache_base_dir=None):
     params = get_download_params(url)
     if cache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
-        if cache_base_dir:
-            hash_dir = os.path.join(os.path.abspath(cache_base_dir), "cache", *url_hash[0:4])
+        if root_work_dir:
+            hash_dir = os.path.join(os.path.abspath(root_work_dir), "cache", *url_hash[0:4])
         else:
             hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, "cache", *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
