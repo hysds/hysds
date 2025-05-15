@@ -206,4 +206,4 @@ VERDI_HOME = "{{ VERDI_HOME or '/root' }}"
 
 VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
 
-CACHE_READ_ONLY = {{ CACHE_READ_ONLY or True }}
+CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
