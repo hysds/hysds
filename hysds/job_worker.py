@@ -240,9 +240,13 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.0):
         percent_free = cleanup_old_jobs(work_path, jobs_path, percent_free, threshold)
 
     # cleanup cached products if free disk space not met
-    if app.conf.get("EVICT_CACHE", True) is True:
-        if percent_free <= threshold:
+    if percent_free <= threshold:
+        if app.conf.get("EVICT_CACHE", True) is True:
             evict_localize_cache(work_path, cache_path, percent_free, threshold)
+        else:
+            logger.info(
+                f"EVICT_CACHE is set to false. Will not try to clean up the cache directory: {cache_path}"
+            )
 
     # log final disk stats
     capacity, free, used, percent_free = disk_space_info(work_path)

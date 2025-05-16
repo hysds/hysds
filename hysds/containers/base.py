@@ -173,6 +173,7 @@ class Base(ABC):
         if app.conf.get("CACHE_READ_ONLY", True) is True:
             params["volumes"].append((root_cache_dir, f"{root_cache_dir}:ro"))
         else:
+            logger.info(f"CACHE_READ_ONLY set to false. Making it writable: {root_cache_dir}")
             params["volumes"].append((root_cache_dir, f"{root_cache_dir}"))
 
         # add default image mappings
