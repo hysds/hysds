@@ -135,7 +135,7 @@ def download_file(url, path, cache=False, root_work_dir=None):
         if root_work_dir:
             hash_dir = os.path.join(os.path.abspath(root_work_dir), "cache", *url_hash[0:4])
         else:
-            hash_dir = os.path.join(app.conf.ROOT_WORK_DIR, "cache", *url_hash[0:4])
+            hash_dir = os.path.join(os.environ.get("HYSDS_ROOT_WORK_DIR", app.conf.ROOT_WORK_DIR), "cache", *url_hash[0:4])
         cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
         signal_file = os.path.join(cache_dir, ".localized")
