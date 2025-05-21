@@ -70,6 +70,10 @@ class TestContainerUtils(unittest.TestCase):
                 return 0
             elif args[0] == "CONTAINER_REGISTRY":
                 return None
+            elif args[0] == "CACHE_READ_ONLY":
+                return True
+            elif args[0] == "EVICT_CACHE":
+                return True
             else:
                 raise RuntimeError("Handling {} not implemented yet.".format(args[0]))
 
