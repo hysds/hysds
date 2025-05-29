@@ -179,9 +179,9 @@ METRICS_ES_URL = "{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or '
 
 REDIS_JOB_STATUS_URL = "rediss://:{{ MOZART_REDIS_PASSWORD }}@{{ MOZART_REDIS_PVT_IP }}/?ssl_cert_reqs=none"
 REDIS_JOB_STATUS_KEY = "logstash"
-REDIS_JOB_INFO_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ GRQ_PVT_IP }}/?ssl_cert_reqs=none"
+REDIS_JOB_INFO_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }}/?ssl_cert_reqs=none"
 REDIS_JOB_INFO_KEY = "logstash"
-REDIS_INSTANCE_METRICS_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ GRQ_PVT_IP }}/?ssl_cert_reqs=none"
+REDIS_INSTANCE_METRICS_URL = "rediss://:{{ METRICS_REDIS_PASSWORD }}@{{ METRICS_REDIS_PVT_IP }}/?ssl_cert_reqs=none"
 REDIS_INSTANCE_METRICS_KEY = "logstash"
 REDIS_UNIX_DOMAIN_SOCKET = "unix://:{{ MOZART_REDIS_PASSWORD }}@/tmp/redis.sock"
 
