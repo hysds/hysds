@@ -140,7 +140,8 @@ PODMAN_CFG = {
   "environment": [
     "HOST_VERDI_HOME",
     "HOST_USER",
-    "HOST_UID"
+    "HOST_UID",
+    "HYSDS_ROOT_WORK_DIR"
   ]
 }
 
@@ -212,3 +213,7 @@ TRIAGE_PARTITION_FORMAT = {{ TRIAGE_PARTITION_FORMAT or None }}
 VERDI_HOME = "{{ VERDI_HOME or '/root' }}"
 
 VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
+
+CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
+
+EVICT_CACHE = {{ EVICT_CACHE | default(true, boolean=False) }}
