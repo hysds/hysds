@@ -28,6 +28,7 @@ input {
     add_field => {
       "@index" => "sdswatch-%{+yyyy.MM.dd}"
     }
+    ssl => true
   }
 }
 
@@ -53,5 +54,10 @@ output {
       {%- endif %}
     {%- endif %}
     index => "%{[@index]}"
+    ssl => true
+    ssl_certificate_verification => false
+    cacert => "/etc/pki/tls/certs/ca-bundle.crt"
+    user => {{ OS_USER }}
+    password => {{ OS_PASSWORD }}
   }
 }
