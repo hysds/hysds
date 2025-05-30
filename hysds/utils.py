@@ -128,7 +128,7 @@ def download_file(url, path, cache=False, root_work_dir=None):
     @param cache: Bool (default False) pull from cache
     @param root_work_dir: Str Use a different root work dir for the cache
     """
-    cache = False  # REMOVE FOR DIT
+
     params = get_download_params(url)
     if cache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
