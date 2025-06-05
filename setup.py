@@ -23,7 +23,7 @@ setup(
         "easywebdav>=1.2.0",
         "lxml>=3.4.0,<5.0.0",
         "httplib2>=0.9",
-        "gevent>=1.0.1",
+        'gevent>=1.1.1,<25.4.1',
         "psutil>=5.8.0",
         "filechunkio>=1.6.0",
         "boto>=2.38.0",
