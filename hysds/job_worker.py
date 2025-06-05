@@ -1,14 +1,3 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
-
-from builtins import super
-from builtins import dict
-from builtins import open
-from builtins import int
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -22,7 +11,7 @@ import shutil
 import re
 import shlex
 import signal
-from datetime import datetime
+from datetime import datetime, UTC
 from itertools import compress
 from subprocess import check_output, CalledProcessError
 from celery.exceptions import SoftTimeLimitExceeded
@@ -350,7 +339,7 @@ def redelivered_job_dup(job):
     task_id = job["task_id"]
     redelivered = job.get("delivery_info", {}).get("redelivered", False)
     status = get_job_status(task_id)
-    logger.info("redelivered_job_dup: redelivered:%s status:%s" % (redelivered, status))
+    logger.info("redelivered_job_dup: redelivered:{} status:{}".format(redelivered, status))
     if redelivered:
         # if job-started, give process_events time to process
         if status == "job-started":
@@ -358,7 +347,7 @@ def redelivered_job_dup(job):
             time.sleep(60)
             status = get_job_status(task_id)
             logger.info(
-                "redelivered_job_dup: redelivered:%s status:%s" % (redelivered, status)
+                "redelivered_job_dup: redelivered:{} status:{}".format(redelivered, status)
             )
 
         # perform dedup
@@ -381,7 +370,7 @@ class WorkerExecutionError(Exception):
     def __init__(self, message, job_status):
         self.message = message
         self.job_status = job_status
-        super(WorkerExecutionError, self).__init__(message, job_status)
+        super().__init__(message, job_status)
 
     def job_status(self):
         return self.job_status
@@ -391,7 +380,7 @@ class JobDedupedError(Exception):
     def __init__(self, message):
         self.message = message
         self.job_status = "job-deduped"
-        super(JobDedupedError, self).__init__(message)
+        super().__init__(message)
 
     def job_status(self):
         return self.job_status
@@ -728,7 +717,7 @@ def run_job(job, queue_when_finished=True):
     webdav_url = worker_cfg.get("webdav_url", app.conf.get("WEBDAV_URL"))
 
     # job execution times
-    time_start = datetime.utcnow()
+    time_start = datetime.now(UTC)
     time_end = None
     time_start_iso = time_start.isoformat() + "Z"
 
@@ -841,7 +830,7 @@ def run_job(job, queue_when_finished=True):
     job_running_file = os.path.join(job_dir, ".running")
     try:
         with open(job_running_file, "w") as f:
-            f.write("%sZ\n" % datetime.utcnow().isoformat())
+            f.write("%sZ\n" % datetime.now(UTC).isoformat())
     except Exception as e:
         error = str(e)
         job_status_json = {
@@ -918,7 +907,7 @@ def run_job(job, queue_when_finished=True):
 
     # add webdav url to job dir
     if webdav_url is None:
-        webdav_url = "http://%s:%s" % (job["job_info"]["public_ip"], webdav_port)
+        webdav_url = "http://{}:{}".format(job["job_info"]["public_ip"], webdav_port)
     job["job_info"]["job_url"] = os.path.join(
         webdav_url,
         jobs_dir,
@@ -1038,7 +1027,7 @@ def run_job(job, queue_when_finished=True):
                 logger.info(str(e))
                 dj = None
             if isinstance(dj, dict):
-                error = "verdi worker found duplicate job %s with status %s" % (
+                error = "verdi worker found duplicate job {} with status {}".format(
                     dj["_id"],
                     dj["status"],
                 )
@@ -1159,7 +1148,7 @@ def run_job(job, queue_when_finished=True):
                 json.dump(container_params, f, indent=2, sort_keys=True)
         except Exception as e:
             tb = traceback.format_exc()
-            err = "Failed to dump docker params to file %s: %s\n%s" % (
+            err = "Failed to dump docker params to file {}: {}\n{}".format(
                 container_params_file,
                 str(e),
                 tb,
@@ -1182,11 +1171,11 @@ def run_job(job, queue_when_finished=True):
                 #  eval ${which_declare} ) | /usr/bin/which --tty-only --read-alias --read-functions --show-tilde
                 #  --show-dot $@
                 # }
-                f.write("#%s=%s\n" % (env_var, env_val.replace("\n", "")))
+                f.write("#{}={}\n".format(env_var, env_val.replace("\n", "")))
             f.write("\n")
             # dump job env for execution
             for env in job["command"]["env"]:
-                f.write("export %s=%s\n" % (env["key"], env["value"]))
+                f.write("export {}={}\n".format(env["key"], env["value"]))
             f.write("\n%s\n" % cmdLine)
         try:
             os.chmod(run_script, 0o755)
@@ -1194,7 +1183,7 @@ def run_job(job, queue_when_finished=True):
             pass
 
         # command execution start time
-        cmd_start = datetime.utcnow()
+        cmd_start = datetime.now(UTC)
         cmd_start_iso = cmd_start.isoformat() + "Z"
         job["job_info"]["cmd_start"] = cmd_start_iso
 
@@ -1253,7 +1242,7 @@ def run_job(job, queue_when_finished=True):
             if status is None:
                 raise RuntimeError("Failed to get exit status.")
             else:
-                raise RuntimeError("Got non-zero exit code: {}".format(status))
+                raise RuntimeError(f"Got non-zero exit code: {status}")
 
         # check for metrics from PGE
         for pge_metrics_file in find_pge_metrics(job_dir):
@@ -1263,7 +1252,7 @@ def run_job(job, queue_when_finished=True):
                     pge_metrics = json.load(f)
                 except Exception as e:
                     tb = traceback.format_exc()
-                    err = "Failed to load PGE-generated metrics from %s: %s\n%s" % (
+                    err = "Failed to load PGE-generated metrics from {}: {}\n{}".format(
                         pge_metrics_file,
                         str(e),
                         tb,
@@ -1291,7 +1280,7 @@ def run_job(job, queue_when_finished=True):
                 json.dump(context, f, indent=2, sort_keys=True)
 
         # save job duration
-        time_end = datetime.utcnow()
+        time_end = datetime.now(UTC)
         job["job_info"]["time_end"] = time_end.isoformat() + "Z"
         job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 
@@ -1312,7 +1301,7 @@ def run_job(job, queue_when_finished=True):
         # log error
         error = str(e)
         tb = traceback.format_exc()
-        logger.info(" Got error: %s\n%s" % (error, tb))
+        logger.info(" Got error: {}\n{}".format(error, tb))
 
         # process id
         pid = None
@@ -1388,7 +1377,7 @@ def run_job(job, queue_when_finished=True):
 
         # if time_end not set, do it now
         if time_end is None:
-            time_end = datetime.utcnow()
+            time_end = datetime.now(UTC)
             job["job_info"]["time_end"] = time_end.isoformat() + "Z"
             job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 
@@ -1485,7 +1474,7 @@ def run_job(job, queue_when_finished=True):
                 usage_stats = json.load(f)
             except Exception as e:
                 tb = traceback.format_exc()
-                err = "Failed to load usage stats from %s: %s\n%s" % (
+                err = "Failed to load usage stats from {}: {}\n{}".format(
                     usage_stats_file,
                     str(e),
                     tb,
@@ -1500,7 +1489,7 @@ def run_job(job, queue_when_finished=True):
         # transition running file to done file
         os.rename(job_running_file, job_done_file)
         with open(job_done_file, "w") as f:
-            f.write("%sZ\n" % datetime.utcnow().isoformat())
+            f.write("%sZ\n" % datetime.now(UTC).isoformat())
 
         # log job info metrics
         log_job_info(job)
@@ -1566,9 +1555,9 @@ def set_revoked_job_done(root_work, job_id):
                 logger.info("No job done file found: %s" % job_done_file)
                 if os.path.exists(job_running_file):
                     os.rename(job_running_file, job_done_file)
-                    logger.info("Renamed %s to %s." % (job_running_file, job_done_file))
+                    logger.info("Renamed {} to {}.".format(job_running_file, job_done_file))
                 with open(job_done_file, "w") as f:
-                    f.write("%sZ\n" % datetime.utcnow().isoformat())
+                    f.write("%sZ\n" % datetime.now(UTC).isoformat())
                 logger.info("Wrote timestamp to %s." % job_done_file)
             return
         else:

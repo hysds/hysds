@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -54,7 +50,7 @@ def clean(es_url, time_queued):
     }
     # print json.dumps(query, indent=2)
     r = requests.post(
-        "%s/%s/_search?search_type=scan&scroll=10m&size=100" % (es_url, idx),
+        "{}/{}/_search?search_type=scan&scroll=10m&size=100".format(es_url, idx),
         data=json.dumps(query),
     )
     r.raise_for_status()
@@ -76,10 +72,10 @@ def clean(es_url, time_queued):
     # loop and check task info
     for job_id in queued_jobs:
         # print job
-        r = requests.delete("%s/%s/%s/_query?q=_id:%s" % (es_url, idx, doctype, job_id))
+        r = requests.delete("{}/{}/{}/_query?q=_id:{}".format(es_url, idx, doctype, job_id))
         r.raise_for_status()
         res = r.json()
-        print(("Cleaned out queued job %s." % job_id))
+        print("Cleaned out queued job %s." % job_id)
 
 
 if __name__ == "__main__":

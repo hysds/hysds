@@ -1,11 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import open
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -18,7 +10,7 @@ import msgpack
 import traceback
 import types
 import backoff
-from datetime import datetime
+from datetime import datetime, UTC
 from uuid import uuid4
 from redis import BlockingConnectionPool, StrictRedis, RedisError
 
@@ -232,7 +224,7 @@ def log_job_status(job):
     job["resource"] = "job"
     job["type"] = job.get("job", {}).get("type", "unknown")
     job["@version"] = "1"
-    job["@timestamp"] = "%sZ" % datetime.utcnow().isoformat()
+    job["@timestamp"] = "%sZ" % datetime.now(UTC).isoformat()
     if "tag" in job.get("job", {}):
         tags = job.setdefault("tags", [])
         if isinstance(tags, str):
@@ -276,7 +268,7 @@ def log_job_info(job):
     job_info = {
         "type": "job_info",
         "@version": "1",
-        "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
+        "@timestamp": "%sZ" % datetime.now(UTC).isoformat(),
         "job": filtered_info,
         "job_type": job["type"],
     }
@@ -309,7 +301,7 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
         "resource": "event",
         "type": event_type,
         "status": event_status,
-        "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
+        "@timestamp": "%sZ" % datetime.now(UTC).isoformat(),
         "hostname": hostname,
         "uuid": uuid,
         "tags": tags,
@@ -341,7 +333,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
     sa_label = "hysds:pge_wrapper/%s/%d/%s" % (
         job["job_info"]["execute_node"],
         job["job_info"]["pid"],
-        datetime.utcnow().isoformat(),
+        datetime.now(UTC).isoformat(),
     )
     sa_id = "hysds:%s" % get_uuid(sa_label)
     doc.softwareAgent(
@@ -503,7 +495,7 @@ def log_publish_prov_es(
 
     # add input entity
     execute_node = socket.getfqdn()
-    prod_url = "file://%s%s" % (execute_node, prod_path)
+    prod_url = "file://{}{}".format(execute_node, prod_path)
     input_id = "hysds:%s" % get_uuid(prod_url)
     input_ent = doc.granule(
         input_id,
@@ -534,7 +526,7 @@ def log_publish_prov_es(
     # software and algorithm
     algorithm = "eos:product_publishing"
     software_version = hysds.__version__
-    software_title = "%s v%s" % (hysds.__description__, software_version)
+    software_title = "{} v{}".format(hysds.__description__, software_version)
     software = "eos:HySDS-%s" % software_version
     software_location = hysds.__url__
     doc.software(

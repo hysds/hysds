@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -49,7 +45,7 @@ def clean(es_url, start_time):
         },
     }
     r = requests.post(
-        "%s/%s/_search?search_type=scan&scroll=10m&size=100" % (es_url, idx),
+        "{}/{}/_search?search_type=scan&scroll=10m&size=100".format(es_url, idx),
         data=json.dumps(query),
     )
     r.raise_for_status()
@@ -76,10 +72,10 @@ def clean(es_url, start_time):
     # loop and check task info
     for job in started_jobs:
         # print job
-        r = requests.delete("%s/%s/%s/%s" % (es_url, idx, doctype, job["task_id"]))
+        r = requests.delete("{}/{}/{}/{}".format(es_url, idx, doctype, job["task_id"]))
         r.raise_for_status()
         res = r.json()
-        print(("Cleaned out job %s for host %s." % (job["id"], job["execute_node"])))
+        print("Cleaned out job {} for host {}.".format(job["id"], job["execute_node"]))
 
 
 if __name__ == "__main__":

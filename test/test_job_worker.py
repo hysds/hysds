@@ -4,7 +4,7 @@ import sys
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 from unittest import TestCase
 from unittest.mock import patch
 import logging
@@ -23,7 +23,7 @@ class TestJobWorkerFuncs(TestCase):
             os.path.dirname(os.path.abspath(__file__)), "examples"
         )
         self.job_dir = tempfile.mkdtemp(prefix="job-")
-        logging.info("self.job_dir: {}".format(self.job_dir))
+        logging.info(f"self.job_dir: {self.job_dir}")
 
     def tearDown(self):
         umock.patch.stopall()

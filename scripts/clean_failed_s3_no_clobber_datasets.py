@@ -3,12 +3,7 @@
 Search for failed jobs with osaka no-clobber errors during dataset publishing
 and clean them out of S3 if the dataset was not indexed.
 """
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 
-from builtins import range
 from future import standard_library
 
 standard_library.install_aliases()
@@ -53,9 +48,9 @@ def check_dataset(es_url, id, es_index="grq"):
     }
 
     if es_url.endswith("/"):
-        search_url = "%s%s/_search" % (es_url, es_index)
+        search_url = "{}{}/_search".format(es_url, es_index)
     else:
-        search_url = "%s/%s/_search" % (es_url, es_index)
+        search_url = "{}/{}/_search".format(es_url, es_index)
     r = requests.post(search_url, data=json.dumps(query))
     if r.status_code == 200:
         result = r.json()
@@ -63,7 +58,7 @@ def check_dataset(es_url, id, es_index="grq"):
         total = result["hits"]["total"]
         id = "NONE" if total == 0 else result["hits"]["hits"][0]["_id"]
     else:
-        logging.error("Failed to query %s:\n%s" % (es_url, r.text))
+        logging.error("Failed to query {}:\n{}".format(es_url, r.text))
         logging.error("query: %s" % json.dumps(query, indent=2))
         logging.error("returned: %s" % r.text)
         if r.status_code == 404:
@@ -168,7 +163,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
             # extract s3 url bucket and dataset id
             match = S3_RE.search(error)
             if not match:
-                raise RuntimeError("Failed to find S3 url in error: {}".format(error))
+                raise RuntimeError(f"Failed to find S3 url in error: {error}")
             bucket, prefix, dataset_id = match.groups()
 
             # query if dataset exists in GRQ; then no-clobber happened because of dataset deduplication

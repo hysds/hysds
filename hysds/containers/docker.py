@@ -62,16 +62,16 @@ class Docker(Base):
             "--init",
             "--rm",
             "-u",
-            "%s:%s" % (params["uid"], params["gid"]),
+            "{}:{}".format(params["uid"], params["gid"]),
         ]
 
         # add runtime options
         for k, v in params["runtime_options"].items():
-            docker_cmd_base.extend(["--{}".format(k), v])
+            docker_cmd_base.extend([f"--{k}", v])
 
         # add volumes
         for k, v in params["volumes"]:
-            docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
+            docker_cmd_base.extend(["-v", "{}:{}".format(k, v)])
 
         # set work directory and image
         docker_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])

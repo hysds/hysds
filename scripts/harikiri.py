@@ -5,11 +5,6 @@ request and perform self-termination (harikiri) of the instance. If a keep-alive
 signal file exists at <root_work_dir>/.harikiri, then self-termination is bypassed
 until it is removed.
 """
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
-from builtins import str
 from future import standard_library
 
 import os
@@ -43,7 +38,7 @@ NO_JOBS_TIMER = None
 KEEP_ALIVE = False
 
 # have yaml parse regular expressions
-yaml.SafeLoader.add_constructor(u'tag:yaml.org,2002:python/regexp',
+yaml.SafeLoader.add_constructor('tag:yaml.org,2002:python/regexp',
                                 lambda l, n: re.compile(l.construct_scalar(n)))
 
 
@@ -87,9 +82,9 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             KEEP_ALIVE = True
             if logger is not None:
                 try:
-                    print((log_event(logger, "harikiri", "keep_alive_set", {}, [])))
+                    print(log_event(logger, "harikiri", "keep_alive_set", {}, []))
                 except Exception as e:
-                    logging.warning("Exception occurred while logging harikiri keep_alive_set: {}".format(str(e)))
+                    logging.warning(f"Exception occurred while logging harikiri keep_alive_set: {str(e)}")
                     pass
         logging.info("Keep-alive exists.")
         return
@@ -98,9 +93,9 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             KEEP_ALIVE = False
             if logger is not None:
                 try:
-                    print((log_event(logger, "harikiri", "keep_alive_unset", {}, [])))
+                    print(log_event(logger, "harikiri", "keep_alive_unset", {}, []))
                 except Exception as e:
-                    logging.warning("Exception occurred while logging harikiri keep_alive_unset: {}".format(str(e)))
+                    logging.warning(f"Exception occurred while logging harikiri keep_alive_unset: {str(e)}")
                     pass
             logging.info("Keep-alive removed.")
 
@@ -122,7 +117,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             age = (datetime.utcnow() - done_dt).total_seconds()
             if most_recent is None or age < most_recent:
                 most_recent = age
-            logging.info("%s: age=%s" % (job_dir, age))
+            logging.info("{}: age={}".format(job_dir, age))
     if most_recent is None:
         if NO_JOBS_TIMER is None:
             NO_JOBS_TIMER = time.time()
@@ -287,7 +282,7 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
         logging.info("Stopping all docker containers.")
         os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
     except Exception as e:
-        logging.warning("Exception occurred while stopping docker containers: {}".format(str(e)))
+        logging.warning(f"Exception occurred while stopping docker containers: {str(e)}")
         pass
 
     # shutdown supervisord
@@ -295,7 +290,7 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
         logging.info("Stopping supervisord.")
         call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
     except Exception as e:
-        logging.warning("Exception occurred while stopping supervisord: {}".format(str(e)))
+        logging.warning(f"Exception occurred while stopping supervisord: {str(e)}")
         pass
 
     # let supervisord shutdown its processes
@@ -321,9 +316,9 @@ def graceful_shutdown(as_group, spot_fleet, id, logger=None):
     # log seppuku
     if logger is not None:
         try:
-            print((log_event(logger, "harikiri", "shutdown", {}, [])))
+            print(log_event(logger, "harikiri", "shutdown", {}, []))
         except Exception as e:
-            logging.warning("Exception occurred while logging harikiri shutdown: {}".format(str(e)))
+            logging.warning(f"Exception occurred while logging harikiri shutdown: {str(e)}")
             pass
     time.sleep(60)
 
@@ -373,7 +368,7 @@ if __name__ == "__main__":
     args, remaining_argv = conf_parser.parse_known_args()
     config_args = dict()
     if args.file:
-        with open(args.file, "r") as f:
+        with open(args.file) as f:
             config_params = yaml.safe_load(f)
             root_work_dir = config_params.get("root_work_dir", None)
             logger = config_params.get("logger", None)

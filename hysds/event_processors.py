@@ -1,7 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -11,7 +7,7 @@ import requests
 import backoff
 import socket
 import traceback
-from datetime import datetime
+from datetime import datetime, UTC
 
 from hysds.task_worker import run_task
 from hysds.celery import app
@@ -62,7 +58,7 @@ def fail_job(event, uuid, exc, short_error):
         job_status["short_error"] = short_error
         job_status["traceback"] = event.get("traceback", "")
 
-        time_end = datetime.utcnow().isoformat() + "Z"
+        time_end = datetime.now(UTC).isoformat() + "Z"
         job_status.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
         log_job_status(job_status)
 
@@ -108,8 +104,8 @@ def offline_jobs(event):
             # offline the job only if it hasn't been picked up by another worker
             cur_job_status = get_val_via_socket(JOB_STATUS_KEY_TMPL % uuid)
             cur_job_worker = get_val_via_socket(TASK_WORKER_KEY_TMPL % uuid)
-            logger.info("cur_job_status: {}".format(cur_job_status))
-            logger.info("cur_job_worker: {}".format(cur_job_worker))
+            logger.info(f"cur_job_status: {cur_job_status}")
+            logger.info(f"cur_job_worker: {cur_job_worker}")
 
             if cur_job_status == "job-started" and cur_job_worker == event["hostname"]:
                 job_status_json["status"] = "job-offline"
@@ -129,7 +125,7 @@ def offline_jobs(event):
                     % uuid
                 )
     except Exception as e:
-        logger.warn(
+        logger.warning(
             "Got exception trying to update task events for offline worker %s: %s\n%s"
             % (event["hostname"], str(e), traceback.format_exc())
         )

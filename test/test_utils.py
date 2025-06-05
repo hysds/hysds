@@ -4,7 +4,7 @@ import json
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 from unittest import TestCase
 import logging
 import tempfile
@@ -21,7 +21,7 @@ logging.basicConfig()
 class TestUtils(TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="tmp-")
-        logging.info("self.tmp_dir: {}".format(self.tmp_dir))
+        logging.info(f"self.tmp_dir: {self.tmp_dir}")
 
     def tearDown(self):
         umock.patch.stopall()
@@ -85,7 +85,7 @@ class TestUtils(TestCase):
 class TestPublishDataset(TestCase):
     def setUp(self):
         self.job_dir = tempfile.mkdtemp(prefix="job-")
-        logging.info("self.job_dir: {}".format(self.job_dir))
+        logging.info(f"self.job_dir: {self.job_dir}")
 
         self.datasets_cfg_file = os.path.join(self.job_dir, 'datasets.json')
         shutil.copy(

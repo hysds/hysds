@@ -5,7 +5,7 @@ import re
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 import unittest
 import logging
 import tempfile
@@ -75,7 +75,7 @@ class TestContainerUtils(unittest.TestCase):
             elif args[0] == "EVICT_CACHE":
                 return True
             else:
-                raise RuntimeError("Handling {} not implemented yet.".format(args[0]))
+                raise RuntimeError(f"Handling {args[0]} not implemented yet.")
 
         # mock data
         self.app_mock = umock.patch("hysds.containers.base.app").start()
@@ -142,7 +142,7 @@ class TestContainerUtils(unittest.TestCase):
         cmd_line_list = docker.create_container_cmd(params, cmd_line_list)
         cmd_line_list = [str(i) for i in cmd_line_list]
         cmd_line = " ".join(cmd_line_list)
-        logging.info("cmd_line: {}".format(cmd_line))
+        logging.info(f"cmd_line: {cmd_line}")
 
         return cmd_line
 

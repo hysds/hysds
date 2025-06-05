@@ -10,13 +10,8 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 standard_library.install_aliases()
-from builtins import object
 import json
 from kombu.common import maybe_declare
 from kombu.utils.debug import setup_logging
@@ -26,7 +21,7 @@ import logging
 logger = logging.getLogger()
 
 
-class KombuMessenger(object):
+class KombuMessenger:
     """
     Sends messages via Kombu.
     """
@@ -67,7 +62,7 @@ class KombuMessenger(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'connection: "%s", id: "%s", queueName: "%s", hostname: "%s", pid: "%s", type: "%s"' % (self._connection, self._id, self._queueName, self._hostname, self._pid, self._type)
+        return 'connection: "{}", id: "{}", queueName: "{}", hostname: "{}", pid: "{}", type: "{}"'.format(self._connection, self._id, self._queueName, self._hostname, self._pid, self._type)
     # end def
 
     def send(self, chunk):

@@ -3,10 +3,6 @@
 Search for failed jobs with osaka no-clobber errors during dataset publishing
 and clean them out of WebDAV if the dataset was not indexed.
 """
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 
 from future import standard_library
 
@@ -50,9 +46,9 @@ def check_dataset(es_url, id, es_index="grq"):
     }
 
     if es_url.endswith("/"):
-        search_url = "%s%s/_search" % (es_url, es_index)
+        search_url = "{}{}/_search".format(es_url, es_index)
     else:
-        search_url = "%s/%s/_search" % (es_url, es_index)
+        search_url = "{}/{}/_search".format(es_url, es_index)
     r = requests.post(search_url, data=json.dumps(query))
     if r.status_code == 200:
         result = r.json()
@@ -60,7 +56,7 @@ def check_dataset(es_url, id, es_index="grq"):
         total = result["hits"]["total"]
         id = "NONE" if total == 0 else result["hits"]["hits"][0]["_id"]
     else:
-        logging.error("Failed to query %s:\n%s" % (es_url, r.text))
+        logging.error("Failed to query {}:\n{}".format(es_url, r.text))
         logging.error("query: %s" % json.dumps(query, indent=2))
         logging.error("returned: %s" % r.text)
         if r.status_code == 404:
@@ -131,7 +127,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
             # extract dav url and dataset id
             match = DAV_RE.search(error)
             if not match:
-                raise RuntimeError("Failed to find DAV url in error: {}".format(error))
+                raise RuntimeError(f"Failed to find DAV url in error: {error}")
             proto, prefix, dataset_id = match.groups()
 
             # query if dataset exists in GRQ; then no-clobber happened because of dataset deduplication
@@ -143,13 +139,13 @@ def clean(jobs_es_url, grq_es_url, force=False):
                 continue
 
             # remove
-            ds_url = "%s://%s" % ("https" if proto == "davs" else "http", prefix)
+            ds_url = "{}://{}".format("https" if proto == "davs" else "http", prefix)
             try:
                 r = requests.delete(ds_url, verify=False)
                 r.raise_for_status()
             except Exception as e:
                 logging.warning(
-                    "Failed to delete %s: %s" % (ds_url, traceback.format_exc())
+                    "Failed to delete {}: {}".format(ds_url, traceback.format_exc())
                 )
                 pass
 

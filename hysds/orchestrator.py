@@ -1,9 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from builtins import open
-from builtins import super
 from future import standard_library
 
 standard_library.install_aliases()
@@ -20,9 +14,9 @@ import copy
 import traceback
 import backoff
 from importlib import reload
-from datetime import datetime
+from datetime import datetime, UTC
 from string import Template
-from inspect import getargspec
+from inspect import getfullargspec as getargspec
 from celery import uuid
 from functools import lru_cache
 
@@ -60,7 +54,7 @@ def get_timestamp(fraction=True):
     """Return the current date and time formatted for a message header."""
 
     (year, month, day, hh, mm, ss, wd, y, z) = time.gmtime()
-    d = datetime.utcnow()
+    d = datetime.now(UTC)
     if fraction:
         s = "%04d%02d%02dT%02d%02d%02d.%dZ" % (
             d.year,
@@ -111,14 +105,14 @@ def get_function(func_str, add_to_sys_path=None):
 
 
 def get_job_id(job_name):
-    return "%s-%s" % (job_name, get_timestamp())
+    return "{}-{}".format(job_name, get_timestamp())
 
 
 class OrchestratorExecutionError(Exception):
     def __init__(self, message, job_status):
         self.message = message
         self.job_status = job_status
-        super(OrchestratorExecutionError, self).__init__(message, job_status)
+        super().__init__(message, job_status)
 
     def job_status(self):
         return self.job_status
@@ -167,7 +161,7 @@ def submit_job(j):
         "job_info": j,
     }
 
-    current_time = datetime.utcnow()
+    current_time = datetime.now(UTC)
     job["job_info"]["index"] = f"job_status-{current_time.strftime('%Y.%m.%d')}"
 
     # set job type
@@ -296,7 +290,7 @@ def submit_job(j):
             logger.info(str(e))
             dj = None
         if isinstance(dj, dict):
-            dedup_msg = "orchestrator found duplicate job %s with status %s" % (
+            dedup_msg = "orchestrator found duplicate job {} with status {}".format(
                 dj["_id"],
                 dj["status"],
             )

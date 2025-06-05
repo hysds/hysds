@@ -1,9 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-from builtins import int
 from future import standard_library
 
 standard_library.install_aliases()
@@ -55,17 +50,17 @@ def tag_timedout_jobs(url, timeout):
         tags = src.get("tags", [])
         task_id = src["uuid"]
         celery_hostname = src["celery_hostname"]
-        logging.info("job_info: {}".format(json.dumps(src)))
+        logging.info(f"job_info: {json.dumps(src)}")
 
         # get job duration
         time_limit = src["job"]["job_info"]["time_limit"]
-        logging.info("time_limit: {}".format(time_limit))
+        logging.info(f"time_limit: {time_limit}")
         time_start = parse_iso8601(src["job"]["job_info"]["time_start"])
-        logging.info("time_start: {}".format(time_start))
+        logging.info(f"time_start: {time_start}")
         time_now = datetime.utcnow()
-        logging.info("time_now: {}".format(time_now))
+        logging.info(f"time_now: {time_now}")
         duration = (time_now - time_start).total_seconds()
-        logging.info("duration: {}".format(duration))
+        logging.info(f"duration: {duration}")
 
         if status == "job-started":
             # get task info, sort by latest since we only look at the first hit
@@ -80,7 +75,7 @@ def tag_timedout_jobs(url, timeout):
             if len(task_res["hits"]["hits"]) == 0:
                 logging.error("No result found with : query\n%s" % json.dumps(task_query, indent=2))
 
-            logging.info("task_res: {}".format(json.dumps(task_res)))
+            logging.info(f"task_res: {json.dumps(task_res)}")
 
             # get worker info
             worker_query = {
@@ -97,7 +92,7 @@ def tag_timedout_jobs(url, timeout):
                     % (json.dumps(worker_query, indent=2))
                 )
 
-            logging.info("worker_res: {}".format(json.dumps(worker_res)))
+            logging.info(f"worker_res: {json.dumps(worker_res)}")
             error = None
             short_error = None
             traceback = None
@@ -121,9 +116,9 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logging.info("updating status from {} to {}".format(status, new_status))
+                logging.info(f"updating status from {status} to {new_status}")
                 if duration > time_limit and "timedout" not in tags:
-                    logging.info("adding 'timedout' to tag, %s/%s" % (_index, _id))
+                    logging.info("adding 'timedout' to tag, {}/{}".format(_index, _id))
                     tags.append("timedout")
                 updated_doc = {"status": new_status, "tags": tags}
                 if error:
@@ -143,7 +138,7 @@ def tag_timedout_jobs(url, timeout):
                     logging.error(err_str)
                     raise Exception(err_str)
                 logging.info(
-                    "Set job {} to {} and tagged as timedout.".format(_id, new_status)
+                    f"Set job {_id} to {new_status} and tagged as timedout."
                 )
                 continue
 
@@ -151,13 +146,13 @@ def tag_timedout_jobs(url, timeout):
             logging.info("%s already tagged as timedout." % _id)
         else:
             if duration > time_limit:
-                logging.info("adding 'timedout' to tag, %s/%s" % (_index, _id))
+                logging.info("adding 'timedout' to tag, {}/{}".format(_index, _id))
                 tags.append("timedout")
                 new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
                 logging.info(json.dumps(new_doc, indent=2))
                 response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() != "updated":
-                    err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
+                    err_str = f"Failed to update status for {_id} : {json.dumps(response, indent=2)}"
                     logging.error(err_str)
                     raise Exception(err_str)
 
@@ -186,7 +181,7 @@ def daemon(interval, url, timeout):
 if __name__ == "__main__":
     desc = "Watchdog jobs stuck in job-offline or job-started."
     host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
-    logging.info("host : {}".format(host))
+    logging.info(f"host : {host}")
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "-i",

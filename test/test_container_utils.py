@@ -6,7 +6,7 @@ import re
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 import unittest
 import logging
 import tempfile
@@ -74,7 +74,7 @@ class TestContainerUtils(unittest.TestCase):
             elif args[0] == "CONTAINER_REGISTRY":
                 return None
             else:
-                raise RuntimeError("Handling {} not implemented yet.".format(args[0]))
+                raise RuntimeError(f"Handling {args[0]} not implemented yet.")
 
         # mock data
         self.app_mock = umock.patch("hysds.container_utils.app").start()
@@ -139,7 +139,7 @@ class TestContainerUtils(unittest.TestCase):
         cmdLineList = hysds.container_utils.get_docker_cmd(params, cmdLineList)
         cmdLineList = [str(i) for i in cmdLineList]
         cmdLine = " ".join(cmdLineList)
-        logging.info("cmdLine: {}".format(cmdLine))
+        logging.info(f"cmdLine: {cmdLine}")
 
         return cmdLine
 

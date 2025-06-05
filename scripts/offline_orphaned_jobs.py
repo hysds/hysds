@@ -6,12 +6,7 @@ final celery task status and resynchronizes job status. If no task
 status exists in ES, it queries the celery task metadata store in redis
 for task status. If none exists, the job is offlined.
 """
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
 
-from builtins import input
 from future import standard_library
 
 standard_library.install_aliases()
@@ -56,10 +51,10 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         app.conf.CELERY_RESULT_SERIALIZER
     ]
     accept = prepare_accept_content(app.conf.CELERY_ACCEPT_CONTENT)
-    logging.info("content_type: {}".format(content_type))
-    logging.info("content_encoding: {}".format(content_encoding))
-    logging.info("encoder: {}".format(encoder))
-    logging.info("accept: {}".format(accept))
+    logging.info(f"content_type: {content_type}")
+    logging.info(f"content_encoding: {content_encoding}")
+    logging.info(f"encoder: {encoder}")
+    logging.info(f"accept: {accept}")
 
     # query
     query = {
@@ -133,7 +128,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             else:
                 new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
                 r = requests.post(
-                    "%s/job_status-current/job/%s/_update" % (es_url, id),
+                    "{}/job_status-current/job/{}/_update".format(es_url, id),
                     data=json.dumps(new_doc),
                 )
                 result = r.json()
@@ -143,7 +138,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                         % (id, r.status_code, json.dumps(result, indent=2))
                     )
                 r.raise_for_status()
-                logging.info("Set job %s to %s." % (id, updated_status))
+                logging.info("Set job {} to {}.".format(id, updated_status))
             continue
 
         # get celery task metadata in redis
@@ -163,7 +158,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             else:
                 new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
                 r = requests.post(
-                    "%s/job_status-current/job/%s/_update" % (es_url, id),
+                    "{}/job_status-current/job/{}/_update".format(es_url, id),
                     data=json.dumps(new_doc),
                 )
                 result = r.json()
@@ -173,7 +168,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                         % (id, r.status_code, json.dumps(result, indent=2))
                     )
                 r.raise_for_status()
-                logging.info("Set job %s to %s." % (id, updated_status))
+                logging.info("Set job {} to {}.".format(id, updated_status))
             continue
 
 

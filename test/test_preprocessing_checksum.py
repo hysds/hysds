@@ -8,7 +8,7 @@ import pytest
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 
 sys.modules['opensearchpy'] = umock.Mock()
 sys.modules['opensearchpy.exceptions'] = umock.Mock()

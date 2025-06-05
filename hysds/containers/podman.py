@@ -115,15 +115,15 @@ class Podman(Base):
             if k == "userns":
                 podman_cmd_base.append(f"--{k}={v}")
             else:
-                podman_cmd_base.extend(["--{}".format(k), v])
+                podman_cmd_base.extend([f"--{k}", v])
 
         # add runtime options
         for k, v in params["runtime_options"].items():
-            podman_cmd_base.extend(["--{}".format(k), v])
+            podman_cmd_base.extend([f"--{k}", v])
 
         # add volumes
         for k, v in params["volumes"]:
-            podman_cmd_base.extend(["-v", "%s:%s" % (k, v)])
+            podman_cmd_base.extend(["-v", "{}:{}".format(k, v)])
 
         # set work directory and image
         podman_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])

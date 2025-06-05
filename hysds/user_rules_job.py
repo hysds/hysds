@@ -1,7 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -43,7 +39,7 @@ def ensure_job_indexed(job_id, alias):
     mozart_es = get_mozart_es()
     count = mozart_es.get_count(index=alias, body=query)
     if count == 0:
-        raise RuntimeError("Failed to find indexed job: {}".format(job_id))
+        raise RuntimeError(f"Failed to find indexed job: {job_id}")
 
 
 def get_job(job_id, rule, result):
@@ -129,7 +125,7 @@ def evaluate_user_rules_job(job_id, index=None):
             mozart_es = get_mozart_es()
             result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
-                logger.info("Rule '%s' didn't match for %s" % (rule_name, job_id))
+                logger.info("Rule '{}' didn't match for {}".format(rule_name, job_id))
                 continue
         except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
@@ -137,11 +133,11 @@ def evaluate_user_rules_job(job_id, index=None):
             continue
 
         doc_res = result["hits"]["hits"][0]
-        logger.info("Rule '%s' successfully matched for %s" % (rule_name, job_id))
+        logger.info("Rule '{}' successfully matched for {}".format(rule_name, job_id))
 
         # submit trigger task
         queue_job_trigger(doc_res, rule)
-        logger.info("Trigger task submitted for %s: %s" % (job_id, rule["job_type"]))
+        logger.info("Trigger task submitted for {}: {}".format(job_id, rule["job_type"]))
     return True
 
 
