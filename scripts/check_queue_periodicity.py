@@ -2,12 +2,7 @@
 """
 Watchdog completed job type execution with an expected periodicity.
 """
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import absolute_import
 
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -222,7 +217,7 @@ def send_email_notification(emails, job_type, text, attachments=[]):
     body = text
     attachments = None
     send_email(
-        "%s@%s" % (getpass.getuser(), get_hostname()),
+        "{}@{}".format(getpass.getuser(), get_hostname()),
         cc_recipients,
         bcc_recipients,
         subject,
@@ -247,7 +242,7 @@ def get_all_queues(rabbitmq_admin_url, user=None, password=None):
             data = requests.get(endpoint, verify=False)
     except requests.HTTPError as e:
         if e.response.status_code == 401:
-            logger.error("Failed to authenticate {}. Ensure credentials are set in .netrc.".format(rabbitmq_admin_url))
+            logger.error(f"Failed to authenticate {rabbitmq_admin_url}. Ensure credentials are set in .netrc.")
         raise
 
     results = []

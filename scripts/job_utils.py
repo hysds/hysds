@@ -1,9 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-from builtins import int
 from future import standard_library
 
 standard_library.install_aliases()
@@ -38,10 +33,10 @@ def get_timedout_query(timeout, status, source_data):
 
 
 def es_query(query, index="job_status-current"):
-    print("es_query : query : {}".format(query))
+    print(f"es_query : query : {query}")
     ES = es_util.get_mozart_es()
     result = ES.search(index=index, body=json.dumps(query))
-    print("run_query : result : \n{}".format(json.dumps(result, indent=2)))
+    print(f"run_query : result : \n{json.dumps(result, indent=2)}")
     return result
 
 

@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 
 from redis import ConnectionPool, StrictRedis
 from datetime import datetime
@@ -13,7 +9,6 @@ import msgpack
 import traceback
 import logging
 import json
-from builtins import str
 from future import standard_library
 
 import hysds
@@ -146,7 +141,7 @@ def log_worker_status(worker, status):
 
     # print log
     try:
-        logging.info("hysds.worker_status:%s:%s" % (worker, status))
+        logging.info("hysds.worker_status:{}:{}".format(worker, status))
     except Exception as e:
         logging.error("Got exception trying to log worker status: %s" % str(e))
 

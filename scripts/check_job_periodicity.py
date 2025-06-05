@@ -2,12 +2,7 @@
 """
 Watchdog completed job type execution with an expected periodicity.
 """
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
 
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -202,7 +197,7 @@ def send_email_notification(emails, job_type, text, attachments=[]):
     body = text
     attachments = None
     send_email(
-        "%s@%s" % (getpass.getuser(), get_hostname()),
+        "{}@{}".format(getpass.getuser(), get_hostname()),
         cc_recipients,
         bcc_recipients,
         subject,
@@ -233,7 +228,7 @@ def check_failed_job(job_type, periodicity, error, slack_url=None, email=None):
         now = datetime.utcnow()
         delta = (now - end_dt).total_seconds()
         logging.info("Failed Job delta: %s" % delta)
-        error += "\nThe last failed job of type %s was %.2f-hours ago:\n" % (
+        error += "\nThe last failed job of type {} was {:.2f}-hours ago:\n".format(
             job_type,
             delta / 3600.0,
         )

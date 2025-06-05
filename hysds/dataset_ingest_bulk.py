@@ -1,11 +1,3 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
-from builtins import str
-from builtins import int
-from builtins import open
 from future import standard_library
 
 standard_library.install_aliases()
@@ -20,7 +12,7 @@ import traceback
 import logging
 
 from glob import glob
-from datetime import datetime
+from datetime import datetime, UTC
 from subprocess import check_output
 
 from io import StringIO
@@ -51,7 +43,7 @@ BROWSE_RE = re.compile(r"^(.+)\.browse\.png$")
 class NoDedupJobFoundException(Exception):
     def __init__(self, message):
         self.message = message
-        super(NoDedupJobFoundException, self).__init__(message)
+        super().__init__(message)
 
 
 class NoClobberPublishContextException(Exception):
@@ -180,7 +172,7 @@ def write_to_object_store(
             osaka.main.put(publ_ctx_file, publ_ctx_url, params=params, noclobber=True)
         except osaka.utils.NoClobberException as e:
             raise NoClobberPublishContextException(
-                "Failed to clobber {} when noclobber is True.".format(publ_ctx_url)
+                f"Failed to clobber {publ_ctx_url} when noclobber is True."
             )
 
     # upload datasets
@@ -189,7 +181,7 @@ def write_to_object_store(
             abs_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_path, path)
             dest_url = os.path.join(url, rel_path)
-            logger.info("Uploading %s to %s." % (abs_path, dest_url))
+            logger.info("Uploading {} to {}.".format(abs_path, dest_url))
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
 
 
@@ -222,7 +214,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             try:
                 job = json.load(f)
             except Exception as e:
-                logger.warn("Failed to read job json:\n{}".format(str(e)))
+                logger.warning(f"Failed to read job json:\n{str(e)}")
     task_id = job.get("task_id", None)
     payload_id = (
         job.get("job_info", {}).get("job_payload", {}).get("payload_task_id", None)
@@ -306,7 +298,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             metadata = {}
         else:
             logger.info(
-                "Running metadata extractor %s on %s" % (extractor, local_prod_path)
+                "Running metadata extractor {} on {}".format(extractor, local_prod_path)
             )
             m = check_output([extractor, local_prod_path])
             logger.info("Output: %s" % m.decode())
@@ -389,9 +381,9 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
         # upload dataset to repo; track disk usage and start/end times of transfer
         prod_dir_usage = get_disk_usage(local_prod_path)
-        tx_t1 = datetime.utcnow()
+        tx_t1 = datetime.now(UTC)
         if dry_run:
-            logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
+            logger.info("Would've published {} to {}".format(local_prod_path, pub_path_url))
         else:
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + ".orig"
@@ -405,7 +397,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     publ_ctx_url=publ_ctx_url,
                 )
             except NoClobberPublishContextException as e:
-                logger.warn(
+                logger.warning(
                     "A publish context file was found at {}. Retrieving.".format(
                         publ_ctx_url
                     )
@@ -413,7 +405,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
                 with open(orig_publ_ctx_file) as f:
                     orig_publ_ctx = json.load(f)
-                logger.warn(
+                logger.warning(
                     "original publish context: {}".format(
                         json.dumps(orig_publ_ctx, indent=2, sort_keys=True)
                     )
@@ -421,9 +413,9 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 orig_payload_id = orig_publ_ctx.get("payload_id", None)
                 orig_payload_hash = orig_publ_ctx.get("payload_hash", None)
                 orig_task_id = orig_publ_ctx.get("task_id", None)
-                logger.warn("orig payload_id: {}".format(orig_payload_id))
-                logger.warn("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warn("orig task_id: {}".format(orig_payload_id))
+                logger.warning(f"orig payload_id: {orig_payload_id}")
+                logger.warning(f"orig payload_hash: {orig_payload_hash}")
+                logger.warning(f"orig task_id: {orig_payload_id}")
 
                 if orig_payload_id is None:
                     raise
@@ -434,7 +426,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                             "This job is a retry of a previous job that resulted "
                             + "in an orphaned dataset. Forcing publish."
                     )
-                    logger.warn(msg)
+                    logger.warning(msg)
                     log_custom_event(
                         "orphaned_dataset-retry_previous_failed",
                         "clobber",
@@ -454,7 +446,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     )
                 else:
                     job_status = get_job_status(orig_payload_id)
-                    logger.warn("orig job status: {}".format(job_status))
+                    logger.warning(f"orig job status: {job_status}")
 
                     # overwrite if previous job failed
                     if job_status == "job-failed":
@@ -462,7 +454,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                                 "Detected previous job failure that resulted in an "
                                 + "orphaned dataset. Forcing publish."
                         )
-                        logger.warn(msg)
+                        logger.warning(msg)
                         log_custom_event(
                             "orphaned_dataset-job_failed",
                             "clobber",
@@ -485,7 +477,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         # overwrite if dataset doesn't exist in grq
                         if not dataset_exists(objectid):
                             msg = "Detected orphaned dataset without ES doc. Forcing publish."
-                            logger.warn(msg)
+                            logger.warning(msg)
                             log_custom_event(
                                 "orphaned_dataset-no_es_doc",
                                 "clobber",
@@ -515,7 +507,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     try:
                         osaka.main.rmall(publ_ctx_url, params=osaka_params)
                     except:
-                        logger.warn(
+                        logger.warning(
                             "Failed to clean up publish context {} after attempting to clobber valid dataset.".format(
                                 publ_ctx_url
                             )
@@ -546,7 +538,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         publ_ctx_file=publ_ctx_file,
                         publ_ctx_url=publ_ctx_url,
                     )
-        tx_t2 = datetime.utcnow()
+        tx_t2 = datetime.now(UTC)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
         # create PROV-ES JSON file for publish processStep
@@ -634,10 +626,10 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     this_browse_path = os.path.join(browse_path, small_img_basename)
                     if dry_run:
                         logger.info(
-                            "Would've uploaded %s to %s" % (small_img, browse_path)
+                            "Would've uploaded {} to {}".format(small_img, browse_path)
                         )
                     else:
-                        logger.info("Uploading %s to %s" % (small_img, browse_path))
+                        logger.info("Uploading {} to {}".format(small_img, browse_path))
                         osaka.main.put(
                             small_img,
                             this_browse_path,
@@ -717,7 +709,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
         try:
             osaka.main.rmall(publ_ctx_url, params=osaka_params)
         except:
-            logger.warn(
+            logger.warning(
                 "Failed to clean up publish context at {} on successful publish.".format(
                     publ_ctx_url
                 )
@@ -812,7 +804,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             ingest_kwargs["force"] = True
 
         # upload
-        tx_t1 = datetime.utcnow()
+        tx_t1 = datetime.now(UTC)
         metrics, prod_json = ingest_to_object_store(
             *(
                 prod_id,
@@ -823,7 +815,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             **ingest_kwargs
         )
 
-        tx_t2 = datetime.utcnow()
+        tx_t2 = datetime.now(UTC)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
         prod_dir_usage = get_disk_usage(prod_dir)
 
@@ -879,7 +871,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             event.set()
         tb = traceback.format_exc()
         logger.error(tb)
-        raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
+        raise RuntimeError(f"Failed to publish {prod_dir}: {str(e)}\n{tb}")
 
 
 def delete_files(metrics):
@@ -951,7 +943,7 @@ def publish_datasets_parallel(job, ctx):
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
             logger.handlers.clear()
-        raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
+        raise NotAllProductsIngested(f"Product failed to ingest to data store: {err}")
 
     if len(prods_ingested_to_obj_store) > 0:
         try:

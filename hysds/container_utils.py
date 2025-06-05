@@ -1,11 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import int
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -36,7 +28,7 @@ def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
         raise RuntimeError("Cannot mount host root directory")
     for k in blacklist:
         if m.startswith(k):
-            raise RuntimeError("Cannot mount %s: %s is blacklisted" % (m, k))
+            raise RuntimeError("Cannot mount {}: {} is blacklisted".format(m, k))
     return True
 
 
@@ -50,7 +42,7 @@ def copy_mount(path, mnt_dir):
         shutil.copytree(path, mnt_path)
     else:
         shutil.copy(path, mnt_path)
-    logger.info("Copied container mount {} to {}.".format(path, mnt_path))
+    logger.info(f"Copied container mount {path} to {mnt_path}.")
     return os.path.join(mnt_dir, os.path.basename(path))
 
 
@@ -83,7 +75,7 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             (root_jobs_dir, root_jobs_dir),
             (root_tasks_dir, root_tasks_dir),
             (root_workers_dir, root_workers_dir),
-            (root_cache_dir, "{}:ro".format(root_cache_dir)),
+            (root_cache_dir, f"{root_cache_dir}:ro"),
         ],
     }
 
@@ -120,14 +112,14 @@ def get_docker_params(image_name, image_url, image_mappings, root_work_dir, job_
             elif len(v) == 1:
                 v = v[0]
             else:
-                raise RuntimeError("Invalid image mapping: %s:%s" % (k, v))
+                raise RuntimeError("Invalid image mapping: {}:{}".format(k, v))
         if v.startswith("/"):
             mnt = v
         else:
             mnt = os.path.join(job_dir, v)
         if mnt_dir is not None:
             k = copy_mount(k, mnt_dir)
-        params["volumes"].append((k, "%s:%s" % (mnt, mode)))
+        params["volumes"].append((k, "{}:{}".format(mnt, mode)))
 
     # add runtime resources
     params["runtime_options"] = dict()
@@ -157,14 +149,14 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         # Custom edit to load image from registry
         try:
             if registry is not None:
-                logger.info("Trying to load docker image {} from registry '{}'".format(image_name, registry))
+                logger.info(f"Trying to load docker image {image_name} from registry '{registry}'")
                 registry_url = os.path.join(registry, image_name)
-                logger.info("docker pull {}".format(registry_url))
+                logger.info(f"docker pull {registry_url}")
                 check_output(["docker", "pull", registry_url])
-                logger.info("docker tag {} {}".format(registry_url, image_name))
+                logger.info(f"docker tag {registry_url} {image_name}")
                 check_output(["docker", "tag", registry_url, image_name])
         except Exception as e:
-            logger.warn("Unable to load docker image from registry '{}': {}".format(registry, e))
+            logger.warning(f"Unable to load docker image from registry '{registry}': {e}")
 
         image_info = check_output(["docker", "inspect", image_name])
         logger.info("Docker image %s cached in repo" % image_name)
@@ -175,17 +167,17 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         if image_url is not None:
             image_file = os.path.join(cache_dir, os.path.basename(image_url))
             if not os.path.exists(image_file):
-                logger.info("Downloading image %s (%s) from %s" % (image_file, image_name, image_url))
+                logger.info("Downloading image {} ({}) from {}".format(image_file, image_name, image_url))
                 try:
                     osaka.main.get(image_url, image_file)
                 except Exception as e:
-                    raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
-                logger.info("Downloaded image %s (%s) from %s" % (image_file, image_name, image_url))
-            load_lock = "{}.load.lock".format(image_file)
+                    raise RuntimeError(f"Failed to download image {image_url}:\n{str(e)}")
+                logger.info("Downloaded image {} ({}) from {}".format(image_file, image_name, image_url))
+            load_lock = f"{image_file}.load.lock"
             try:
                 with atomic_write(load_lock) as f:
                     f.write("%sZ\n" % datetime.utcnow().isoformat())
-                logger.info("Loading image %s (%s)" % (image_file, image_name))
+                logger.info("Loading image {} ({})".format(image_file, image_name))
                 p = Popen(["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE)
                 stdout, stderr = p.communicate()
                 if p.returncode != 0:
@@ -194,7 +186,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                             image_file, image_name, stderr.decode()
                         )
                     )
-                logger.info("Loaded image %s (%s)" % (image_file, image_name))
+                logger.info("Loaded image {} ({})".format(image_file, image_name))
                 try:
                     os.unlink(image_file)
                 except:
@@ -205,7 +197,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                     pass
             except OSError as e:
                 if e.errno == 17:
-                    logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
+                    logger.info("Waiting for image {} ({}) to load".format(image_file, image_name))
                     inspect_image(image_name)
                 else:
                     raise
@@ -215,7 +207,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             check_output(["docker", "pull", image_name])
             logger.info("Pulled image %s from docker hub" % image_name)
         image_info = check_output(["docker", "inspect", image_name])
-    logger.info("image info for %s: %s" % (image_name, image_info.decode()))
+    logger.info("image info for {}: {}".format(image_name, image_info.decode()))
     return json.loads(image_info)[0]
 
 
@@ -229,16 +221,16 @@ def get_base_docker_cmd(params):
         "--init",
         "--rm",
         "-u",
-        "%s:%s" % (params["uid"], params["gid"]),
+        "{}:{}".format(params["uid"], params["gid"]),
     ]
 
     # add runtime options
     for k, v in params["runtime_options"].items():
-        docker_cmd_base.extend(["--{}".format(k), v])
+        docker_cmd_base.extend([f"--{k}", v])
 
     # add volumes
     for k, v in params["volumes"]:
-        docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
+        docker_cmd_base.extend(["-v", "{}:{}".format(k, v)])
 
     # set work directory and image
     docker_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])

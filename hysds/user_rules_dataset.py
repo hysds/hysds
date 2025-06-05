@@ -1,7 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -50,13 +46,13 @@ def ensure_dataset_indexed(objectid, system_version, alias):
         grq_es = get_grq_es()
         count = grq_es.get_count(index=alias, body=query)
         if count == 0:
-            error_message = "Failed to find indexed dataset: %s (%s)" % (
+            error_message = "Failed to find indexed dataset: {} ({})".format(
                 objectid,
                 system_version,
             )
             logger.error(error_message)
             raise RuntimeError(error_message)
-        logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
+        logger.info("Found indexed dataset: {} ({})".format(objectid, system_version))
     except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
         logger.error(e)
         raise e
@@ -141,7 +137,7 @@ def evaluate_user_rules_dataset(
             index_pattern = ""
         index_pattern = index_pattern.strip()
         if not index_pattern or not validate_index_pattern(index_pattern):
-            logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
+            logger.warning("index_pattern {} not valid, defaulting to {}".format(index_pattern, DATASET_ALIAS))
             index_pattern = DATASET_ALIAS
         logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
 
@@ -149,10 +145,10 @@ def evaluate_user_rules_dataset(
         try:
             result = search_es(index=index_pattern, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
-                logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
+                logger.info("Rule '{}' didn't match for {} ({})".format(rule_name, objectid, system_version))
                 continue
             doc_res = result["hits"]["hits"][0]
-            logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
+            logger.info("Rule '{}' successfully matched for {} ({})".format(rule_name, objectid, system_version))
         except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
             logger.error("Failed to query ES")
             logger.error(e)
@@ -160,10 +156,10 @@ def evaluate_user_rules_dataset(
 
         if job_type.startswith("hysds-io-"):
             job_type = job_type.replace("hysds-io-", "", 1)
-        job_name = "%s-%s" % (job_type, objectid)
+        job_name = "{}-{}".format(job_type, objectid)
 
         queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
-        logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
+        logger.info("Trigger task submitted for {} ({}): {}".format(objectid, system_version, job_type))
     return True
 
 

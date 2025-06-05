@@ -1,10 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -82,7 +75,7 @@ def run_task(self, payload):
     #                       "%02d" % hr, "%02d" % mi, task_id)
     task_dir = task_dir_abs
     makedirs(task_dir)
-    webdav_url = "http://%s:%s" % (facts["hysds_public_ip"], app.conf.WEBDAV_PORT)
+    webdav_url = "http://{}:{}".format(facts["hysds_public_ip"], app.conf.WEBDAV_PORT)
     # task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                        "%02d" % hr, "%02d" % mi, task_id)
     task_url = os.path.join(webdav_url, "tasks")
@@ -121,11 +114,11 @@ def run_task(self, payload):
         task_logger.info("sys_path: %s" % str(sys_path))
         task_logger.info("args: %s" % str(args))
         task_logger.info("kwargs: %s" % json.dumps(kwargs, indent=2))
-        task_logger.info("task started: {}".format(datetime.utcnow().isoformat()))
+        task_logger.info(f"task started: {datetime.utcnow().isoformat()}")
 
         # get task result
         result = func(*args, **kwargs)
-        task_logger.info("result: {}".format(result))
+        task_logger.info(f"result: {result}")
     finally:
         # restore stdout/stderr
         # sys.stdout, sys.stderr = old_outs
@@ -135,7 +128,7 @@ def run_task(self, payload):
         # os.rename(task_running_file, task_done_file)
         # with open(task_done_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
-        task_logger.info("task finished: {}".format(datetime.utcnow().isoformat()))
+        task_logger.info(f"task finished: {datetime.utcnow().isoformat()}")
 
     # return task url
     return task_url

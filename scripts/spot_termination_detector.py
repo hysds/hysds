@@ -3,11 +3,6 @@
 Spot termination detector daemon that checks if the instance it's running on is
 marked for termination. If so, it sends a custom HySDS event log.
 """
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
-from builtins import str
 from future import standard_library
 
 import os
@@ -28,7 +23,7 @@ log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 # have yaml parse regular expressions
-yaml.SafeLoader.add_constructor(u'tag:yaml.org,2002:python/regexp',
+yaml.SafeLoader.add_constructor('tag:yaml.org,2002:python/regexp',
                                 lambda l, n: re.compile(l.construct_scalar(n)))
 
 
@@ -70,7 +65,6 @@ def graceful_shutdown(url, term_time):
     try:
         logging.info("Begin logging a 'marked_for_termination' event.")
         print(
-            (
                 log_event(
                     url,
                     "aws_spot",
@@ -78,11 +72,10 @@ def graceful_shutdown(url, term_time):
                     {"terminate_time": term_time},
                     [],
                 )
-            )
         )
-        logging.info("Finished logging a 'marked_for_termination' event. Termination time: {}".format(term_time))
+        logging.info(f"Finished logging a 'marked_for_termination' event. Termination time: {term_time}")
     except Exception as e:
-        logging.warning("Exception occurred while logging the 'marked_for_termination' event: {}".format(str(e)))
+        logging.warning(f"Exception occurred while logging the 'marked_for_termination' event: {str(e)}")
         pass
 
     # stop docker containers
@@ -90,7 +83,7 @@ def graceful_shutdown(url, term_time):
         logging.info("Stopping all docker containers.")
         os.system("/usr/bin/docker stop --time=30 $(/usr/bin/docker ps -aq)")
     except Exception as e:
-        logging.warning("Exception occurred while stopping docker containers: {}".format(str(e)))
+        logging.warning(f"Exception occurred while stopping docker containers: {str(e)}")
         pass
 
     # shutdown supervisord
@@ -98,7 +91,7 @@ def graceful_shutdown(url, term_time):
         logging.info("Stopping supervisord.")
         call(["/usr/bin/sudo", "/usr/bin/systemctl", "stop", "supervisord"])
     except Exception as e:
-        logging.warning("Exception occurred while stopping supervisord: {}".format(str(e)))
+        logging.warning(f"Exception occurred while stopping supervisord: {str(e)}")
         pass
 
     # die
@@ -135,7 +128,7 @@ if __name__ == "__main__":
     args, remaining_argv = conf_parser.parse_known_args()
     config_args = dict()
     if args.file:
-        with open(args.file, "r") as f:
+        with open(args.file) as f:
             config_params = yaml.safe_load(f)
             mozart_rest_url = config_params.get("mozart_rest_url", None)
             check = config_params.get("check", None)

@@ -1,9 +1,3 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
-from builtins import str
 # from builtins import int
 # from builtins import open
 from future import standard_library
@@ -15,7 +9,7 @@ import backoff
 import traceback
 import logging
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
@@ -41,7 +35,7 @@ def download_file_wrapper_backoff_handler(b, max_tries=6):
     tries = b["tries"]
     kwargs = b["kwargs"]
     args = b["args"]
-    logger.error("download_file_wrapper failed ({}) {} {}".format(tries, args, kwargs))
+    logger.error(f"download_file_wrapper failed ({tries}) {args} {kwargs}")
 
     if tries >= max_tries - 1:
         event = kwargs.get("event", None)
@@ -72,10 +66,10 @@ def download_file_wrapper(url, path, cache=False, event=None):
         logger.warning("Previous localize task failed, skipping %s..." % url)
         return
 
-    loc_t1 = datetime.utcnow()
+    loc_t1 = datetime.now(UTC)
     try:
         download_file(url, path, cache=cache)
-        loc_t2 = datetime.utcnow()
+        loc_t2 = datetime.now(UTC)
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
         return {
@@ -90,7 +84,7 @@ def download_file_wrapper(url, path, cache=False, event=None):
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(tb)
-        raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
+        raise RuntimeError(f"Failed to download {url}: {str(e)}\n{tb}")
 
 
 def init_pool_logger():
@@ -150,7 +144,7 @@ def localize_urls_parallel(job, ctx):
                 logger.error(t._value)  # noqa
                 err = t._value  # noqa
         if has_error is True:
-            raise RuntimeError("Failed to download {}".format(err))
+            raise RuntimeError(f"Failed to download {err}")
 
     return True  # signal run_job() to continue
 

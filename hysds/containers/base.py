@@ -1,11 +1,3 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import int
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -116,7 +108,7 @@ class Base(ABC):
             raise RuntimeError("Cannot mount host root directory")
         for k in blacklist:
             if mount.startswith(k):
-                raise RuntimeError("Cannot mount %s: %s is blacklisted" % (mount, k))
+                raise RuntimeError("Cannot mount {}: {} is blacklisted".format(mount, k))
         return True
 
     @classmethod
@@ -134,7 +126,7 @@ class Base(ABC):
             shutil.copytree(path, mnt_path)
         else:
             shutil.copy(path, mnt_path)
-        logger.info("Copied container mount {} to {}.".format(path, mnt_path))
+        logger.info(f"Copied container mount {path} to {mnt_path}.")
         return os.path.join(mnt_dir, os.path.basename(path))
 
     def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
@@ -210,7 +202,7 @@ class Base(ABC):
                 elif len(v) == 1:
                     v = v[0]
                 else:
-                    raise RuntimeError("Invalid image mapping: %s:%s" % (k, v))
+                    raise RuntimeError("Invalid image mapping: {}:{}".format(k, v))
             if v.startswith("/"):
                 mnt = v
             else:
@@ -233,7 +225,7 @@ class Base(ABC):
                     f"volume mount to point to a location on the host: {k}"
                 )
 
-            params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
+            params["volumes"].append((host_k, "{}:{}".format(mnt, mode)))
 
         # add runtime resources
         params["runtime_options"] = dict()
@@ -255,35 +247,35 @@ class Base(ABC):
             # Custom edit to load image from registry
             try:
                 if registry is not None:
-                    logger.info("Trying to load image {} from registry '{}'".format(image_name, registry))
+                    logger.info(f"Trying to load image {image_name} from registry '{registry}'")
                     registry_url = os.path.join(registry, image_name)
                     logger.info(f"{self.__class__.__name__.lower()} pull {registry_url}")
                     self.pull_image(registry_url)
                     logger.info(f"{self.__class__.__name__.lower()} tag {registry_url} {image_name}")
                     self.tag_image(registry_url, image_name)
             except Exception as e:
-                logger.warn("Unable to load image from registry '{}': {}".format(registry, e))
+                logger.warning(f"Unable to load image from registry '{registry}': {e}")
 
             image_info = self.inspect_image(image_name)
             logger.info("Container image %s cached in repo" % image_name)
         except Exception as e:
-            logger.info("Failed to inspect image %s: %s" % (image_name, str(e)))
+            logger.info("Failed to inspect image {}: {}".format(image_name, str(e)))
 
             # pull image from url
             if image_url is not None:
                 image_file = os.path.join(cache_dir, os.path.basename(image_url))
                 if not os.path.exists(image_file):
-                    logger.info("Downloading image %s (%s) from %s" % (image_file, image_name, image_url))
+                    logger.info("Downloading image {} ({}) from {}".format(image_file, image_name, image_url))
                     try:
                         osaka.main.get(image_url, image_file)
                     except Exception as e:
-                        raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
-                    logger.info("Downloaded image %s (%s) from %s" % (image_file, image_name, image_url))
-                load_lock = "{}.load.lock".format(image_file)
+                        raise RuntimeError(f"Failed to download image {image_url}:\n{str(e)}")
+                    logger.info("Downloaded image {} ({}) from {}".format(image_file, image_name, image_url))
+                load_lock = f"{image_file}.load.lock"
                 try:
                     with atomic_write(load_lock) as f:
                         f.write("%sZ\n" % datetime.utcnow().isoformat())
-                    logger.info("Loading image %s (%s)" % (image_file, image_name))
+                    logger.info("Loading image {} ({})".format(image_file, image_name))
                     p = self.load_image(image_file)
                     stdout, stderr = p.communicate()
                     if p.returncode != 0:
@@ -292,7 +284,7 @@ class Base(ABC):
                                 image_file, image_name, stderr.decode()
                             )
                         )
-                    logger.info("Loaded image %s (%s)" % (image_file, image_name))
+                    logger.info("Loaded image {} ({})".format(image_file, image_name))
                     try:
                         os.unlink(image_file)
                     except:
@@ -303,7 +295,7 @@ class Base(ABC):
                         pass
                 except OSError as e:
                     if e.errno == 17:
-                        logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
+                        logger.info("Waiting for image {} ({}) to load".format(image_file, image_name))
                         self.inspect_image_with_backoff(image_name)
                     else:
                         raise
@@ -313,7 +305,7 @@ class Base(ABC):
                 self.pull_image(image_name)
                 logger.info("Pulled image %s from docker hub" % image_name)
             image_info = self.inspect_image(image_name)
-        logger.info("image info for %s: %s" % (image_name, image_info.decode()))
+        logger.info("image info for {}: {}".format(image_name, image_info.decode()))
         return json.loads(image_info)[0]
 
     def get_container_cmd(self, params, cmd_line_list):

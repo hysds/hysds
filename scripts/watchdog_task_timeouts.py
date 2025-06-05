@@ -1,9 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-from builtins import int
 from future import standard_library
 
 standard_library.install_aliases()
@@ -53,7 +48,7 @@ def tag_timedout_tasks(url, timeout):
 
             response = job_utils.update_es(_id, new_doc, index=_index)
             if response["result"].strip() != "updated":
-                err_str = "Failed to update status for {} : {}".format(_id, json.dumps(response, indent=2))
+                err_str = f"Failed to update status for {_id} : {json.dumps(response, indent=2)}"
                 logging.error(err_str)
                 raise Exception(err_str)
 

@@ -4,7 +4,7 @@ import json
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
+    from unittest import mock as umock
 
 import unittest
 import logging
@@ -24,7 +24,7 @@ logging.basicConfig()
 class TestTriage(unittest.TestCase):
     def setUp(self):
         self.job_dir = tempfile.mkdtemp(prefix="job-")
-        logging.info("self.job_dir: {}".format(self.job_dir))
+        logging.info(f"self.job_dir: {self.job_dir}")
 
     def tearDown(self):
         umock.patch.stopall()
@@ -359,7 +359,7 @@ class TestTriage(unittest.TestCase):
         self.assertTrue(os.path.exists(expected_triage_log_file1))
         self.assertTrue(os.path.exists(expected_triage_log_file2))
         self.assertTrue(
-            len(glob.glob("{}/test.log*".format(expected_triage_dataset))) == 2
+            len(glob.glob(f"{expected_triage_dataset}/test.log*")) == 2
         )
 
     def test_triage_on_triage_dataset(self):

@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -37,7 +33,7 @@ def get_job_count(queue, user="guest", password="guest", total_jobs=False):
     )
 
     # get number of jobs
-    url = "http://%s:15672/api/queues/%%2f/%s" % (host, queue)
+    url = "http://{}:15672/api/queues/%2f/{}".format(host, queue)
     r = requests.get(url, auth=(user, password))
     # r.raise_for_status()
     if r.status_code == 200:
@@ -62,7 +58,7 @@ def get_desired_capacity_max(asg):
     r = describe_asg(c, asg)
     groups = r["AutoScalingGroups"]
     if len(groups) == 0:
-        raise RuntimeError("Autoscaling group {} not found.".format(asg))
+        raise RuntimeError(f"Autoscaling group {asg} not found.")
     return groups[0]["DesiredCapacity"], groups[0]["MaxSize"]
 
 
@@ -133,9 +129,9 @@ def daemon(
         try:
             job_count = float(get_job_count(queue, user, password, total_jobs))
             if total_jobs:
-                logging.info("jobs_total for %s queue: %s" % (queue, job_count))
+                logging.info("jobs_total for {} queue: {}".format(queue, job_count))
             else:
-                logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
+                logging.info("jobs_waiting for {} queue: {}".format(queue, job_count))
             desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
@@ -145,7 +141,7 @@ def daemon(
                         )
                     )
                     logging.info(
-                        "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
+                        "bootstrapped ASG {} to desired={}".format(asg, desired_capacity)
                     )
                 else:
                     desired_capacity = 1.0

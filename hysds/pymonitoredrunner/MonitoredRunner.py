@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 
 # logger singleton configured in driver
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from builtins import int
-from builtins import open
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
@@ -119,11 +112,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
                 self._cwd, settingsStreamObserverFileWriter["stderr_filepath"]
             )
             with open(stderrFilepath, "w") as f:
-                f.write('Unable to exec "%s": %s' % (self._command, str(e)))
+                f.write('Unable to exec "{}": {}'.format(self._command, str(e)))
 
             # if invalid command or if Popen is called with invalid arguments.
-            logger.error('Unable to exec "%s": %s' % (self._command, str(e)))
-            raise RuntimeError('Unable to exec "%s": %s' % (self._command, str(e)))
+            logger.error('Unable to exec "{}": {}'.format(self._command, str(e)))
+            raise RuntimeError('Unable to exec "{}": {}'.format(self._command, str(e)))
 
         # end try-except
 
@@ -232,7 +225,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
                 "After calling wait() on process, got status: %s" % self._exitCode
             )
         except Exception as e:
-            logger.warn(
+            logger.warning(
                 "Got %s exception waiting for process: %s\n%s"
                 % (type(e), str(e), traceback.format_exc())
             )

@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -34,7 +30,7 @@ def get_waiting_job_count(job, user="guest", password="guest"):
     )
 
     # get number of jobs waiting (ready)
-    url = "http://%s:15672/api/queues/%%2f/%s" % (host, job)
+    url = "http://{}:15672/api/queues/%2f/{}".format(host, job)
     r = requests.get(url, auth=(user, password))
     # r.raise_for_status()
     if r.status_code == 200:
@@ -67,7 +63,7 @@ def daemon(job, interval, namespace, user="guest", password="guest"):
     while True:
         try:
             job_count = get_waiting_job_count(job, user, password)
-            logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
+            logging.info("jobs_waiting for {} queue: {}".format(job, job_count))
             submit_metric(job, job_count, namespace)
         except Exception as e:
             logging.error("Got error: %s" % e)
