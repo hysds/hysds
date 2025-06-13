@@ -1,13 +1,13 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import sys
+import json
 import os
+import pwd
 import re
 import socket
+import sys
 import types
-import pwd
-import json
 from pprint import pprint
 
 
@@ -45,9 +45,7 @@ class Recognizer:
         # compile match patterns
         for ds in self.dataset_info["datasets"]:
             if "match_pattern" not in ds:
-                raise RecognizerError(
-                    f"No 'match_pattern' defined:\n{pprint(ds)}"
-                )
+                raise RecognizerError(f"No 'match_pattern' defined:\n{pprint(ds)}")
             ds["match_pattern"] = re.compile(ds["match_pattern"])
             if "alt_match_pattern" not in ds:
                 ds["alt_match_pattern"] = None

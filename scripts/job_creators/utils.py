@@ -2,7 +2,7 @@ from future import standard_library
 
 standard_library.install_aliases()
 import json
-from pprint import pprint, pformat
+from pprint import pformat, pprint
 
 
 def get_job_json(info, job_type):
@@ -51,7 +51,7 @@ def ingest_dataset(info):
     params["dataset"] = info["dataset"]
     job = {
         "type": "ingest_dataset",
-        "name": "ingest_dataset-%s" % params["dataset"],
+        "name": f"ingest_dataset-{params['dataset']}",
         "params": params,
         "localize_urls": info["dataset_urls"],
     }
@@ -97,7 +97,7 @@ def notify_by_email(info):
         params["url"] = None
     job = {
         "type": "notify_by_email",
-        "name": "action-notify_by_email-%s" % info["objectid"],
+        "name": f"action-notify_by_email-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -144,7 +144,7 @@ def notify_by_tweet(info):
         params["url"] = None
     job = {
         "type": "notify_by_tweet",
-        "name": "action-notify_by_tweet-%s" % info["objectid"],
+        "name": f"action-notify_by_tweet-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -193,7 +193,7 @@ def ftp_push(info):
         params["url"] = None
     job = {
         "type": "ftp_push",
-        "name": "action-ftp_push-%s" % info["objectid"],
+        "name": f"action-ftp_push-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -242,7 +242,7 @@ def sftp_push(info):
         params["url"] = None
     job = {
         "type": "sftp_push",
-        "name": "action-sftp_push-%s" % info["objectid"],
+        "name": f"action-sftp_push-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -291,7 +291,7 @@ def rsync_push(info):
         params["url"] = None
     job = {
         "type": "rsync_push",
-        "name": "action-rsync_push-%s" % info["objectid"],
+        "name": f"action-rsync_push-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -337,7 +337,7 @@ def purge_dataset(info):
     params["username"] = info["rule"]["username"]
     job = {
         "type": "purge_dataset",
-        "name": "action-purge_dataset-%s" % info["objectid"],
+        "name": f"action-purge_dataset-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,

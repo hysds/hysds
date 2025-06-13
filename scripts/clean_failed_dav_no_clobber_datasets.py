@@ -7,18 +7,18 @@ and clean them out of WebDAV if the dataset was not indexed.
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import sys
-import re
-import requests
+import argparse
 import json
 import logging
-import argparse
-import types
+import os
+import re
+import sys
 import traceback
+import types
+
+import requests
 
 from hysds.celery import app
-
 
 log_format = (
     "[%(asctime)s: %(levelname)s/clean_failed_dav_no_clobber_datasets] %(message)s"
@@ -46,9 +46,9 @@ def check_dataset(es_url, id, es_index="grq"):
     }
 
     if es_url.endswith("/"):
-        search_url = "{}{}/_search".format(es_url, es_index)
+        search_url = f"{es_url}{es_index}/_search"
     else:
-        search_url = "{}/{}/_search".format(es_url, es_index)
+        search_url = f"{es_url}/{es_index}/_search"
     r = requests.post(search_url, data=json.dumps(query))
     if r.status_code == 200:
         result = r.json()
@@ -56,9 +56,9 @@ def check_dataset(es_url, id, es_index="grq"):
         total = result["hits"]["total"]
         id = "NONE" if total == 0 else result["hits"]["hits"][0]["_id"]
     else:
-        logging.error("Failed to query {}:\n{}".format(es_url, r.text))
-        logging.error("query: %s" % json.dumps(query, indent=2))
-        logging.error("returned: %s" % r.text)
+        logging.error(f"Failed to query {es_url}:\n{r.text}")
+        logging.error(f"query: {json.dumps(query, indent=2)}")
+        logging.error(f"returned: {r.text}")
         if r.status_code == 404:
             total, id = 0, "NONE"
         else:
@@ -116,7 +116,7 @@ def clean(jobs_es_url, grq_es_url, force=False):
     # get list of results and sort by bucket
     results = {}
     while True:
-        r = requests.post("%s/_search/scroll?scroll=10m" % jobs_es_url, data=scroll_id)
+        r = requests.post(f"{jobs_es_url}/_search/scroll?scroll=10m", data=scroll_id)
         res = r.json()
         scroll_id = res["_scroll_id"]
         if len(res["hits"]["hits"]) == 0:
@@ -133,20 +133,17 @@ def clean(jobs_es_url, grq_es_url, force=False):
             # query if dataset exists in GRQ; then no-clobber happened because of dataset deduplication
             if dataset_exists(grq_es_url, dataset_id):
                 logging.warning(
-                    "Found %s in %s. Not cleaning out from dav."
-                    % (dataset_id, grq_es_url)
+                    f"Found {dataset_id} in {grq_es_url}. Not cleaning out from dav."
                 )
                 continue
 
             # remove
-            ds_url = "{}://{}".format("https" if proto == "davs" else "http", prefix)
+            ds_url = f"{'https' if proto == 'davs' else 'http'}://{prefix}"
             try:
                 r = requests.delete(ds_url, verify=False)
                 r.raise_for_status()
             except Exception as e:
-                logging.warning(
-                    "Failed to delete {}: {}".format(ds_url, traceback.format_exc())
-                )
+                logging.warning(f"Failed to delete {ds_url}: {traceback.format_exc()}")
                 pass
 
 

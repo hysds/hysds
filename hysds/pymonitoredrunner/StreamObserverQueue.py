@@ -13,8 +13,8 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import threading
 import logging
+import threading
 
 logger = logging.getLogger()
 
@@ -44,7 +44,7 @@ class StreamObserverQueue:
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'queue: "%s"' % (self._queue)
+        return f'queue: "{self._queue}"'
 
     # end def
 

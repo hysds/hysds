@@ -3,7 +3,6 @@ from future import standard_library
 standard_library.install_aliases()
 from celery import Celery
 
-
 app = Celery("hysds")
 app.config_from_object("celeryconfig")
 

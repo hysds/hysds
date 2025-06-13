@@ -49,7 +49,7 @@ class AbstractSubject:
         @return: the string representation of this object.
         @rtype: str
         """
-        return "observers: %s" % (self._observers)
+        return f"observers: {self._observers}"
 
     # end def
 

@@ -1,52 +1,50 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import time
-import socket
 import json
-import traceback
-import requests
-import shutil
+import os
 import re
 import shlex
+import shutil
 import signal
-from datetime import datetime, UTC
+import socket
+import time
+import traceback
+from datetime import UTC, datetime
 from itertools import compress
-from subprocess import check_output, CalledProcessError
+from subprocess import CalledProcessError, check_output
+
+import requests
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import task_revoked
 
 import hysds  # fixes some cyclical import issues
 from hysds.celery import app
+from hysds.containers.factory import container_engine_factory
 from hysds.log_utils import (
-    logger,
-    log_job_status,
-    log_job_info,
     get_job_status,
-    log_task_worker,
     get_task_worker,
     get_worker_status,
-    log_custom_event,
     is_revoked,
-)
-
-from hysds.utils import (
-    disk_space_info,
-    get_threshold,
-    get_disk_usage,
-    get_func,
-    get_short_error,
-    query_dedup_job,
-    NoDedupJobFoundException,
-    makedirs,
-    find_cache_dir,
+    log_custom_event,
+    log_job_info,
+    log_job_status,
+    log_task_worker,
+    logger,
 )
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
-
-from hysds.containers.factory import container_engine_factory
-
+from hysds.utils import (
+    NoDedupJobFoundException,
+    disk_space_info,
+    find_cache_dir,
+    get_disk_usage,
+    get_func,
+    get_short_error,
+    get_threshold,
+    makedirs,
+    query_dedup_job,
+)
 
 # built-in pre-processors
 PRE_PROCESSORS = (
@@ -56,9 +54,7 @@ PRE_PROCESSORS = (
 )
 
 # built-in post-processors
-POST_PROCESSORS = (
-    "hysds.dataset_ingest_bulk.publish_datasets",
-)
+POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
 
 # signal names
 SIG_NAMES = {
@@ -205,12 +201,10 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.0):
     # log initial disk stats
     capacity, free, used, percent_free = disk_space_info(work_path)
     logger.info(
-        "Free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
-        % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3)
+        f"Free disk space for {work_path}: {percent_free:02.2f}% ({free / 1024 ** 3:.0f}GB free/{capacity / 1024 ** 3:.0f}GB total)"
     )
     logger.info(
-        "Configured free disk space threshold for this job type is %02.2f%%."
-        % threshold
+        f"Configured free disk space threshold for this job type is {threshold:02.2f}%."
     )
 
     # cleanup needed?
@@ -240,8 +234,7 @@ def cleanup(work_path, jobs_path, tasks_path, cache_path, threshold=10.0):
     # log final disk stats
     capacity, free, used, percent_free = disk_space_info(work_path)
     logger.info(
-        "Final free disk space for %s: %02.2f%% (%dGB free/%dGB total)"
-        % (work_path, percent_free, free / 1024 ** 3, capacity / 1024 ** 3)
+        f"Final free disk space for {work_path}: {percent_free:02.2f}% ({free / 1024 ** 3:.0f}GB free/{capacity / 1024 ** 3:.0f}GB total)"
     )
 
 
@@ -250,22 +243,21 @@ def cleanup_old_tasks(work_path, tasks_path, percent_free, threshold=10.0):
 
     if percent_free <= threshold:
         logger.info(
-            "Searching for old task dirs to clean out to %02.2f%% free disk space."
-            % threshold
+            f"Searching for old task dirs to clean out to {threshold:02.2f}% free disk space."
         )
         for root, dirs, files in os.walk(tasks_path, followlinks=True):
             dirs.sort()
             if ".done" not in files:
                 continue
-            logger.info("Cleaning out old task dir %s" % root)
+            logger.info(f"Cleaning out old task dir {root}")
             shutil.rmtree(root, ignore_errors=True)
             capacity, free, used, percent_free = disk_space_info(work_path)
             if percent_free <= threshold:
                 continue
-            logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)
+            logger.info(f"Successfully freed up disk space to {percent_free:02.2f}%.")
             return percent_free
         if percent_free <= threshold:
-            logger.info("Failed to free up disk space to %02.2f%%." % threshold)
+            logger.info(f"Failed to free up disk space to {threshold:02.2f}%.")
     return percent_free
 
 
@@ -276,8 +268,7 @@ def cleanup_old_jobs(
 
     if percent_free <= threshold:
         logger.info(
-            "Searching for old job dirs to clean out to %02.2f%% free disk space."
-            % threshold
+            f"Searching for old job dirs to clean out to {threshold:02.2f}% free disk space."
         )
         for root, dirs, files in os.walk(jobs_path, followlinks=True):
             dirs.sort()
@@ -296,20 +287,20 @@ def cleanup_old_jobs(
                     try:
                         exit_code = int(exit_code)
                     except Exception as e:
-                        logger.info("Failed to read exit code: %s" % exit_code)
+                        logger.info(f"Failed to read exit code: {exit_code}")
                         exit_code = 1
                     if exit_code != 0:
                         continue
 
-            logger.info("Cleaning out old job dir %s" % root)
+            logger.info(f"Cleaning out old job dir {root}")
             shutil.rmtree(root, ignore_errors=True)
             capacity, free, used, percent_free = disk_space_info(work_path)
             if percent_free <= threshold:
                 continue
-            logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)
+            logger.info(f"Successfully freed up disk space to {percent_free:02.2f}%.")
             return percent_free
         if percent_free <= threshold:
-            logger.info("Failed to free up disk space to %02.2f%%." % threshold)
+            logger.info(f"Failed to free up disk space to {threshold:02.2f}%.")
     return percent_free
 
 
@@ -318,18 +309,18 @@ def evict_localize_cache(work_path, cache_path, percent_free, threshold=10.0):
 
     if percent_free <= threshold:
         logger.info(
-            "Evicting cached dirs to clean out to %02.2f%% free disk space." % threshold
+            f"Evicting cached dirs to clean out to {threshold:02.2f}% free disk space."
         )
         for timestamp, signal_file, cache_dir in find_cache_dir(cache_path):
-            logger.info("Cleaning out cache dir %s" % cache_dir)
+            logger.info(f"Cleaning out cache dir {cache_dir}")
             shutil.rmtree(cache_dir, ignore_errors=True)
             capacity, free, used, percent_free = disk_space_info(work_path)
             if percent_free <= threshold:
                 continue
-            logger.info("Successfully freed up disk space to %02.2f%%." % percent_free)
+            logger.info(f"Successfully freed up disk space to {percent_free:02.2f}%.")
             return percent_free
         if percent_free <= threshold:
-            logger.info("Failed to free up disk space to %02.2f%%." % threshold)
+            logger.info(f"Failed to free up disk space to {threshold:02.2f}%.")
     return percent_free
 
 
@@ -339,7 +330,7 @@ def redelivered_job_dup(job):
     task_id = job["task_id"]
     redelivered = job.get("delivery_info", {}).get("redelivered", False)
     status = get_job_status(task_id)
-    logger.info("redelivered_job_dup: redelivered:{} status:{}".format(redelivered, status))
+    logger.info(f"redelivered_job_dup: redelivered:{redelivered} status:{status}")
     if redelivered:
         # if job-started, give process_events time to process
         if status == "job-started":
@@ -347,7 +338,7 @@ def redelivered_job_dup(job):
             time.sleep(60)
             status = get_job_status(task_id)
             logger.info(
-                "redelivered_job_dup: redelivered:{} status:{}".format(redelivered, status)
+                f"redelivered_job_dup: redelivered:{redelivered} status:{status}"
             )
 
         # perform dedup
@@ -397,7 +388,7 @@ def job_drain_detected(job_status_json, jd_file):
 
     status = job_status_json["status"]
     if status in ("job-completed", "job-deduped") and os.path.exists(jd_file):
-        logger.info("Clearing job drain detector: %s" % jd_file)
+        logger.info(f"Clearing job drain detector: {jd_file}")
         try:
             os.unlink(jd_file)
         except:
@@ -409,24 +400,23 @@ def job_drain_detected(job_status_json, jd_file):
             pid = os.getpid()
             if pid != jd["pid"]:  # reset if new worker process detected
                 jd = {"count": 0, "starttime": time.time(), "pid": pid}
-            logger.info("Loaded job drain detector: %s" % jd_file)
-            logger.info("Initial job drain detector payload: %s" % json.dumps(jd))
+            logger.info(f"Loaded job drain detector: {jd_file}")
+            logger.info(f"Initial job drain detector payload: {json.dumps(jd)}")
             jd["count"] += 1
             logger.info("Incremented failure count")
             with open(jd_file, "w") as f:
                 json.dump(jd, f, indent=2, sort_keys=True)
-            logger.info("Updated job drain detector: %s" % jd_file)
+            logger.info(f"Updated job drain detector: {jd_file}")
             fn = time.time()
             diff = fn - jd["starttime"]
             rate = jd["count"] / diff
-            logger.info("Time diff since first failure (secs): %s" % diff)
+            logger.info(f"Time diff since first failure (secs): {diff}")
             logger.info(
-                "Consecutive failure threshold: %s"
-                % app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD
+                f"Consecutive failure threshold: {app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD}"
             )
-            logger.info("Consecutive failure count: %s" % jd["count"])
-            logger.info("Failure rate threshold (failures/sec): %s" % FAILURE_RATE)
-            logger.info("Failure rate (failures/sec): %s" % rate)
+            logger.info(f"Consecutive failure count: {jd['count']}")
+            logger.info(f"Failure rate threshold (failures/sec): {FAILURE_RATE}")
+            logger.info(f"Failure rate (failures/sec): {rate}")
             if (
                 jd["count"] > app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD
                 and rate >= FAILURE_RATE
@@ -437,8 +427,8 @@ def job_drain_detected(job_status_json, jd_file):
             jd = {"count": 1, "starttime": time.time(), "pid": os.getpid()}
             with open(jd_file, "w") as f:
                 json.dump(jd, f, indent=2, sort_keys=True)
-            logger.info("Created job drain detector: %s" % jd_file)
-            logger.info("Job drain detector payload: %s" % json.dumps(jd))
+            logger.info(f"Created job drain detector: {jd_file}")
+            logger.info(f"Job drain detector payload: {json.dumps(jd)}")
     return False
 
 
@@ -488,8 +478,8 @@ def run_job(job, queue_when_finished=True):
 
     # hysds signal handler
     def handler(signum, frame):
-        status = "job-%s" % SIG_NAMES.get(signum, "sig-%d" % signum)
-        error = "Signal handler for run_job() caught signal %d." % signum
+        status = f"job-{SIG_NAMES.get(signum, f'sig-{signum}')}"
+        error = f"Signal handler for run_job() caught signal {signum}."
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -518,7 +508,7 @@ def run_job(job, queue_when_finished=True):
 
     # redelivered job dedup
     if redelivered_job_dup(job):
-        logger.info("Encountered duplicate redelivered job:%s" % json.dumps(job))
+        logger.info(f"Encountered duplicate redelivered job:{json.dumps(job)}")
         return {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -534,17 +524,17 @@ def run_job(job, queue_when_finished=True):
 
     # get command payload
     cmd_payload = job.get("params", {}).get("_command", None)
-    logger.info("_command:%s" % cmd_payload)
+    logger.info(f"_command:{cmd_payload}")
 
     # get disk usage requirement
     du_payload = job.get("params", {}).get("_disk_usage", None)
-    logger.info("_disk_usage:%s" % du_payload)
+    logger.info(f"_disk_usage:{du_payload}")
 
     # get depedency images
     dependency_images = (
         job.get("params", {}).get("job_specification", {}).get("dependency_images", [])
     )
-    logger.info("dependency_images:%s" % json.dumps(dependency_images, indent=2))
+    logger.info(f"dependency_images:{json.dumps(dependency_images, indent=2)}")
 
     # get workers dir
     workers_dir = "workers"
@@ -571,9 +561,7 @@ def run_job(job, queue_when_finished=True):
         raise WorkerExecutionError(error, job_status_json)
 
     # set job drain detector file
-    jd_file = os.path.join(
-        workers_dir_abs, "%s.failures.json" % run_job.request.hostname
-    )
+    jd_file = os.path.join(workers_dir_abs, f"{run_job.request.hostname}.failures.json")
 
     # get worker config
     worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
@@ -597,10 +585,10 @@ def run_job(job, queue_when_finished=True):
         fail_job(job_status_json, jd_file)
 
     # extract worker config or build it if command payload was sent
-    logger.info("HYSDS_WORKER_CFG:%s" % worker_cfg_file)
+    logger.info(f"HYSDS_WORKER_CFG:{worker_cfg_file}")
     if worker_cfg_file is not None:
         if not os.path.exists(worker_cfg_file):
-            error = "Worker configuration %s doesn't exist." % worker_cfg_file
+            error = f"Worker configuration {worker_cfg_file} doesn't exist."
             job_status_json = {
                 "uuid": job["task_id"],
                 "job_id": job["job_id"],
@@ -683,9 +671,9 @@ def run_job(job, queue_when_finished=True):
         }
         fail_job(job_status_json, jd_file)
 
-    logger.info("HYSDS_DATASETS_CFG:%s" % datasets_cfg_file)
+    logger.info(f"HYSDS_DATASETS_CFG:{datasets_cfg_file}")
     if not os.path.exists(datasets_cfg_file):
-        error = "Datasets configuration %s doesn't exist." % datasets_cfg_file
+        error = f"Datasets configuration {datasets_cfg_file} doesn't exist."
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -727,7 +715,7 @@ def run_job(job, queue_when_finished=True):
 
     # get work config
     if job["type"] not in work_cfgs:
-        error = "No work configuration for type '%s'." % job["type"]
+        error = f"No work configuration for type '{job['type']}'."
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -830,7 +818,7 @@ def run_job(job, queue_when_finished=True):
     job_running_file = os.path.join(job_dir, ".running")
     try:
         with open(job_running_file, "w") as f:
-            f.write("%sZ\n" % datetime.now(UTC).isoformat())
+            f.write(f"{datetime.now(UTC).isoformat()}Z\n")
     except Exception as e:
         error = str(e)
         job_status_json = {
@@ -907,7 +895,7 @@ def run_job(job, queue_when_finished=True):
 
     # add webdav url to job dir
     if webdav_url is None:
-        webdav_url = "http://{}:{}".format(job["job_info"]["public_ip"], webdav_port)
+        webdav_url = f"http://{job['job_info']['public_ip']}:{webdav_port}"
     job["job_info"]["job_url"] = os.path.join(
         webdav_url,
         jobs_dir,
@@ -934,11 +922,10 @@ def run_job(job, queue_when_finished=True):
             % (job["container_image_name"], job["container_image_url"])
         )
         logger.info(
-            "Using container mappings: %s"
-            % json.dumps(job["container_mappings"], indent=2)
+            f"Using container mappings: {json.dumps(job['container_mappings'], indent=2)}"
         )
         logger.info(
-            "Using runtime options: %s" % json.dumps(job["runtime_options"], indent=2)
+            f"Using runtime options: {json.dumps(job['runtime_options'], indent=2)}"
         )
 
     # set or overwrite dependency images
@@ -960,7 +947,7 @@ def run_job(job, queue_when_finished=True):
         context["container_image_url"] = job.get("container_image_url", None)
         context["container_mappings"] = job.get("container_mappings", {})
         context["runtime_options"] = job.get("runtime_options", {})
-        context["_prov"] = {"wasGeneratedBy": "task_id:{}".format(job["task_id"])}
+        context["_prov"] = {"wasGeneratedBy": f"task_id:{job['task_id']}"}
         context["_force_ingest"] = job.get("publish_overwrite_ok", False)
         context_file = os.path.join(job_dir, "_context.json")
         with open(context_file, "w") as f:
@@ -1021,21 +1008,20 @@ def run_job(job, queue_when_finished=True):
                     payload_hash,
                     filter_id=job["task_id"],
                     states=["job-started", "job-completed"],
-                    is_worker=True
+                    is_worker=True,
                 )
             except NoDedupJobFoundException as e:
                 logger.info(str(e))
                 dj = None
             if isinstance(dj, dict):
-                error = "verdi worker found duplicate job {} with status {}".format(
-                    dj["_id"],
-                    dj["status"],
-                )
+                error = f"verdi worker found duplicate job {dj['_id']} with status {dj['status']}"
                 dedupJob = dj["_id"]
                 raise JobDedupedError(error)
 
         # set status to job-started
-        job["job_info"]["time_start"] = time_start_iso  # TODO: this is where the job is starting
+        job["job_info"][
+            "time_start"
+        ] = time_start_iso  # TODO: this is where the job is starting
         job_status_json = {
             "uuid": job["task_id"],
             "job_id": job["job_id"],
@@ -1055,17 +1041,23 @@ def run_job(job, queue_when_finished=True):
         image_mappings = job.get("container_mappings", {})
         runtime_options = job.get("runtime_options", {})
 
-        container_engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
+        container_engine = container_engine_factory(
+            app.conf.get("CONTAINER_ENGINE", "docker")
+        )
         container_engine_name = container_engine.__class__.__name__.lower()
 
         if image_name is not None:
-            image_info = container_engine.ensure_image_loaded(image_name, image_url, cache_dir_abs)
+            image_info = container_engine.ensure_image_loaded(
+                image_name, image_url, cache_dir_abs
+            )
             job["container_image_id"] = image_info["Id"]
             context["container_image_id"] = job["container_image_id"]
         for i, dep_img in enumerate(job.get("dependency_images", [])):
-            dep_image_info = container_engine.ensure_image_loaded(dep_img["container_image_name"],
-                                                                  dep_img["container_image_url"],
-                                                                  cache_dir_abs)
+            dep_image_info = container_engine.ensure_image_loaded(
+                dep_img["container_image_name"],
+                dep_img["container_image_url"],
+                cache_dir_abs,
+            )
             dep_img["container_image_id"] = dep_image_info["Id"]
             ctx_dep_img = context["job_specification"]["dependency_images"][i]
             ctx_dep_img["container_image_id"] = dep_img["container_image_id"]
@@ -1087,7 +1079,7 @@ def run_job(job, queue_when_finished=True):
         pre_processor_sigs = []
         for pre_processor in pre_processors:
             func = get_func(pre_processor)
-            logger.info("Running pre-processor: %s" % pre_processor)
+            logger.info(f"Running pre-processor: {pre_processor}")
             pre_processor_sigs.append(func(job, context))
 
         # run real-time monitor
@@ -1105,7 +1097,7 @@ def run_job(job, queue_when_finished=True):
         execEnv = dict(os.environ)
         for env in job["command"]["env"]:
             execEnv[env["key"]] = env["value"]
-        logger.info(" cmdLineList: %s" % cmdLineList)
+        logger.info(f" cmdLineList: {cmdLineList}")
         logger.info(f"environment keys: {dict(os.environ).keys()}")
         # check if job needs to run in a container
         container_params = {}
@@ -1123,42 +1115,44 @@ def run_job(job, queue_when_finished=True):
             )
 
             # get command-line list
-            cmdLineList = container_engine.create_container_cmd(container_params[image_name], cmdLineList)
-            logger.info(f" {container_engine_name} cmdLineList: %s" % cmdLineList)
+            cmdLineList = container_engine.create_container_cmd(
+                container_params[image_name], cmdLineList
+            )
+            logger.info(f" {container_engine_name} cmdLineList: {cmdLineList}")
 
         # build container params for dependency containers
         for dep_img in job.get("dependency_images", []):
             dependency_image_name = dep_img["container_image_name"]
-            container_params[dependency_image_name] = container_engine.create_container_params(
-                dep_img["container_image_name"],
-                dep_img["container_image_url"],
-                dep_img["container_mappings"],
-                root_work_dir,
-                job_dir,
-                runtime_options=dep_img.get("runtime_options", {}),
-                verdi_home=app.conf.get("VERDI_HOME", "/root"),
-                host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
+            container_params[dependency_image_name] = (
+                container_engine.create_container_params(
+                    dep_img["container_image_name"],
+                    dep_img["container_image_url"],
+                    dep_img["container_mappings"],
+                    root_work_dir,
+                    job_dir,
+                    runtime_options=dep_img.get("runtime_options", {}),
+                    verdi_home=app.conf.get("VERDI_HOME", "/root"),
+                    host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
+                )
             )
 
         # TODO: Change to _container_params.json since we want to support
         #  multiple container engines
-        container_params_file = os.path.join(job_dir, "_docker_params.json")  # dump container params to file
+        container_params_file = os.path.join(
+            job_dir, "_docker_params.json"
+        )  # dump container params to file
         try:
             with open(container_params_file, "w") as f:
                 json.dump(container_params, f, indent=2, sort_keys=True)
         except Exception as e:
             tb = traceback.format_exc()
-            err = "Failed to dump docker params to file {}: {}\n{}".format(
-                container_params_file,
-                str(e),
-                tb,
-            )
+            err = f"Failed to dump docker params to file {container_params_file}: {str(e)}\n{tb}"
             raise RuntimeError(err)
 
         # make sure command-line list items are string
         cmdLineList = [str(i) for i in cmdLineList]
         cmdLine = " ".join(cmdLineList)
-        logger.info(" cmdLine: %s" % cmdLine)
+        logger.info(f" cmdLine: {cmdLine}")
 
         # dump run script for rerun
         run_script = os.path.join(job_dir, "_run.sh")
@@ -1171,12 +1165,12 @@ def run_job(job, queue_when_finished=True):
                 #  eval ${which_declare} ) | /usr/bin/which --tty-only --read-alias --read-functions --show-tilde
                 #  --show-dot $@
                 # }
-                f.write("#{}={}\n".format(env_var, env_val.replace("\n", "")))
+                f.write(f"#{env_var}={env_val.replace('\\n', '')}\n")
             f.write("\n")
             # dump job env for execution
             for env in job["command"]["env"]:
-                f.write("export {}={}\n".format(env["key"], env["value"]))
-            f.write("\n%s\n" % cmdLine)
+                f.write(f"export {env['key']}={env['value']}\n")
+            f.write(f"\n{cmdLine}\n")
         try:
             os.chmod(run_script, 0o755)
         except:
@@ -1206,8 +1200,7 @@ def run_job(job, queue_when_finished=True):
                 compress(pre_processors, [not i for i in pre_processor_sigs])
             )
             logger.info(
-                "Pre-processing steps that didn't signal continuation: %s"
-                % ", ".join(no_cont)
+                f"Pre-processing steps that didn't signal continuation: {', '.join(no_cont)}"
             )
             status = 0
             pid = 0
@@ -1222,7 +1215,7 @@ def run_job(job, queue_when_finished=True):
         job["job_info"]["stdout"] = ""
         job["job_info"]["stderr"] = ""
         job["job_info"]["pid"] = pid
-        logger.info(" status: %s" % status)
+        logger.info(f" status: {status}")
 
         # save job directory size
         job["job_info"]["metrics"]["job_dir_size"] = get_disk_usage(job_dir)
@@ -1272,7 +1265,8 @@ def run_job(job, queue_when_finished=True):
         # add prov associations
         if len(job["job_info"]["metrics"]["inputs_localized"]) > 0:
             context["_prov"]["wasDerivedFrom"] = [
-                "url:{}".format(i["url"]) for i in job["job_info"]["metrics"]["inputs_localized"]
+                f"url:{i['url']}"
+                for i in job["job_info"]["metrics"]["inputs_localized"]
             ]
 
             # update context file with prov associations
@@ -1301,7 +1295,7 @@ def run_job(job, queue_when_finished=True):
         # log error
         error = str(e)
         tb = traceback.format_exc()
-        logger.info(" Got error: {}\n{}".format(error, tb))
+        logger.info(f" Got error: {error}\n{tb}")
 
         # process id
         pid = None
@@ -1331,7 +1325,7 @@ def run_job(job, queue_when_finished=True):
             job["job_info"]["status"] = status
             job["job_info"]["stdout"] = ""
             job["job_info"]["stderr"] = ""
-            logger.info(" status: %s" % status)
+            logger.info(f" status: {status}")
 
             # append error to job's stderr file
             with open(os.path.join(job_dir, "_stderr.txt"), "a") as f:
@@ -1366,14 +1360,14 @@ def run_job(job, queue_when_finished=True):
         if os.path.exists(alt_error_file):
             with open(alt_error_file) as f:
                 error = f.read()
-                logger.info("Got alternate error message: %s" % error)
+                logger.info(f"Got alternate error message: {error}")
 
         # overwrite traceback if _alt_traceback.txt was dumped
         alt_tb_file = os.path.join(job_dir, "_alt_traceback.txt")
         if os.path.exists(alt_tb_file):
             with open(alt_tb_file) as f:
                 tb = f.read()
-                logger.info("Got alternate traceback: %s" % tb)
+                logger.info(f"Got alternate traceback: {tb}")
 
         # if time_end not set, do it now
         if time_end is None:
@@ -1409,14 +1403,18 @@ def run_job(job, queue_when_finished=True):
             .get("job_specification", {})
             .get("disable_post_builtins", False)
         )
-        post_processors = [] if disable_post or job_status_json["status"] == "job-deduped" else list(POST_PROCESSORS)
+        post_processors = (
+            []
+            if disable_post or job_status_json["status"] == "job-deduped"
+            else list(POST_PROCESSORS)
+        )
         post_processors.extend(
             job.get("params", {}).get("job_specification", {}).get("post", [])
         )
         post_processor_sigs = []
         for post_processor in post_processors:
             func = get_func(post_processor)
-            logger.info("Running post-processor: %s" % post_processor)
+            logger.info(f"Running post-processor: {post_processor}")
             post_processor_sigs.append(func(job, context))
 
         # if not all post-processors signaled True, log them out
@@ -1425,8 +1423,7 @@ def run_job(job, queue_when_finished=True):
                 compress(post_processors, [not i for i in post_processor_sigs])
             )
             logger.info(
-                "Post-processing steps that didn't signal continuation: %s"
-                % ", ".join(no_cont)
+                f"Post-processing steps that didn't signal continuation: {', '.join(no_cont)}"
             )
     except Exception as e:
         error = str(e)
@@ -1451,7 +1448,7 @@ def run_job(job, queue_when_finished=True):
     if os.path.exists(alt_msg_file):
         with open(alt_msg_file) as f:
             msgs = f.readlines()
-            logger.info("Got alternate info message: %s" % msgs)
+            logger.info(f"Got alternate info message: {msgs}")
             for m in msgs:
                 msg.append(get_short_error(m))
 
@@ -1463,7 +1460,7 @@ def run_job(job, queue_when_finished=True):
     if os.path.exists(alt_msg_details_file):
         with open(alt_msg_details_file) as f:
             msg_details = f.read()
-            logger.info("Got alternate message details: %s" % msg_details)
+            logger.info(f"Got alternate message details: {msg_details}")
         job_status_json["msg_details"] = msg_details
 
     # store usage stats
@@ -1474,11 +1471,7 @@ def run_job(job, queue_when_finished=True):
                 usage_stats = json.load(f)
             except Exception as e:
                 tb = traceback.format_exc()
-                err = "Failed to load usage stats from {}: {}\n{}".format(
-                    usage_stats_file,
-                    str(e),
-                    tb,
-                )
+                err = f"Failed to load usage stats from {usage_stats_file}: {str(e)}\n{tb}"
                 # raise RuntimeError(err)  # https://hysds-core.atlassian.net/browse/HC-468
                 logger.error(err)
         if len(usage_stats) > 0:
@@ -1489,7 +1482,7 @@ def run_job(job, queue_when_finished=True):
         # transition running file to done file
         os.rename(job_running_file, job_done_file)
         with open(job_done_file, "w") as f:
-            f.write("%sZ\n" % datetime.now(UTC).isoformat())
+            f.write(f"{datetime.now(UTC).isoformat()}Z\n")
 
         # log job info metrics
         log_job_info(job)
@@ -1552,17 +1545,17 @@ def set_revoked_job_done(root_work, job_id):
             job_running_file = os.path.join(job_dir, ".running")
             job_done_file = os.path.join(job_dir, ".done")
             if not os.path.exists(job_done_file):
-                logger.info("No job done file found: %s" % job_done_file)
+                logger.info(f"No job done file found: {job_done_file}")
                 if os.path.exists(job_running_file):
                     os.rename(job_running_file, job_done_file)
-                    logger.info("Renamed {} to {}.".format(job_running_file, job_done_file))
+                    logger.info(f"Renamed {job_running_file} to {job_done_file}.")
                 with open(job_done_file, "w") as f:
-                    f.write("%sZ\n" % datetime.now(UTC).isoformat())
-                logger.info("Wrote timestamp to %s." % job_done_file)
+                    f.write(f"{datetime.now(UTC).isoformat()}Z\n")
+                logger.info(f"Wrote timestamp to {job_done_file}.")
             return
         else:
             continue
-    logger.info("No work directory found for job_id %s." % job_id)
+    logger.info(f"No work directory found for job_id {job_id}.")
 
 
 @task_revoked.connect(sender=run_job)
@@ -1579,7 +1572,7 @@ def task_revoked_handler(*args, **kwargs):
     payload_hash = job["job_info"]["payload_hash"]
     dedup = job["job_info"]["dedup"]
     context = job.get("context", {})
-    error = "Job was revoked with signal %d." % signum
+    error = f"Job was revoked with signal {signum}."
     job_status_json = {
         "uuid": job["task_id"],
         "job_id": job["job_id"],

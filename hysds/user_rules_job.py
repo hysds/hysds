@@ -3,18 +3,17 @@ from future import standard_library
 standard_library.install_aliases()
 
 import json
-import time
-import backoff
 import socket
+import time
 
+import backoff
 import elasticsearch.exceptions
 import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
 from hysds.es_util import get_mozart_es
-
+from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -30,12 +29,8 @@ JOB_STATUS_ALIAS = "job_status-current"
 )
 def ensure_job_indexed(job_id, alias):
     """Ensure job is indexed."""
-    query = {
-        "query": {
-            "term": {"_id": job_id}
-        }
-    }
-    logger.info("ensure_job_indexed: %s" % json.dumps(query))
+    query = {"query": {"term": {"_id": job_id}}}
+    logger.info(f"ensure_job_indexed: {json.dumps(query)}")
     mozart_es = get_mozart_es()
     count = mozart_es.get_count(index=alias, body=query)
     if count == 0:
@@ -46,7 +41,7 @@ def get_job(job_id, rule, result):
     """Return generic json job configuration."""
     priority = rule.get("priority", 0)
     return {
-        "job_type": "job:%s" % rule["job_type"],
+        "job_type": f"job:{rule['job_type']}",
         "priority": priority,
         "payload": {
             "job_id": job_id,
@@ -69,14 +64,8 @@ def update_query(job_id, rule):
     if rule.get("query_all", False) is False:
         filts.append({"term": {"_id": job_id}})
 
-    final_query = {
-        "query": {
-            "bool": {
-                "must": filts
-            }
-        }
-    }
-    logger.info("Final query: %s" % json.dumps(final_query))
+    final_query = {"query": {"bool": {"must": filts}}}
+    logger.info(f"Final query: {json.dumps(final_query)}")
     return final_query
 
 
@@ -90,22 +79,16 @@ def evaluate_user_rules_job(job_id, index=None):
     ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS)  # ensure job is indexed
 
     # get all enabled user rules
-    query = {
-        "query": {
-            "term": {
-                "enabled": True
-            }
-        }
-    }
+    query = {"query": {"term": {"enabled": True}}}
     mozart_es = get_mozart_es()
     rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
-    logger.info("Total %d enabled rules to check." % len(rules))
+    logger.info(f"Total {len(rules)} enabled rules to check.")
 
     for rule in rules:
         time.sleep(1)  # sleep between queries
 
         rule = rule["_source"]  # extracting _source from the rule itself
-        logger.info("rule: %s" % json.dumps(rule, indent=2))
+        logger.info(f"rule: {json.dumps(rule, indent=2)}")
 
         try:
             updated_query = update_query(job_id, rule)  # check for matching rules
@@ -118,26 +101,29 @@ def evaluate_user_rules_job(job_id, index=None):
 
         rule_name = rule["rule_name"]
         final_qs = rule["query_string"]
-        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
+        logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
         # check for matching rules
         try:
             mozart_es = get_mozart_es()
             result = mozart_es.es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
-                logger.info("Rule '{}' didn't match for {}".format(rule_name, job_id))
+                logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
                 continue
-        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
+        except (
+            elasticsearch.exceptions.ElasticsearchException,
+            opensearchpy.exceptions.OpenSearchException,
+        ) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
 
         doc_res = result["hits"]["hits"][0]
-        logger.info("Rule '{}' successfully matched for {}".format(rule_name, job_id))
+        logger.info(f"Rule '{rule_name}' successfully matched for {job_id}")
 
         # submit trigger task
         queue_job_trigger(doc_res, rule)
-        logger.info("Trigger task submitted for {}: {}".format(job_id, rule["job_type"]))
+        logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
     return True
 
 
@@ -152,7 +138,9 @@ def queue_finished_job(_id, index=None):
         "args": [_id],
         "kwargs": {"index": index},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_JOB_QUEUE)  # noqa
+    hysds.task_worker.run_task.apply_async(
+        (payload,), queue=USER_RULES_JOB_QUEUE
+    )  # noqa
 
 
 @backoff.on_exception(
@@ -166,4 +154,6 @@ def queue_job_trigger(doc_res, rule):
         "args": [doc_res, rule],
         "kwargs": {"component": "mozart"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa
+    hysds.task_worker.run_task.apply_async(
+        (payload,), queue=USER_RULES_TRIGGER_QUEUE
+    )  # noqa

@@ -4,18 +4,20 @@
 from future import standard_library
 
 standard_library.install_aliases()
-from billiard import JoinableQueue
+import logging
+import os
+import socket
+import subprocess
+import traceback
+
 import billiard
-from hysds.pymonitoredrunner.StreamSubject import StreamSubject
-from hysds.pymonitoredrunner.StreamReaderProcess import StreamReaderProcess
+from billiard import JoinableQueue
+
 from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
     AbstractInterruptableProcess,
 )
-import socket
-import subprocess
-import os
-import logging
-import traceback
+from hysds.pymonitoredrunner.StreamReaderProcess import StreamReaderProcess
+from hysds.pymonitoredrunner.StreamSubject import StreamSubject
 
 logger = logging.getLogger()
 
@@ -93,7 +95,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
         except (OSError, ValueError) as e:
             # dump out exit code to hold file
             ec_fh = open(self._exitCodeHold, "w")
-            ec_fh.write("%d" % self._exitCode)
+            ec_fh.write(f"{self._exitCode}")
             ec_fh.close()
 
             # rename exit code hold file
@@ -112,11 +114,11 @@ class MonitoredRunner(AbstractInterruptableProcess):
                 self._cwd, settingsStreamObserverFileWriter["stderr_filepath"]
             )
             with open(stderrFilepath, "w") as f:
-                f.write('Unable to exec "{}": {}'.format(self._command, str(e)))
+                f.write(f'Unable to exec "{self._command}": {str(e)}')
 
             # if invalid command or if Popen is called with invalid arguments.
-            logger.error('Unable to exec "{}": {}'.format(self._command, str(e)))
-            raise RuntimeError('Unable to exec "{}": {}'.format(self._command, str(e)))
+            logger.error(f'Unable to exec "{self._command}": {str(e)}')
+            raise RuntimeError(f'Unable to exec "{self._command}": {str(e)}')
 
         # end try-except
 
@@ -144,7 +146,7 @@ class MonitoredRunner(AbstractInterruptableProcess):
         hostname = socket.gethostname()
         pid = self._process.pid
         pid_fh = open(self._pidFile, "w")
-        pid_fh.write("%d" % pid)
+        pid_fh.write(f"{pid}")
         pid_fh.close()
 
         # ---------------------------------------------------------------------
@@ -215,19 +217,18 @@ class MonitoredRunner(AbstractInterruptableProcess):
 
             # dump out exit code to hold file
             ec_fh = open(self._exitCodeHold, "w")
-            ec_fh.write("%d" % self._exitCode)
+            ec_fh.write(f"{self._exitCode}")
             ec_fh.close()
 
             # rename exit code hold file
             os.rename(self._exitCodeHold, self._exitCodeFile)
 
             logger.debug(
-                "After calling wait() on process, got status: %s" % self._exitCode
+                f"After calling wait() on process, got status: {self._exitCode}"
             )
         except Exception as e:
             logger.warning(
-                "Got %s exception waiting for process: %s\n%s"
-                % (type(e), str(e), traceback.format_exc())
+                f"Got {type(e)} exception waiting for process: {str(e)}\n{traceback.format_exc()}"
             )
         # end try-except
 

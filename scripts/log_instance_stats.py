@@ -2,20 +2,20 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import sys
 import argparse
 import json
-import time
-import socket
 import logging
-import psutil
-import msgpack
-from redis import BlockingConnectionPool, StrictRedis
+import os
+import socket
+import sys
+import time
 from datetime import datetime
 
-from hysds.celery import app
+import msgpack
+import psutil
+from redis import BlockingConnectionPool, StrictRedis
 
+from hysds.celery import app
 
 log_format = "[%(asctime)s: %(levelname)s/log_instance_stats] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -41,7 +41,7 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
     instance_stats = {
         "type": "instance_stats",
         "@version": "1",
-        "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
+        "@timestamp": f"{datetime.utcnow().isoformat()}Z",
         "stats": instance_stats,
     }
 
@@ -51,9 +51,9 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
 
     # print log
     try:
-        logging.info("instance_stats:%s" % json.dumps(instance_stats))
+        logging.info(f"instance_stats:{json.dumps(instance_stats)}")
     except Exception as e:
-        logging.error("Got exception trying to log instance stats: %s" % str(e))
+        logging.error(f"Got exception trying to log instance stats: {str(e)}")
 
 
 def daemon(redis_url, redis_key, interval):
@@ -76,14 +76,13 @@ def daemon(redis_url, redis_key, interval):
                 "device": device,
                 "mount_point": mnt_point,
                 "fs_type": fs_type,
-                "fs_opts": fs_opts
+                "fs_opts": fs_opts,
             }
             try:
                 disk_info.update(psutil.disk_usage(mnt_point)._asdict())
             except Exception as e:
                 logging.error(
-                    "Got exception trying to get disk usage for %s: %s\nSkipping."
-                    % (mnt_point, str(e))
+                    f"Got exception trying to get disk usage for {mnt_point}: {str(e)}\nSkipping."
                 )
                 continue
             stats["disk"]["all"].append(disk_info)

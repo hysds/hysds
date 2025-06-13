@@ -1,4 +1,5 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 import hysds
 
 setup(
@@ -6,7 +7,7 @@ setup(
     version=hysds.__version__,
     long_description=hysds.__description__,
     url=hysds.__url__,
-    python_requires='>=3.12',
+    python_requires=">=3.12",
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
@@ -42,7 +43,7 @@ setup(
         "flask>=2.3.3",
         "flask-restx>=1.1.0",
         "sqlalchemy>=2.0.19",
-        "werkzeug>=2.3.7"
+        "werkzeug>=2.3.7",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],

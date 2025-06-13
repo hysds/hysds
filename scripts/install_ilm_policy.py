@@ -7,12 +7,20 @@ import opensearchpy.exceptions
 
 from hysds.es_util import get_mozart_es
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy-name", type=str, default="ilm_policy_mozart", help="ISM/ILM policy name")
-    parser.add_argument("--ilm-policy", type=str, help="location of the ILM policy file")
-    parser.add_argument("--ism-policy", type=str, help="location of the ISM policy file")
+    parser.add_argument(
+        "--policy-name",
+        type=str,
+        default="ilm_policy_mozart",
+        help="ISM/ILM policy name",
+    )
+    parser.add_argument(
+        "--ilm-policy", type=str, help="location of the ILM policy file"
+    )
+    parser.add_argument(
+        "--ism-policy", type=str, help="location of the ISM policy file"
+    )
 
     args = parser.parse_args()
     policy_name = args.policy_name
@@ -22,7 +30,7 @@ if __name__ == "__main__":
     if not _ism_policy_file and not _ilm_policy_file:
         raise RuntimeError("--ilm-policy or --ism-policy must be provided")
 
-    warnings.simplefilter('always', UserWarning)
+    warnings.simplefilter("always", UserWarning)
 
     mozart_es = get_mozart_es()
     info = mozart_es.es.info()
@@ -36,10 +44,16 @@ if __name__ == "__main__":
         with open(_ism_policy_file) as f:
             ism_template = json.load(f)
             try:
-                res = mozart_es.es.transport.perform_request("PUT", f"/_opendistro/_ism/policies/{policy_name}",
-                                                             body=ism_template)
+                res = mozart_es.es.transport.perform_request(
+                    "PUT",
+                    f"/_opendistro/_ism/policies/{policy_name}",
+                    body=ism_template,
+                )
                 print(json.dumps(res, indent=2))
-            except (elasticsearch.exceptions.ConflictError, opensearchpy.exceptions.ConflictError) as e:
+            except (
+                elasticsearch.exceptions.ConflictError,
+                opensearchpy.exceptions.ConflictError,
+            ) as e:
                 print(e)
                 warnings.warn(f"{policy_name} already exists, skipping...")
     elif distribution == "opensearch":
@@ -47,12 +61,20 @@ if __name__ == "__main__":
             ism_template = json.load(f)
             try:
                 if hasattr(mozart_es.es, "index_management"):
-                    res = mozart_es.es.plugins.index_management.put_policy(policy_name, body=ism_template)
+                    res = mozart_es.es.plugins.index_management.put_policy(
+                        policy_name, body=ism_template
+                    )
                 else:
-                    res = mozart_es.es.transport.perform_request("PUT", f"/_plugins/_ism/policies/{policy_name}",
-                                                                 body=ism_template)
+                    res = mozart_es.es.transport.perform_request(
+                        "PUT",
+                        f"/_plugins/_ism/policies/{policy_name}",
+                        body=ism_template,
+                    )
                 print(json.dumps(res, indent=2))
-            except (elasticsearch.exceptions.ConflictError, opensearchpy.exceptions.ConflictError) as e:
+            except (
+                elasticsearch.exceptions.ConflictError,
+                opensearchpy.exceptions.ConflictError,
+            ) as e:
                 print(e)
                 warnings.warn(f"{policy_name} already exists, skipping...")
     else:
@@ -60,8 +82,13 @@ if __name__ == "__main__":
         with open(_ilm_policy_file) as f:
             ilm_template = json.load(f)
             try:
-                res = mozart_es.es.ilm.put_lifecycle(policy=policy_name, body=ilm_template)
+                res = mozart_es.es.ilm.put_lifecycle(
+                    policy=policy_name, body=ilm_template
+                )
                 print(json.dumps(res, indent=2))
-            except (elasticsearch.exceptions.ConflictError, opensearchpy.exceptions.ConflictError) as e:
+            except (
+                elasticsearch.exceptions.ConflictError,
+                opensearchpy.exceptions.ConflictError,
+            ) as e:
                 print(e)
                 warnings.warn(f"{policy_name} already exists, skipping...")

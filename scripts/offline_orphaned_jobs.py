@@ -10,17 +10,17 @@ for task status. If none exists, the job is offlined.
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import sys
-import requests
+import argparse
 import json
 import logging
-import argparse
+import os
+import sys
+
+import requests
+from kombu.serialization import loads, prepare_accept_content, registry
 from redis import ConnectionPool, StrictRedis
-from kombu.serialization import loads, registry, prepare_accept_content
 
 from hysds.celery import app
-
 
 log_format = "[%(asctime)s: %(levelname)s/offline_orphaned_jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -78,7 +78,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
     # get list of results
     results = []
     while True:
-        r = requests.post("%s/_search/scroll?scroll=10m" % es_url, data=scroll_id)
+        r = requests.post(f"{es_url}/_search/scroll?scroll=10m", data=scroll_id)
         res = r.json()
         scroll_id = res["_scroll_id"]
         if len(res["hits"]["hits"]) == 0:
@@ -97,7 +97,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         # check celery task status in ES
         task_query = {"query": {"term": {"_id": task_id}}, "_source": ["status"]}
         r = requests.post(
-            "%s/task_status-current/task/_search" % es_url, data=json.dumps(task_query)
+            f"{es_url}/task_status-current/task/_search", data=json.dumps(task_query)
         )
         if r.status_code != 200:
             logging.error(
@@ -116,19 +116,17 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                 continue
             else:
                 logging.error(
-                    "Cannot handle task status %s for %s."
-                    % (task_info["_source"]["status"], task_id)
+                    f"Cannot handle task status {task_info['_source']['status']} for {task_id}."
                 )
                 continue
             if dry_run:
                 logging.info(
-                    "Would've update job status to %s for %s."
-                    % (updated_status, task_id)
+                    f"Would've update job status to {updated_status} for {task_id}."
                 )
             else:
                 new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
                 r = requests.post(
-                    "{}/job_status-current/job/{}/_update".format(es_url, id),
+                    f"{es_url}/job_status-current/job/{id}/_update",
                     data=json.dumps(new_doc),
                 )
                 result = r.json()
@@ -138,12 +136,12 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                         % (id, r.status_code, json.dumps(result, indent=2))
                     )
                 r.raise_for_status()
-                logging.info("Set job {} to {}.".format(id, updated_status))
+                logging.info(f"Set job {id} to {updated_status}.")
             continue
 
         # get celery task metadata in redis
         task_meta = loads(
-            rd.get("celery-task-meta-%s" % task_id),
+            rd.get(f"celery-task-meta-{task_id}"),
             content_type=content_type,
             content_encoding=content_encoding,
             accept=accept,
@@ -152,13 +150,12 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             updated_status = "job-offline"
             if dry_run:
                 logging.info(
-                    "Would've update job status to %s for %s."
-                    % (updated_status, task_id)
+                    f"Would've update job status to {updated_status} for {task_id}."
                 )
             else:
                 new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
                 r = requests.post(
-                    "{}/job_status-current/job/{}/_update".format(es_url, id),
+                    f"{es_url}/job_status-current/job/{id}/_update",
                     data=json.dumps(new_doc),
                 )
                 result = r.json()
@@ -168,7 +165,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                         % (id, r.status_code, json.dumps(result, indent=2))
                     )
                 r.raise_for_status()
-                logging.info("Set job {} to {}.".format(id, updated_status))
+                logging.info(f"Set job {id} to {updated_status}.")
             continue
 
 

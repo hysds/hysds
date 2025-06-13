@@ -1,17 +1,19 @@
 # content of test_sysexit.py
-import os
-import sys
-import shutil
-import hashlib
 import copy
+import hashlib
+import os
+import shutil
+import sys
+
 import pytest
+
 try:
     import unittest.mock as umock
 except ImportError:
     from unittest import mock as umock
 
-sys.modules['opensearchpy'] = umock.Mock()
-sys.modules['opensearchpy.exceptions'] = umock.Mock()
+sys.modules["opensearchpy"] = umock.Mock()
+sys.modules["opensearchpy.exceptions"] = umock.Mock()
 
 
 class TestPreProcessingChecksum:

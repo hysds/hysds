@@ -7,30 +7,29 @@ from future import standard_library
 
 standard_library.install_aliases()
 
-import os
+import argparse
 import getpass
 import json
-import socket
-import requests
-from requests.auth import HTTPBasicAuth
-
 import logging
-import argparse
+import os
+import socket
 from datetime import datetime
-from smtplib import SMTP
+from email.encoders import encode_base64
+from email.header import Header
 
 # Import the email modules we'll need
 from email.message import EmailMessage
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email.header import Header
-from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
-from email.encoders import encode_base64
+from email.utils import COMMASPACE, formataddr, formatdate, parseaddr
+from smtplib import SMTP
 
+import requests
 from hysds_commons.log_utils import logger
-from hysds.celery import app
+from requests.auth import HTTPBasicAuth
 
+from hysds.celery import app
 from hysds.es_util import get_mozart_es
 
 ES = get_mozart_es()
@@ -51,7 +50,9 @@ HYSDS_QUEUES = (
 )
 
 
-def send_slack_notification(channel_url, subject, text, color=None, subject_link=None, attachment_only=False):
+def send_slack_notification(
+    channel_url, subject, text, color=None, subject_link=None, attachment_only=False
+):
     attachment = {
         "title": subject,
         "text": text,
@@ -61,9 +62,7 @@ def send_slack_notification(channel_url, subject, text, color=None, subject_link
     if subject_link is not None:
         attachment["subject_link"] = subject_link
 
-    payload = {
-        "attachments": [attachment]
-    }
+    payload = {"attachments": [attachment]}
     if not attachment_only:
         payload["text"] = text
 
@@ -82,7 +81,9 @@ def get_hostname():
             return socket.gethostbyname(socket.gethostname())
         except Exception as e:
             logger.error(e)
-            raise RuntimeError("Failed to resolve hostname for full email address. Please check the system.")
+            raise RuntimeError(
+                "Failed to resolve hostname for full email address. Please check the system."
+            )
 
 
 def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments=None):
@@ -163,13 +164,13 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
             part = MIMEBase("application", "octet-stream")
             part.set_payload(attachments[fname])
             encode_base64(part)
-            part.add_header("Content-Disposition", 'attachment; filename="%s"' % fname)
+            part.add_header("Content-Disposition", f'attachment; filename="{fname}"')
             msg.attach(part)
 
     # Send the message via SMTP to docker host
     smtp_url = "smtp://127.0.0.1:25"
     # TODO: not sure what this is trying to do (need to fix this 'unresolved reference error)
-    utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
+    utils.get_logger(__file__).debug(f"smtp_url : {smtp_url}")
     smtp = SMTP("127.0.0.1")
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
@@ -202,7 +203,7 @@ def do_queue_query(queue_name):
         ],
         "size": 1,
     }
-    logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
+    logging.info(f"query: {json.dumps(query, indent=2, sort_keys=True)}")
 
     result = ES.search(index="job_status-current", body=json.dumps(query))
     return result
@@ -213,11 +214,11 @@ def send_email_notification(emails, job_type, text, attachments=[]):
 
     cc_recipients = [i.strip() for i in emails.split(",")]
     bcc_recipients = []
-    subject = "[job_periodicity_watchdog] %s" % job_type
+    subject = f"[job_periodicity_watchdog] {job_type}"
     body = text
     attachments = None
     send_email(
-        "{}@{}".format(getpass.getuser(), get_hostname()),
+        f"{getpass.getuser()}@{get_hostname()}",
         cc_recipients,
         bcc_recipients,
         subject,
@@ -237,18 +238,26 @@ def get_all_queues(rabbitmq_admin_url, user=None, password=None):
     endpoint = os.path.join(rabbitmq_admin_url, "api/queues")
     try:
         if user and password:
-            data = requests.get(endpoint, auth=HTTPBasicAuth(user, password), verify=False)
+            data = requests.get(
+                endpoint, auth=HTTPBasicAuth(user, password), verify=False
+            )
         else:
             data = requests.get(endpoint, verify=False)
     except requests.HTTPError as e:
         if e.response.status_code == 401:
-            logger.error(f"Failed to authenticate {rabbitmq_admin_url}. Ensure credentials are set in .netrc.")
+            logger.error(
+                f"Failed to authenticate {rabbitmq_admin_url}. Ensure credentials are set in .netrc."
+            )
         raise
 
     results = []
     for obj in data:
-        if not obj["name"].startswith("celery") and obj["name"] not in HYSDS_QUEUES \
-                and obj["name"] != "Recommended Queues" and obj["messages_ready"] > 0:
+        if (
+            not obj["name"].startswith("celery")
+            and obj["name"] not in HYSDS_QUEUES
+            and obj["name"] != "Recommended Queues"
+            and obj["messages_ready"] > 0
+        ):
             results.append(obj)
     return results
 
@@ -258,8 +267,8 @@ def check_queue_execution(
 ):
     """Check that job type ran successfully within the expected periodicity."""
 
-    logging.info("rabbitmq url: %s" % rabbitmq_url)
-    logging.info("periodicity: %s" % periodicity)
+    logging.info(f"rabbitmq url: {rabbitmq_url}")
+    logging.info(f"periodicity: {periodicity}")
 
     queue_list = get_all_queues(rabbitmq_url, user, password)
     if len(queue_list) == 0:
@@ -279,25 +288,25 @@ def check_queue_execution(
 
         if messages_ready > 0 and messages_unacked == 0:
             is_alert = True
-            error += "\nQueue Name : %s" % queue_name
+            error += f"\nQueue Name : {queue_name}"
             error += "\nError : No job running though jobs are waiting in the queue!!"
-            error += "\nTotal jobs : %s" % total_messages
-            error += "\nJobs WAITING in the queue : %s" % messages_ready
-            error += "\nJobs running : %s" % messages_unacked
+            error += f"\nTotal jobs : {total_messages}"
+            error += f"\nJobs WAITING in the queue : {messages_ready}"
+            error += f"\nJobs running : {messages_unacked}"
         else:
-            print("processing job status for queue : %s" % queue_name)
+            print(f"processing job status for queue : {queue_name}")
             result = do_queue_query(queue_name)
             count = result["hits"]["total"]
             if count == 0:
                 is_alert = True
-                error += "\nQueue Name : %s" % queue_name
-                error += "\nError : No job found for Queue :  %s!!\n." % queue_name
+                error += f"\nQueue Name : {queue_name}"
+                error += f"\nError : No job found for Queue :  {queue_name}!!\n."
             else:
                 latest_job = result["hits"]["hits"][0]["_source"]
                 logging.info(
-                    "latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True)
+                    f"latest_job: {json.dumps(latest_job, indent=2, sort_keys=True)}"
                 )
-                print("job status : %s" % latest_job["status"])
+                print(f"job status : {latest_job['status']}")
                 start_dt = datetime.strptime(
                     latest_job["job"]["job_info"]["time_start"], "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
@@ -306,27 +315,25 @@ def check_queue_execution(
                 if "time_limit" in latest_job["job"]["job_info"]:
                     logging.info("Using job time limit as periodicity")
                     periodicity = latest_job["job"]["job_info"]["time_limit"]
-                logging.info("periodicity: %s" % periodicity)
-                logging.info("Successful Job delta: %s" % delta)
+                logging.info(f"periodicity: {periodicity}")
+                logging.info(f"Successful Job delta: {delta}")
                 if delta > periodicity:
                     is_alert = True
-                    error += "\nQueue Name : %s" % queue_name
+                    error += f"\nQueue Name : {queue_name}"
                     error += "\nError: Possible Job hanging in the queue"
-                    error += "\nTotal jobs : %s" % total_messages
-                    error += "\nJobs WAITING in the queue : %s" % messages_ready
-                    error += "\nJobs running : %s" % messages_unacked
+                    error += f"\nTotal jobs : {total_messages}"
+                    error += f"\nJobs WAITING in the queue : {messages_ready}"
+                    error += f"\nJobs running : {messages_unacked}"
                     error += (
                         '\nThe last job running in Queue "%s" for %.2f-hours.\n'
                         % (queue_name, delta / 3600.0)
                     )
-                    error += "job_id: %s\n" % latest_job["job_id"]
+                    error += f"job_id: {latest_job['job_id']}\n"
                     error += (
-                        "time_queued: %s\n"
-                        % latest_job["job"]["job_info"]["time_queued"]
+                        f"time_queued: {latest_job['job']['job_info']['time_queued']}\n"
                     )
                     error += (
-                        "time_started: %s\n"
-                        % latest_job["job"]["job_info"]["time_start"]
+                        f"time_started: {latest_job['job']['job_info']['time_start']}\n"
                     )
                     color = "#f23e26"
                 else:

@@ -13,9 +13,9 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import logging
 import time
 from threading import Thread
-import logging
 
 logger = logging.getLogger()
 
@@ -102,7 +102,7 @@ class AbstractInterruptableThread(Thread):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug("=> Thread interrupted. %s" % (str(e)))
+            logger.debug(f"=> Thread interrupted. {str(e)}")
 
             # raised when user presses CTRL-C
             self.stop()
@@ -131,7 +131,7 @@ class AbstractInterruptableThread(Thread):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug("=> Sleep interrupted. %s" % (str(e)))
+            logger.debug(f"=> Sleep interrupted. {str(e)}")
 
             # raised when user presses CTRL-C
             self.stop()

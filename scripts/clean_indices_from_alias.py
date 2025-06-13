@@ -2,9 +2,9 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import sys
 import json
 import logging
+import sys
 
 from hysds.es_util import get_mozart_es
 
@@ -23,7 +23,9 @@ def delete_job_status(alias):
     if res.get("status") == 404:
         logging.info(f"404 Client Error: Not Found for querying for alias={alias}")
     else:
-        logging.info(f"Found indices associated with alias {alias}:\n{json.dumps(res, indent=2)}")
+        logging.info(
+            f"Found indices associated with alias {alias}:\n{json.dumps(res, indent=2)}"
+        )
         for index in res.keys():
             logging.info(f"Deleting from Mozart ES: {index}")
             mozart_es.es.indices.delete(index=index)

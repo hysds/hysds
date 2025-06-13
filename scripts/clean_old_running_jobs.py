@@ -2,12 +2,13 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import json
 import os
 import sys
-import requests
-import json
-from subprocess import Popen, PIPE
 from pprint import pprint
+from subprocess import PIPE, Popen
+
+import requests
 
 from hysds.celery import app
 
@@ -45,7 +46,7 @@ def clean(es_url, start_time):
         },
     }
     r = requests.post(
-        "{}/{}/_search?search_type=scan&scroll=10m&size=100".format(es_url, idx),
+        f"{es_url}/{idx}/_search?search_type=scan&scroll=10m&size=100",
         data=json.dumps(query),
     )
     r.raise_for_status()
@@ -54,7 +55,7 @@ def clean(es_url, start_time):
     scroll_id = scan_result["_scroll_id"]
     started_jobs = []
     while True:
-        r = requests.post("%s/_search/scroll?scroll=10m" % es_url, data=scroll_id)
+        r = requests.post(f"{es_url}/_search/scroll?scroll=10m", data=scroll_id)
         res = r.json()
         scroll_id = res["_scroll_id"]
         if len(res["hits"]["hits"]) == 0:
@@ -72,10 +73,10 @@ def clean(es_url, start_time):
     # loop and check task info
     for job in started_jobs:
         # print job
-        r = requests.delete("{}/{}/{}/{}".format(es_url, idx, doctype, job["task_id"]))
+        r = requests.delete(f"{es_url}/{idx}/{doctype}/{job['task_id']}")
         r.raise_for_status()
         res = r.json()
-        print("Cleaned out job {} for host {}.".format(job["id"], job["execute_node"]))
+        print(f"Cleaned out job {job['id']} for host {job['execute_node']}.")
 
 
 if __name__ == "__main__":

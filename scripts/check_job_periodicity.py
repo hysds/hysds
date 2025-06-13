@@ -7,25 +7,27 @@ from future import standard_library
 
 standard_library.install_aliases()
 
-import os
-import getpass
-import requests
-import json
-import socket
-import logging
 import argparse
+import getpass
+import json
+import logging
+import os
+import socket
 from datetime import datetime
-from smtplib import SMTP
+from email.header import Header
 
 # Import the email modules we'll need
 from email.message import EmailMessage
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email.header import Header
-from email.utils import parseaddr, formataddr, COMMASPACE, formatdate
-from hysds.celery import app
+from email.utils import COMMASPACE, formataddr, formatdate, parseaddr
+from smtplib import SMTP
+
+import requests
+
 import hysds.es_util
+from hysds.celery import app
 
 log_format = "[%(asctime)s: %(levelname)s/%(name)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -142,12 +144,12 @@ def send_email(sender, cc_recipients, bcc_recipients, subject, body, attachments
             part = MIMEBase("application", "octet-stream")
             part.set_payload(attachments[fname])
             email.encoders.encode_base64(part)
-            part.add_header("Content-Disposition", 'attachment; filename="%s"' % fname)
+            part.add_header("Content-Disposition", f'attachment; filename="{fname}"')
             msg.attach(part)
 
     # Send the message via SMTP to docker host
     smtp_url = "smtp://127.0.0.1:25"
-    utils.get_logger(__file__).debug("smtp_url : %s" % smtp_url)
+    utils.get_logger(__file__).debug(f"smtp_url : {smtp_url}")
     smtp = SMTP("127.0.0.1")
     smtp.sendmail(sender, recipients, msg.as_string())
     smtp.quit()
@@ -179,7 +181,7 @@ def do_job_query(job_type, job_status):
         ],
         "size": 1,
     }
-    logging.info("query: %s" % json.dumps(query, indent=2, sort_keys=True))
+    logging.info(f"query: {json.dumps(query, indent=2, sort_keys=True)}")
 
     # query
     ES = es_util.get_mozart_es()
@@ -193,11 +195,11 @@ def send_email_notification(emails, job_type, text, attachments=[]):
 
     cc_recipients = [i.strip() for i in emails.split(",")]
     bcc_recipients = []
-    subject = "[job_periodicity_watchdog] %s" % job_type
+    subject = f"[job_periodicity_watchdog] {job_type}"
     body = text
     attachments = None
     send_email(
-        "{}@{}".format(getpass.getuser(), get_hostname()),
+        f"{getpass.getuser()}@{get_hostname()}",
         cc_recipients,
         bcc_recipients,
         subject,
@@ -209,38 +211,33 @@ def send_email_notification(emails, job_type, text, attachments=[]):
 def check_failed_job(job_type, periodicity, error, slack_url=None, email=None):
     """Check that if any job of  job type Failed within the expected periodicity."""
 
-    logging.info("job_type: %s" % job_type)
-    logging.info("periodicity: %s" % periodicity)
+    logging.info(f"job_type: {job_type}")
+    logging.info(f"periodicity: {periodicity}")
 
     # build query
     result = do_job_query(job_type, "job-failed")
     count = result["hits"]["total"]
     if count == 0:
-        error += "\n\nNo Failed jobs found for job type %s." % job_type
+        error += f"\n\nNo Failed jobs found for job type {job_type}."
     else:
         latest_job = result["hits"]["hits"][0]["_source"]
-        logging.info(
-            "latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True)
-        )
+        logging.info(f"latest_job: {json.dumps(latest_job, indent=2, sort_keys=True)}")
         end_dt = datetime.strptime(
             latest_job["job"]["job_info"]["time_end"], "%Y-%m-%dT%H:%M:%S.%fZ"
         )
         now = datetime.utcnow()
         delta = (now - end_dt).total_seconds()
-        logging.info("Failed Job delta: %s" % delta)
-        error += "\nThe last failed job of type {} was {:.2f}-hours ago:\n".format(
-            job_type,
-            delta / 3600.0,
-        )
-        error += "\njob_id: %s\n" % latest_job["job_id"]
+        logging.info(f"Failed Job delta: {delta}")
+        error += f"\nThe last failed job of type {job_type} was {delta / 3600.0:.2f}-hours ago:\n"
+        error += f"\njob_id: {latest_job['job_id']}\n"
         # error += "payload_id: %s\n" % latest_job['payload_id']
         # error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
-        error += "time_start: %s\n" % latest_job["job"]["job_info"]["time_start"]
-        error += "time_end: %s\n" % latest_job["job"]["job_info"]["time_end"]
-        error += "Error: %s\n" % latest_job["error"]
-        error += "Tracebak: %s\n" % latest_job["traceback"]
+        error += f"time_start: {latest_job['job']['job_info']['time_start']}\n"
+        error += f"time_end: {latest_job['job']['job_info']['time_end']}\n"
+        error += f"Error: {latest_job['error']}\n"
+        error += f"Tracebak: {latest_job['traceback']}\n"
 
-    subject = "\nJob Status checking for job type %s:\n\n" % job_type
+    subject = f"\nJob Status checking for job type {job_type}:\n\n"
 
     # send notification via slack
     if slack_url:
@@ -256,19 +253,17 @@ def check_failed_job(job_type, periodicity, error, slack_url=None, email=None):
 def check_job_execution(job_type, periodicity=0, slack_url=None, email=None):
     """Check that job type ran successfully within the expected periodicity."""
 
-    logging.info("job_type: %s" % job_type)
-    logging.info("Initial periodicity: %s" % periodicity)
+    logging.info(f"job_type: {job_type}")
+    logging.info(f"Initial periodicity: {periodicity}")
 
     # build query
     result = do_job_query(job_type, "job-completed")
     count = result["hits"]["total"]
     if count == 0:
-        error = "No Successfully Completed jobs found for job type %s!!\n." % job_type
+        error = f"No Successfully Completed jobs found for job type {job_type}!!\n."
     else:
         latest_job = result["hits"]["hits"][0]["_source"]
-        logging.info(
-            "latest_job: %s" % json.dumps(latest_job, indent=2, sort_keys=True)
-        )
+        logging.info(f"latest_job: {json.dumps(latest_job, indent=2, sort_keys=True)}")
         end_dt = datetime.strptime(
             latest_job["job"]["job_info"]["time_end"], "%Y-%m-%dT%H:%M:%S.%fZ"
         )
@@ -277,19 +272,19 @@ def check_job_execution(job_type, periodicity=0, slack_url=None, email=None):
         if "time_limit" in latest_job["job"]["job_info"]:
             logging.info("Using job time limit as periodicity")
             periodicity = latest_job["job"]["job_info"]["time_limit"]
-        logging.info("periodicity: %s" % periodicity)
-        logging.info("Successful Job delta: %s" % delta)
+        logging.info(f"periodicity: {periodicity}")
+        logging.info(f"Successful Job delta: {delta}")
         if delta > periodicity:
             error = (
                 '\nThere has not been a successfully completed job type "%s" for more than %.2f-hours.\n'
                 % (job_type, delta / 3600.0)
             )
             error += "The last successfully completed job:\n"
-            error += "job_id: %s\n" % latest_job["job_id"]
+            error += f"job_id: {latest_job['job_id']}\n"
             # error += "payload_id: %s\n" % latest_job['payload_id']
             # error += "time_queued: %s\n" % latest_job['job']['job_info']['time_queued']
             # error += "time_start: %s\n" % latest_job['job']['job_info']['time_start']
-            error += "time_end: %s\n" % latest_job["job"]["job_info"]["time_end"]
+            error += f"time_end: {latest_job['job']['job_info']['time_end']}\n"
             color = "#f23e26"
         else:
             return

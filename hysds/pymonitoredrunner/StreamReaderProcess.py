@@ -4,10 +4,11 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import logging
+
 from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
     AbstractInterruptableProcess,
 )
-import logging
 
 logger = logging.getLogger()
 

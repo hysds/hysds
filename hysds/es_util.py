@@ -1,6 +1,6 @@
 import boto3
-from opensearchpy import AWSV4SignerAuth
 from elasticsearch import RequestsHttpConnection as RequestsHttpConnectionES
+from opensearchpy import AWSV4SignerAuth
 from opensearchpy import RequestsHttpConnection as RequestsHttpConnectionOS
 
 from hysds.celery import app

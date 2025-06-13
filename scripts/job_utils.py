@@ -2,17 +2,17 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import json
+import logging
 import os
 import sys
-import json
 import time
 import traceback
-import logging
 from datetime import datetime
 
-from hysds.utils import parse_iso8601
-from hysds.celery import app
 import hysds.es_util as es_util
+from hysds.celery import app
+from hysds.utils import parse_iso8601
 
 
 def get_timedout_query(timeout, status, source_data):
@@ -23,7 +23,7 @@ def get_timedout_query(timeout, status, source_data):
             "bool": {
                 "must": [
                     {"terms": {"status": status}},
-                    {"range": {"@timestamp": {"lt": "now-%ds" % timeout}}},
+                    {"range": {"@timestamp": {"lt": f"now-{timeout}s"}}},
                 ]
             }
         },

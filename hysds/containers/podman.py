@@ -1,9 +1,10 @@
-import backoff
 import os
-from subprocess import check_output, Popen, PIPE
+from subprocess import PIPE, Popen, check_output
 
-from hysds.containers.base import Base
+import backoff
+
 from hysds.celery import app
+from hysds.containers.base import Base
 from hysds.log_utils import logger
 
 
@@ -14,24 +15,19 @@ class Podman(Base):
         self._uid = os.environ.get("HOST_UID", self._uid)
         self.podman_sock = f"/run/user/{self._uid}/podman/podman.sock"
 
-        cfg = app.conf.get('PODMAN_CFG', {})
+        cfg = app.conf.get("PODMAN_CFG", {})
         self._environment = cfg.get("environment", [])
         self._set_uid_gid = cfg.get("set_uid_gid", False)
         self._set_passwd_entry = cfg.get("set_passwd_entry", False)
-        self._verdi_home = app.conf.get('VERDI_HOME', '/home/ops')
-        self._verdi_shell = app.conf.get('VERDI_SHELL', '/bin/bash')
+        self._verdi_home = app.conf.get("VERDI_HOME", "/home/ops")
+        self._verdi_shell = app.conf.get("VERDI_SHELL", "/bin/bash")
         self._cmd_base = cfg.get("cmd_base", {})
 
     def set_passwd_entry(self, bool_value):
         self._set_passwd_entry = bool_value
 
     def __create_podman_socket_cmd(self):
-        podman_socket_cmd = [
-            "podman",
-            "--remote",
-            "--url",
-            f"unix:{self.podman_sock}"
-        ]
+        podman_socket_cmd = ["podman", "--remote", "--url", f"unix:{self.podman_sock}"]
         return podman_socket_cmd
 
     def inspect_image(self, image):
@@ -79,7 +75,7 @@ class Podman(Base):
         :return: Popen object: https://docs.python.org/3/library/subprocess.html#popen-objects
         """
         cmd = self.__create_podman_socket_cmd()
-        cmd.extend([ "load", "-i", image_file])
+        cmd.extend(["load", "-i", image_file])
         return Popen(cmd, stderr=PIPE, stdout=PIPE)
 
     def create_base_cmd(self, params):
@@ -90,25 +86,31 @@ class Podman(Base):
         :return: List[str]
         """
         podman_cmd_base = self.__create_podman_socket_cmd()
-        podman_cmd_base.extend([
-            "run",
-            "--init",
-            "--rm",
-        ])
+        podman_cmd_base.extend(
+            [
+                "run",
+                "--init",
+                "--rm",
+            ]
+        )
 
         # Persist any environment variables defined in the celery config
         for env_var in self._environment:
             if env_var in os.environ:
                 podman_cmd_base.append(f"-e {env_var}={os.environ.get(env_var)}")
             else:
-                logger.warning(f"{env_var} does not exist. Won't include in podman command.")
+                logger.warning(
+                    f"{env_var} does not exist. Won't include in podman command."
+                )
         # set the -u if set
         if self._set_uid_gid is True:
             podman_cmd_base.extend(["-u", f"{params['uid']}:{params['gid']}"])
 
         # set the --passwd-entry if set
         if self._set_passwd_entry:
-            podman_cmd_base.append(f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{self._verdi_home}:{self._verdi_shell}")
+            podman_cmd_base.append(
+                f"--passwd-entry={os.environ.get('HOST_USER', 'ops')}:*:{params['uid']}:{params['gid']}::{self._verdi_home}:{self._verdi_shell}"
+            )
 
         # add some base runtime options as defined in the celeryconfig
         for k, v in self._cmd_base.items():
@@ -123,15 +125,24 @@ class Podman(Base):
 
         # add volumes
         for k, v in params["volumes"]:
-            podman_cmd_base.extend(["-v", "{}:{}".format(k, v)])
+            podman_cmd_base.extend(["-v", f"{k}:{v}"])
 
         # set work directory and image
         podman_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])
 
         return podman_cmd_base
 
-    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_verdi_home=None):
+    def create_container_params(
+        self,
+        image_name,
+        image_url,
+        image_mappings,
+        root_work_dir,
+        job_dir,
+        runtime_options=None,
+        verdi_home=None,
+        host_verdi_home=None,
+    ):
         """
         Builds podman params
         :param image_name:
@@ -144,8 +155,22 @@ class Podman(Base):
         :param host_verdi_home: The home dir on the host
         :return:
         """
-        params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                                 runtime_options, verdi_home, host_verdi_home)
-        params['podman_sock'] = self.podman_sock
-        params['volumes'].insert(0, (self.podman_sock, self.podman_sock, ))
+        params = super().create_container_params(
+            image_name,
+            image_url,
+            image_mappings,
+            root_work_dir,
+            job_dir,
+            runtime_options,
+            verdi_home,
+            host_verdi_home,
+        )
+        params["podman_sock"] = self.podman_sock
+        params["volumes"].insert(
+            0,
+            (
+                self.podman_sock,
+                self.podman_sock,
+            ),
+        )
         return params

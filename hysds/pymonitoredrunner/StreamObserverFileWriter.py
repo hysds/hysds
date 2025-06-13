@@ -13,8 +13,8 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import os
 import logging
+import os
 
 logger = logging.getLogger()
 
@@ -47,7 +47,7 @@ class StreamObserverFileWriter:
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'filepath: "%s"' % (self._filepath)
+        return f'filepath: "{self._filepath}"'
 
     # end def
 
@@ -61,9 +61,7 @@ class StreamObserverFileWriter:
             # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
             self._file.flush()
         except OSError as e:
-            logger.warning(
-                'Unable to write output to "{}": {}'.format(self._filepath, str(e))
-            )
+            logger.warning(f'Unable to write output to "{self._filepath}": {str(e)}')
 
     # end def
 

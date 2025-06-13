@@ -1,26 +1,24 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import copy
+import json
 import os
 import re
-import json
-import copy
 import socket
-import msgpack
 import traceback
 import types
-import backoff
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import uuid4
-from redis import BlockingConnectionPool, StrictRedis, RedisError
 
+import backoff
+import msgpack
 from celery.utils.log import get_task_logger
+from prov_es.model import ProvEsDocument, get_uuid
+from redis import BlockingConnectionPool, RedisError, StrictRedis
 
 import hysds
 from hysds.celery import app
-
-from prov_es.model import get_uuid, ProvEsDocument
-
 
 # logger
 logger = get_task_logger(__name__)
@@ -224,7 +222,7 @@ def log_job_status(job):
     job["resource"] = "job"
     job["type"] = job.get("job", {}).get("type", "unknown")
     job["@version"] = "1"
-    job["@timestamp"] = "%sZ" % datetime.now(UTC).isoformat()
+    job["@timestamp"] = f"{datetime.now(UTC).isoformat()}Z"
     if "tag" in job.get("job", {}):
         tags = job.setdefault("tags", [])
         if isinstance(tags, str):
@@ -240,7 +238,7 @@ def log_job_status(job):
         job["status"],
     )
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
-    logger.info("job_status_json:%s" % json.dumps(job))
+    logger.info(f"job_status_json:{json.dumps(job)}")
 
 
 @backoff.on_exception(
@@ -268,7 +266,7 @@ def log_job_info(job):
     job_info = {
         "type": "job_info",
         "@version": "1",
-        "@timestamp": "%sZ" % datetime.now(UTC).isoformat(),
+        "@timestamp": f"{datetime.now(UTC).isoformat()}Z",
         "job": filtered_info,
         "job_type": job["type"],
     }
@@ -276,7 +274,7 @@ def log_job_info(job):
     # send update to redis
     r = StrictRedis(connection_pool=JOB_INFO_POOL)
     r.rpush(app.conf.REDIS_JOB_INFO_KEY, msgpack.dumps(job_info))
-    logger.info("job_info_json:%s" % json.dumps(job_info))
+    logger.info(f"job_info_json:{json.dumps(job_info)}")
 
 
 @backoff.on_exception(
@@ -301,7 +299,7 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
         "resource": "event",
         "type": event_type,
         "status": event_status,
-        "@timestamp": "%sZ" % datetime.now(UTC).isoformat(),
+        "@timestamp": f"{datetime.now(UTC).isoformat()}Z",
         "hostname": hostname,
         "uuid": uuid,
         "tags": tags,
@@ -312,7 +310,7 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
     # send update to redis
     r = StrictRedis(connection_pool=EVENT_STATUS_POOL)
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
-    logger.info("hysds.custom_event:%s" % json.dumps(info))
+    logger.info(f"hysds.custom_event:{json.dumps(info)}")
     return uuid
 
 
@@ -321,8 +319,8 @@ def log_prov_es(job, prov_es_info, prov_es_file):
     attributes that only the worker has access to (e.g. PID)."""
 
     # create PROV-ES doc to generate attributes that only verdi know
-    ps_id = "hysds:%s" % get_uuid(job["job_id"])
-    bundle_id = "hysds:%s" % get_uuid("bundle-%s" % job["job_id"])
+    ps_id = f"hysds:{get_uuid(job['job_id'])}"
+    bundle_id = f"hysds:{get_uuid(f'bundle-{job["job_id"]}')}"
     doc = ProvEsDocument()
 
     # get bundle
@@ -330,12 +328,8 @@ def log_prov_es(job, prov_es_info, prov_es_file):
     bndl = None
 
     # create sofware agent
-    sa_label = "hysds:pge_wrapper/%s/%d/%s" % (
-        job["job_info"]["execute_node"],
-        job["job_info"]["pid"],
-        datetime.now(UTC).isoformat(),
-    )
-    sa_id = "hysds:%s" % get_uuid(sa_label)
+    sa_label = f"hysds:pge_wrapper/{job['job_info']['execute_node']}/{job['job_info']['pid']}/{datetime.now(UTC).isoformat()}"
+    sa_id = f"hysds:{get_uuid(sa_label)}"
     doc.softwareAgent(
         sa_id,
         str(job["job_info"]["pid"]),
@@ -356,7 +350,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
         [],
         [],
         bundle=bndl,
-        prov_type="hysds:%s" % job["type"],
+        prov_type=f"hysds:{job['type']}",
     )
 
     # get json
@@ -495,8 +489,8 @@ def log_publish_prov_es(
 
     # add input entity
     execute_node = socket.getfqdn()
-    prod_url = "file://{}{}".format(execute_node, prod_path)
-    input_id = "hysds:%s" % get_uuid(prod_url)
+    prod_url = f"file://{execute_node}{prod_path}"
+    input_id = f"hysds:{get_uuid(prod_url)}"
     input_ent = doc.granule(
         input_id,
         None,
@@ -510,7 +504,7 @@ def log_publish_prov_es(
     )
 
     # add output entity
-    output_id = "hysds:%s" % get_uuid(pub_urls[0])
+    output_id = f"hysds:{get_uuid(pub_urls[0])}"
     output_ent = doc.product(
         output_id,
         None,
@@ -526,8 +520,8 @@ def log_publish_prov_es(
     # software and algorithm
     algorithm = "eos:product_publishing"
     software_version = hysds.__version__
-    software_title = "{} v{}".format(hysds.__description__, software_version)
-    software = "eos:HySDS-%s" % software_version
+    software_title = f"{hysds.__description__} v{software_version}"
+    software = f"eos:HySDS-{software_version}"
     software_location = hysds.__url__
     doc.software(
         software,
@@ -540,20 +534,18 @@ def log_publish_prov_es(
 
     # create sofware agent
     pid = os.getpid()
-    sa_label = "hysds:publish_dataset/%s/%d/%s" % (
-        execute_node,
-        pid,
-        prod_metrics["time_start"],
+    sa_label = (
+        f"hysds:publish_dataset/{execute_node}/{pid}/{prod_metrics['time_start']}"
     )
-    sa_id = "hysds:%s" % get_uuid(sa_label)
+    sa_id = f"hysds:{get_uuid(sa_label)}"
     doc.softwareAgent(
         sa_id, str(pid), execute_node, role="invoked", label=sa_label, bundle=bndl
     )
 
     # create processStep
-    job_id = "publish_dataset-%s" % os.path.basename(prod_path)
+    job_id = f"publish_dataset-{os.path.basename(prod_path)}"
     doc.processStep(
-        "hysds:%s" % get_uuid(job_id),
+        f"hysds:{get_uuid(job_id)}",
         prod_metrics["time_start"],
         prod_metrics["time_end"],
         [software],

@@ -47,7 +47,7 @@ class StreamSubject(AbstractSubject):
         @return: the string representation of this object.
         @rtype: str
         """
-        return "%s" % (AbstractSubject.__str__(self))
+        return f"{AbstractSubject.__str__(self)}"
 
     # end def
 

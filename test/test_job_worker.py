@@ -5,11 +5,12 @@ try:
     import unittest.mock as umock
 except ImportError:
     from unittest import mock as umock
+
+import logging
+import shutil
+import tempfile
 from unittest import TestCase
 from unittest.mock import patch
-import logging
-import tempfile
-import shutil
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported

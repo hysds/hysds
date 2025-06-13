@@ -2,13 +2,12 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import sys
 import argparse
 import json
+import sys
 
-from hysds.job_worker import run_job
 from hysds.celery import app
-
+from hysds.job_worker import run_job
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run job.")

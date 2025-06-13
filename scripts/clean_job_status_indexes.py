@@ -2,11 +2,11 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import sys
-import requests
 import json
 import logging
+import sys
 
+import requests
 
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)

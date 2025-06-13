@@ -2,15 +2,14 @@
 from future import standard_library
 
 standard_library.install_aliases()
-import os
 # import sys
 import argparse
 import logging
+import os
 
 # import hysds.orchestrator
 from hysds.celery import app
 from hysds.dataset_ingest import ingest
-
 
 logging.basicConfig(level=logging.INFO)
 

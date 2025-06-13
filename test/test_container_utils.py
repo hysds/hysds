@@ -1,19 +1,19 @@
-import os
-import sys
 import json
+import os
 import re
+import sys
 
 try:
     import unittest.mock as umock
 except ImportError:
     from unittest import mock as umock
-import unittest
-import logging
-import tempfile
-import shutil
-import glob
-from contextlib import nullcontext
 
+import glob
+import logging
+import shutil
+import tempfile
+import unittest
+from contextlib import nullcontext
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
@@ -115,9 +115,7 @@ class TestContainerUtils(unittest.TestCase):
                 runtime_options,
             )
         logging.info(
-            "docker_params: {}".format(
-                json.dumps(docker_params, indent=2, sort_keys=True)
-            )
+            f"docker_params: {json.dumps(docker_params, indent=2, sort_keys=True)}"
         )
 
         return docker_params

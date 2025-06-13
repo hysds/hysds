@@ -2,43 +2,43 @@ from future import standard_library
 
 standard_library.install_aliases()
 
-import os
-import sys
-import re
-import json
-import time
-import socket
-import uuid
-import pprint
 import copy
+import json
+import os
+import pprint
+import re
+import socket
+import sys
+import time
 import traceback
-import backoff
-from importlib import reload
-from datetime import datetime, UTC
-from string import Template
-from inspect import getfullargspec as getargspec
-from celery import uuid
+import uuid
+from datetime import UTC, datetime
 from functools import lru_cache
+from importlib import reload
+from inspect import getfullargspec as getargspec
+from string import Template
+
+import backoff
+from celery import uuid
 
 from hysds.celery import app
+from hysds.job_worker import run_job
 from hysds.log_utils import (
-    logger,
-    log_job_status,
     backoff_max_tries,
     backoff_max_value,
     ensure_hard_time_limit_gap,
-)
-from hysds.job_worker import run_job
-from hysds.utils import (
-    error_handler,
-    get_short_error,
-    get_payload_hash,
-    query_dedup_job,
-    NoDedupJobFoundException
+    log_job_status,
+    logger,
 )
 from hysds.user_rules_dataset import queue_dataset_evaluation
-
 from hysds.user_rules_job import queue_finished_job
+from hysds.utils import (
+    NoDedupJobFoundException,
+    error_handler,
+    get_payload_hash,
+    get_short_error,
+    query_dedup_job,
+)
 
 # error template
 ERROR_TMPL = Template("Error queueing job from $orch_queue: $error")
@@ -56,25 +56,11 @@ def get_timestamp(fraction=True):
     (year, month, day, hh, mm, ss, wd, y, z) = time.gmtime()
     d = datetime.now(UTC)
     if fraction:
-        s = "%04d%02d%02dT%02d%02d%02d.%dZ" % (
-            d.year,
-            d.month,
-            d.day,
-            d.hour,
-            d.minute,
-            d.second,
-            d.microsecond,
-        )
+        s = f"{d.year:04d}{d.month:02d}{d.day:02d}T{d.hour:02d}{d.minute:02d}{d.second:02d}.{d.microsecond}Z"
     else:
-        s = "%04d%02d%02dT%02d%02d%02dZ" % (
-            d.year,
-            d.month,
-            d.day,
-            d.hour,
-            d.minute,
-            d.second,
-        )
+        s = f"{d.year:04d}{d.month:02d}{d.day:02d}T{d.hour:02d}{d.minute:02d}{d.second:02d}Z"
     return s
+
 
 @lru_cache(maxsize=32)
 def get_function(func_str, add_to_sys_path=None):
@@ -87,25 +73,25 @@ def get_function(func_str, add_to_sys_path=None):
     if libmatch:
         import_lib = libmatch.group(1)
         if add_to_sys_path:
-            exec("import sys; sys.path.insert(1,'%s')" % add_to_sys_path)
-        exec("import %s" % import_lib)
-        exec("reload(%s)" % import_lib)
+            exec(f"import sys; sys.path.insert(1,'{add_to_sys_path}')")
+        exec(f"import {import_lib}")
+        exec(f"reload({import_lib})")
 
     # check there are args
     args_match = re.search(r"\((\w+)\..+\)$", func_str)
     if args_match:
         import_lib2 = args_match.group(1)
         if add_to_sys_path:
-            exec("import sys; sys.path.insert(1,'%s')" % add_to_sys_path)
-        exec("import %s" % import_lib2)
-        exec("reload(%s)" % import_lib2)
+            exec(f"import sys; sys.path.insert(1,'{add_to_sys_path}')")
+        exec(f"import {import_lib2}")
+        exec(f"reload({import_lib2})")
 
     # return function
     return eval(func_str)
 
 
 def get_job_id(job_name):
-    return "{}-{}".format(job_name, get_timestamp())
+    return f"{job_name}-{get_timestamp()}"
 
 
 class OrchestratorExecutionError(Exception):
@@ -193,7 +179,7 @@ def submit_job(j):
 
     # logger.info("HYSDS_ORCHESTRATOR_CFG:%s" % orch_cfg_file)
     if not os.path.exists(orch_cfg_file):
-        error = "Orchestrator configuration %s doesn't exist." % orch_cfg_file
+        error = f"Orchestrator configuration {orch_cfg_file} doesn't exist."
         error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
         job_status_json = {
             "uuid": job["job_id"],
@@ -290,10 +276,7 @@ def submit_job(j):
             logger.info(str(e))
             dj = None
         if isinstance(dj, dict):
-            dedup_msg = "orchestrator found duplicate job {} with status {}".format(
-                dj["_id"],
-                dj["status"],
-            )
+            dedup_msg = f"orchestrator found duplicate job {dj['_id']} with status {dj['status']}"
             job_status_json = {
                 "uuid": job["job_id"],
                 "job_id": job["job_id"],
@@ -340,7 +323,7 @@ def submit_job(j):
                 job = func(payload)
         except Exception as e:
             error = (
-                "Job creator function %s failed to generate job JSON." % jc["function"]
+                f"Job creator function {jc['function']} failed to generate job JSON."
             )
             error_info = ERROR_TMPL.substitute(orch_queue=orch_queue, error=error)
             job_status_json = {
@@ -422,11 +405,13 @@ def submit_job(j):
 
             try:
                 # submit job
-                res = do_run_job(job_json,
-                                 queue=queue,
-                                 time_limit=time_limit,
-                                 soft_time_limit=soft_time_limit,
-                                 priority=priority)
+                res = do_run_job(
+                    job_json,
+                    queue=queue,
+                    time_limit=time_limit,
+                    soft_time_limit=soft_time_limit,
+                    priority=priority,
+                )
                 # log queued status
                 job_status_json = {
                     "uuid": job_json["task_id"],

@@ -2,38 +2,36 @@ from future import standard_library
 
 standard_library.install_aliases()
 
-import os
-import re
-import json
-import requests
-import math
-import backoff
-import hashlib
 import copy
 import errno
+import hashlib
+import json
+import logging
+import math
+import os
+import re
 import shutil
 import traceback
-import logging
-
-from datetime import datetime, UTC
+from bisect import insort
+from datetime import UTC, datetime
+from importlib import import_module
+from io import StringIO
 from subprocess import check_output
 from urllib.request import urlopen
 
-from io import StringIO
-from lxml.etree import XMLParser, parse, tostring
-from importlib import import_module
-from celery.result import AsyncResult
+import backoff
+import osaka.main
+import requests
 from atomicwrites import atomic_write
-from bisect import insort
+from celery.result import AsyncResult
+from lxml.etree import XMLParser, parse, tostring
 
-from hysds.log_utils import logger, payload_hash_exists
 from hysds.celery import app
 from hysds.es_util import get_grq_es, get_mozart_es
-
-import osaka.main
+from hysds.log_utils import logger, payload_hash_exists
 
 # disk usage setting converter
-DU_CALC = {"GB": 1024 ** 3, "MB": 1024 ** 2, "KB": 1024}
+DU_CALC = {"GB": 1024**3, "MB": 1024**2, "KB": 1024}
 
 
 class NoDedupJobFoundException(Exception):
@@ -48,7 +46,7 @@ def get_module(m):
     try:
         return import_module(m)
     except ImportError:
-        logger.error('Failed to import module "%s".' % m)
+        logger.error(f'Failed to import module "{m}".')
         raise
 
 
@@ -61,13 +59,15 @@ def get_func(f):
         try:
             return getattr(mod, func_name)
         except AttributeError:
-            logger.error('Failed to get function "{}" from module "{}".'.format(func_name, mod_name))
+            logger.error(
+                f'Failed to get function "{func_name}" from module "{mod_name}".'
+            )
             raise
     else:
         try:
             return eval(f)
         except NameError:
-            logger.error('Failed to get function "%s".' % (f))
+            logger.error(f'Failed to get function "{f}".')
             raise
 
 
@@ -77,7 +77,7 @@ def error_handler(uuid):
 
     result = AsyncResult(uuid)
     exc = result.get(propagate=False)
-    logger.info("Task {} raised exception: {}\n{}".format(uuid, exc, result.traceback))
+    logger.info(f"Task {uuid} raised exception: {exc}\n{result.traceback}")
 
 
 def get_download_params(url):
@@ -102,9 +102,7 @@ def get_download_params(url):
                 match = regex.search(url)
                 if match:
                     logger.info(
-                        "{} matched '{}' for profile {}.".format(
-                            url, bucket_pattern, prof["profile"]
-                        )
+                        f"{url} matched '{bucket_pattern}' for profile {prof['profile']}."
                     )
                     params["profile_name"] = prof["profile"]
                     break
@@ -125,9 +123,15 @@ def download_file(url, path, cache=False, root_work_dir=None):
     if cache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
         if root_work_dir:
-            hash_dir = os.path.join(os.path.abspath(root_work_dir), "cache", *url_hash[0:4])
+            hash_dir = os.path.join(
+                os.path.abspath(root_work_dir), "cache", *url_hash[0:4]
+            )
         else:
-            hash_dir = os.path.join(os.environ.get("HYSDS_ROOT_WORK_DIR", app.conf.ROOT_WORK_DIR), "cache", *url_hash[0:4])
+            hash_dir = os.path.join(
+                os.environ.get("HYSDS_ROOT_WORK_DIR", app.conf.ROOT_WORK_DIR),
+                "cache",
+                *url_hash[0:4],
+            )
         cache_dir = os.path.join(hash_dir, url_hash)
         makedirs(cache_dir)
         signal_file = os.path.join(cache_dir, ".localized")
@@ -136,18 +140,16 @@ def download_file(url, path, cache=False, root_work_dir=None):
         else:
             logger.info(f"cache miss for {url}")
             try:
-                logger.info("downloading to cache %s" % url)
+                logger.info(f"downloading to cache {url}")
                 osaka.main.get(url, cache_dir, params=params)
             except Exception as e:
                 shutil.rmtree(cache_dir)
                 tb = traceback.format_exc()
                 raise RuntimeError(
-                    "Failed to download {} to cache {}: {}\n{}".format(
-                        url, cache_dir, str(e), tb
-                    )
+                    f"Failed to download {url} to cache {cache_dir}: {str(e)}\n{tb}"
                 )
             with atomic_write(signal_file, overwrite=True) as f:
-                f.write("%sZ\n" % datetime.now(UTC).isoformat())
+                f.write(f"{datetime.now(UTC).isoformat()}Z\n")
         for i in os.listdir(cache_dir):
             if i == ".localized":
                 continue
@@ -167,7 +169,7 @@ def download_file(url, path, cache=False, root_work_dir=None):
                     raise
     else:
         try:
-            logger.info("downloading %s" % url)
+            logger.info(f"downloading {url}")
             return osaka.main.get(url, path, params=params)
         except Exception as e:
             logger.error(e)
@@ -217,9 +219,7 @@ def get_threshold(path, disk_usage):
             break
     if du_bytes is None:
         raise RuntimeError(
-            "Failed to determine disk usage requirements from verdi config: {}".format(
-                disk_usage
-            )
+            f"Failed to determine disk usage requirements from verdi config: {disk_usage}"
         )
     return math.ceil(float(100) / float(capacity) * du_bytes)
 
@@ -260,16 +260,18 @@ def get_disk_usage(path, follow_symlinks=True):
             st = os.lstat(effective_path)
             # For a file (or symlink resolved to a file), return tuple
             return st.st_size, st.st_blocks * 512
-        except (OSError, IOError):
+        except OSError:
             return 0 if original_path_is_actual_dir else (0, 0)
 
     # If, after potential symlink resolution, the path is a directory:
     if os.path.isdir(effective_path):
         apparent_total_bytes = 0
         total_bytes = 0
-        have = set() # To handle hard links correctly
+        have = set()  # To handle hard links correctly
 
-        for dirpath_iter, dirnames_iter, filenames_iter in os.walk(effective_path, followlinks=follow_symlinks):
+        for dirpath_iter, dirnames_iter, filenames_iter in os.walk(
+            effective_path, followlinks=follow_symlinks
+        ):
             try:
                 # Add current directory's size (metadata size)
                 st_dir = os.lstat(dirpath_iter)
@@ -284,29 +286,39 @@ def get_disk_usage(path, follow_symlinks=True):
                         # or stat (for target if following symlinks for files)
                         current_st = os.lstat(fp_iter)
                         is_link_iter = os.path.islink(fp_iter)
-                        
+
                         if is_link_iter and follow_symlinks:
                             try:
                                 target_fp_iter = os.path.realpath(fp_iter)
-                                if os.path.exists(target_fp_iter) and os.path.isfile(target_fp_iter):
-                                    current_st = os.lstat(target_fp_iter) # Use target's stat
-                                else: # Broken symlink or symlink to non-file
-                                    apparent_total_bytes += os.lstat(fp_iter).st_size # Size of the link itself
-                                    continue # No further processing for this symlink
+                                if os.path.exists(target_fp_iter) and os.path.isfile(
+                                    target_fp_iter
+                                ):
+                                    current_st = os.lstat(
+                                        target_fp_iter
+                                    )  # Use target's stat
+                                else:  # Broken symlink or symlink to non-file
+                                    apparent_total_bytes += os.lstat(
+                                        fp_iter
+                                    ).st_size  # Size of the link itself
+                                    continue  # No further processing for this symlink
                             except (OSError, RuntimeError):
-                                apparent_total_bytes += os.lstat(fp_iter).st_size # Error, count link size
+                                apparent_total_bytes += os.lstat(
+                                    fp_iter
+                                ).st_size  # Error, count link size
                                 continue
                         elif is_link_iter and not follow_symlinks:
-                            apparent_total_bytes += current_st.st_size # Size of the link itself
-                            continue # No further processing for this symlink
-                        
+                            apparent_total_bytes += (
+                                current_st.st_size
+                            )  # Size of the link itself
+                            continue  # No further processing for this symlink
+
                         # For regular files or resolved symlinks to files
                         if current_st.st_ino not in have:
                             have.add(current_st.st_ino)
                             apparent_total_bytes += current_st.st_size
                             total_bytes += current_st.st_blocks * 512
-                    except (OSError, IOError):
-                        continue # Skip files we can't access
+                    except OSError:
+                        continue  # Skip files we can't access
 
                 # If not following symlinks for os.walk, add size of symlinks to directories
                 if not follow_symlinks:
@@ -316,14 +328,14 @@ def get_disk_usage(path, follow_symlinks=True):
                             try:
                                 st_link_dir_iter = os.lstat(dp_iter)
                                 apparent_total_bytes += st_link_dir_iter.st_size
-                            except (OSError, IOError):
-                                continue # Skip symlinked dirs we can't access
-            except (OSError, IOError):
-                continue # Skip directories we can't access
+                            except OSError:
+                                continue  # Skip symlinked dirs we can't access
+            except OSError:
+                continue  # Skip directories we can't access
 
         if original_path_is_actual_dir:
             return apparent_total_bytes
-        else: # Original path was a symlink that resolved to this directory, or a file
+        else:  # Original path was a symlink that resolved to this directory, or a file
             return apparent_total_bytes, total_bytes
 
     # Fallback for anything not a file or dir (e.g. broken symlink not caught, or other types)
@@ -432,7 +444,7 @@ def get_short_error(e):
 
     e_str = str(e)
     if len(e_str) > 35:
-        return "{}.....{}".format(e_str[:20], e_str[-10:])
+        return f"{e_str[:20]}.....{e_str[-10:]}"
     else:
         return e_str
 
@@ -450,7 +462,11 @@ def get_payload_hash(payload):
 
 
 def no_dedup_job(details):
-    logger.info("Giving up querying for dedup jobs with args {args} and kwargs {kwargs}".format(**details))
+    logger.info(
+        "Giving up querying for dedup jobs with args {args} and kwargs {kwargs}".format(
+            **details
+        )
+    )
     return None
 
 
@@ -458,7 +474,11 @@ def no_dedup_job(details):
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
 @backoff.on_exception(
-    backoff.expo, NoDedupJobFoundException, max_tries=8, max_value=32, on_giveup=no_dedup_job
+    backoff.expo,
+    NoDedupJobFoundException,
+    max_tries=8,
+    max_value=32,
+    on_giveup=no_dedup_job,
 )
 def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     """
@@ -500,7 +520,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
     if filter_id is not None:
         query["query"]["bool"]["must_not"] = {"term": {"uuid": filter_id}}
 
-    logger.info("constructed query: %s" % json.dumps(query, indent=2))
+    logger.info(f"constructed query: {json.dumps(query, indent=2)}")
     mozart_es = get_mozart_es()
     j = mozart_es.search(index="job_status-current", body=query, ignore=404)
     logger.info(j)
@@ -516,17 +536,20 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
             if is_worker:
                 return None
             else:
-                raise NoDedupJobFoundException("Could not find any dedup jobs with the following query: {}".format(
-                    json.dumps(query, indent=2)))
+                raise NoDedupJobFoundException(
+                    "Could not find any dedup jobs with the following query: {}".format(
+                        json.dumps(query, indent=2)
+                    )
+                )
         elif hash_exists_in_redis is False:
             return None
         else:
-            raise RuntimeError(f"Could not determine if payload hash already exists in REDIS: {dedup_key}")
+            raise RuntimeError(
+                f"Could not determine if payload hash already exists in REDIS: {dedup_key}"
+            )
     else:
         hit = j["hits"]["hits"][0]
-        logger.info(
-            "Found duplicate job: %s" % json.dumps(hit, indent=2, sort_keys=True)
-        )
+        logger.info(f"Found duplicate job: {json.dumps(hit, indent=2, sort_keys=True)}")
         return {
             "_id": hit["_id"],
             "status": hit["_source"]["status"],
@@ -539,20 +562,16 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
 )
 def get_job_status(_id):
     """Get job status."""
-    query = {
-        "query": {
-            "bool": {
-                "must": [{"term": {"_id": _id}}]
-            }
-        }
-    }
+    query = {"query": {"bool": {"must": [{"term": {"_id": _id}}]}}}
     mozart_es = get_mozart_es()
-    res = mozart_es.search(index="job_status-current", body=query, _source_includes=["status"])
+    res = mozart_es.search(
+        index="job_status-current", body=query, _source_includes=["status"]
+    )
     if res["hits"]["total"]["value"] == 0:
-        logger.warning("job not found, _id: %s" % _id)
+        logger.warning(f"job not found, _id: {_id}")
         return None
 
-    logger.info("get_job_status result: %s" % json.dumps(res, indent=2))
+    logger.info(f"get_job_status result: {json.dumps(res, indent=2)}")
     doc = res["hits"]["hits"][0]
     return doc["_source"]["status"]
 
@@ -584,7 +603,9 @@ def dataset_exists(_id, es_index="grq"):
 
 def init_pool_logger():
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s: %(levelname)s/%(name)s] %(message)s")
+    )
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
@@ -621,7 +642,11 @@ def find_non_localized_datasets(work_dir):
     :return: List[str] - list of dataset directories
     """
     datasets_list = find_dataset_json(work_dir)
-    return [prod_dir for _, prod_dir in datasets_list if not os.path.isfile(os.path.join(prod_dir, ".localized"))]
+    return [
+        prod_dir
+        for _, prod_dir in datasets_list
+        if not os.path.isfile(os.path.join(prod_dir, ".localized"))
+    ]
 
 
 def mark_localized_datasets(job, ctx):
@@ -634,7 +659,7 @@ def mark_localized_datasets(job, ctx):
     for dataset_file, prod_dir in find_dataset_json(job_dir):
         signal_file = os.path.join(prod_dir, ".localized")
         with atomic_write(signal_file, overwrite=True) as f:
-            f.write("%sZ\n" % datetime.utcnow().isoformat())
+            f.write(f"{datetime.utcnow().isoformat()}Z\n")
 
     # signal run_job() to continue
     return True
@@ -678,7 +703,7 @@ def hashlib_mapper(algo):
     elif algo == "shake_256":
         return hashlib.shake_256()
     else:
-        raise Exception("Unsupported hashing algorithm: %s" % algo)
+        raise Exception(f"Unsupported hashing algorithm: {algo}")
 
 
 def calculate_checksum_from_localized_file(file_name, hash_algo):
@@ -707,7 +732,7 @@ def check_file_is_checksum(file_path):
     return algorithm type (md5, sha256, etc) if it file has a .<algorithm> appended
     """
     for algo in hashlib.algorithms_guaranteed:
-        checksum_file_extension = ".%s" % algo  # ex. S1W_SLC_843290304820.zip.md5
+        checksum_file_extension = f".{algo}"  # ex. S1W_SLC_843290304820.zip.md5
         if file_path.endswith(checksum_file_extension):
             return algo
     return None
@@ -736,7 +761,7 @@ def generate_list_checksum_files(job):
         path = i.get("local_path", None)
         cache = i.get("cache", True)
         if path is None:
-            path = "%s/" % job_dir
+            path = f"{job_dir}/"
         else:
             if path.startswith("/"):
                 pass
@@ -746,7 +771,9 @@ def generate_list_checksum_files(job):
             path = os.path.join(path, os.path.basename(url))
         dir_path = os.path.dirname(path)
 
-        if os.path.isdir(path):  # if path is a directory, loop through each file in directory
+        if os.path.isdir(
+            path
+        ):  # if path is a directory, loop through each file in directory
             for file in os.listdir(path):
                 full_file_path = os.path.join(path, file)
                 hash_algo = check_file_is_checksum(full_file_path)
@@ -785,7 +812,7 @@ def validate_checksum_files(job, cxt):
         if not os.path.isfile(file_path):
             # if checksum file exists but original file does not exist, we should skip it
             # ex. data_set_1.zip.md5 vs data_set_1.zip
-            logger.info("%s does not exist, skipping" % file_path)
+            logger.info(f"{file_path} does not exist, skipping")
             continue
 
         calculated_checksum = calculate_checksum_from_localized_file(file_path, algo)
@@ -819,8 +846,8 @@ def validate_index_pattern(index):
     :return: Boolean
     """
     index = index.strip()
-    if index.startswith(',') or index.endswith(','):
+    if index.startswith(",") or index.endswith(","):
         return False
-    if ''.join(set(index)) == '*':
+    if "".join(set(index)) == "*":
         return False
     return True

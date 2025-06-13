@@ -1,20 +1,21 @@
-import sys
 import json
+import sys
 
 try:
     import unittest.mock as umock
 except ImportError:
     from unittest import mock as umock
-from unittest import TestCase
+
 import logging
-import tempfile
-import shutil
 import os
+import shutil
+import tempfile
+from unittest import TestCase
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
 sys.modules["hysds.celery"] = umock.MagicMock()
-sys.modules['opensearchpy'] = umock.Mock()
+sys.modules["opensearchpy"] = umock.Mock()
 logging.basicConfig()
 
 
@@ -87,12 +88,16 @@ class TestPublishDataset(TestCase):
         self.job_dir = tempfile.mkdtemp(prefix="job-")
         logging.info(f"self.job_dir: {self.job_dir}")
 
-        self.datasets_cfg_file = os.path.join(self.job_dir, 'datasets.json')
+        self.datasets_cfg_file = os.path.join(self.job_dir, "datasets.json")
         shutil.copy(
             os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                '..', 'configs', 'datasets', 'datasets.json'),
-            self.datasets_cfg_file
+                "..",
+                "configs",
+                "datasets",
+                "datasets.json",
+            ),
+            self.datasets_cfg_file,
         )
 
         self.examples_dir = os.path.join(
@@ -100,8 +105,7 @@ class TestPublishDataset(TestCase):
         )
         self.prod_dir = os.path.join(self.job_dir, "AOI_sacramento_valley")
         shutil.copytree(
-            os.path.join(self.examples_dir, "AOI_sacramento_valley"),
-            self.prod_dir
+            os.path.join(self.examples_dir, "AOI_sacramento_valley"), self.prod_dir
         )
 
         self.job = {
@@ -114,13 +118,11 @@ class TestPublishDataset(TestCase):
                 "metrics": {
                     "product_provenance": {},
                     "products_staged": [],
-                }
+                },
             }
         }
 
-        self.metrics = {
-            "ipath": "my_project::data/area_of_interest"
-        }
+        self.metrics = {"ipath": "my_project::data/area_of_interest"}
 
         self.prod_json = {
             "id": "AOI_sacramento_valley",
@@ -135,9 +137,7 @@ class TestPublishDataset(TestCase):
             "system_version": "2.0",
             "dataset_level": "",
             "dataset_type": "",
-            "grq_index_result": {
-                "index": "grq_v01_area_of_interest"
-            }
+            "grq_index_result": {"index": "grq_v01_area_of_interest"},
         }
 
     def tearDown(self):
@@ -149,7 +149,7 @@ class TestPublishDataset(TestCase):
 
         job_context = {}
         job_context_file = os.path.join(self.job_dir, "_context.json")
-        with open(job_context_file, 'w') as f:
+        with open(job_context_file, "w") as f:
             json.dump(job_context, f, indent=2, sort_keys=True)
         self.job["job_info"]["context_file"] = job_context_file
 
@@ -161,21 +161,21 @@ class TestPublishDataset(TestCase):
 
         # assert called args
         ingest_mock.assert_called_with(
-            'AOI_sacramento_valley',
+            "AOI_sacramento_valley",
             self.datasets_cfg_file,
             umock.ANY,
             umock.ANY,
             self.prod_dir,
             self.job_dir,
-            force=False
+            force=False,
         )
 
     def test_force_ingest(self):
         import hysds.dataset_ingest
 
-        job_context = {'_force_ingest': True}
+        job_context = {"_force_ingest": True}
         job_context_file = os.path.join(self.job_dir, "_context.json")
-        with open(job_context_file, 'w') as f:
+        with open(job_context_file, "w") as f:
             json.dump(job_context, f, indent=2, sort_keys=True)
         self.job["job_info"]["context_file"] = job_context_file
 
@@ -187,11 +187,11 @@ class TestPublishDataset(TestCase):
 
         # assert that ingest function was called with force=True
         ingest_mock.assert_called_with(
-            'AOI_sacramento_valley',
+            "AOI_sacramento_valley",
             self.datasets_cfg_file,
             umock.ANY,
             umock.ANY,
             self.prod_dir,
             self.job_dir,
-            force=True
+            force=True,
         )

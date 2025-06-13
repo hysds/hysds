@@ -4,14 +4,16 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import logging
+import queue
+from multiprocessing import Event
+
+import billiard
+from billiard import JoinableQueue
+
 from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
     AbstractInterruptableProcess,
 )
-from multiprocessing import Event
-from billiard import JoinableQueue
-import billiard
-import queue
-import logging
 
 logger = logging.getLogger()
 
