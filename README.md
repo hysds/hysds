@@ -14,12 +14,51 @@ Core component for the Hybrid Science Data System
 
 ## Prerequisites
 
-- pip 9.0.1+
-- setuptools 36.0.1+
-- virtualenv 1.10.1+
-- prov-es 0.1.1+
-- osaka 0.0.1+
-- hysds-commons 0.1+
+- Python 3.12+ (required)
+- pip 23.0+
+- setuptools 68.0.0+
+- virtualenv 20.0.0+
+- prov-es 0.2.0+
+- osaka 0.2.0+
+- hysds-commons 0.2.0+
+
+## Python 3.12 Compatibility
+
+This version of HySDS is fully compatible with Python 3.12. The following changes were made to ensure compatibility:
+
+- Updated `datetime.utcnow()` to `datetime.now(UTC)` throughout the codebase
+- Replaced deprecated `logger.warn()` calls with `logger.warning()`
+- Refactored `get_disk_usage` to use Python's native `os.lstat` and `os.walk`
+- Updated timezone handling to be explicit with `UTC` timezone
+
+### Known Issues
+
+- Some modules have low test coverage (see test coverage report)
+- Some third-party dependencies may have their own Python 3.12 compatibility considerations
+
+## Dependency Management
+
+This project uses `pip-tools` for dependency management. The main dependency files are:
+
+- `requirements.in` - Main production dependencies
+- `dev-requirements.in` - Development dependencies
+- `requirements.txt` - Compiled production dependencies (generated)
+- `dev-requirements.txt` - Compiled development dependencies (generated)
+
+### Updating Dependencies
+
+1. Install pip-tools:
+   ```bash
+   pip install pip-tools
+   ```
+
+2. Update requirements files:
+   ```bash
+   pip-compile --upgrade --output-file=requirements.txt requirements.in
+   pip-compile --upgrade --output-file=dev-requirements.txt dev-requirements.in
+   ```
+
+3. To add a new dependency, edit the appropriate `.in` file and recompile.
 
 
 ## Installation

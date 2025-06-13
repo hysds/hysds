@@ -11,18 +11,13 @@
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
-from builtins import object
 import threading
 
 
-class AbstractSubject(object):
+class AbstractSubject:
     """
     An abstract class implementation of the Observer design pattern where this is
     the Subject. Observers can be registered with this class
@@ -54,7 +49,7 @@ class AbstractSubject(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return "observers: %s" % (self._observers)
+        return f"observers: {self._observers}"
 
     # end def
 
