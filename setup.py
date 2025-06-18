@@ -41,7 +41,7 @@ setup(
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "pyyaml"
+        "pyyaml",
         "flask>=2.3.3",
         "flask-restx>=1.1.0",
         "sqlalchemy>=2.0.19",
