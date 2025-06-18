@@ -38,6 +38,7 @@ from hysds.utils import (
     get_payload_hash,
     get_short_error,
     query_dedup_job,
+    datetime_iso_naive,
 )
 
 # error template
@@ -388,7 +389,7 @@ def submit_job(j):
             job_json["job_info"] = {
                 "id": job_json["job_id"],
                 "job_queue": queue,
-                "time_queued": current_time.isoformat() + "Z",
+                "time_queued": datetime_iso_naive(current_time) + "Z",
                 "index": f"job_status-{current_time.strftime('%Y.%m.%d')}",
                 "time_limit": time_limit,
                 "soft_time_limit": soft_time_limit,

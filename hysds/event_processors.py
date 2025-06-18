@@ -21,6 +21,7 @@ from hysds.log_utils import (
     log_job_status,
     logger,
 )
+from hysds.utils import utcnow_iso_naive
 from hysds.task_worker import run_task
 from hysds.user_rules_job import queue_finished_job
 
@@ -51,7 +52,7 @@ def fail_job(event, uuid, exc, short_error):
         job_status["short_error"] = short_error
         job_status["traceback"] = event.get("traceback", "")
 
-        time_end = datetime.now(UTC).isoformat() + "Z"
+        time_end = utcnow_iso_naive() + "Z"
         job_status.setdefault("job", {}).setdefault("job_info", {})[
             "time_end"
         ] = time_end
@@ -72,7 +73,7 @@ def fail_job(event, uuid, exc, short_error):
 def offline_jobs(event):
     """Set job status to job-offline."""
 
-    time_end = datetime.utcnow().isoformat() + "Z"
+    time_end = utcnow_iso_naive() + "Z"
     query = {
         "query": {
             "bool": {

@@ -44,6 +44,7 @@ from hysds.utils import (
     get_threshold,
     makedirs,
     query_dedup_job,
+    datetime_iso_naive,
 )
 
 # built-in pre-processors
@@ -707,7 +708,7 @@ def run_job(job, queue_when_finished=True):
     # job execution times
     time_start = datetime.now(UTC)
     time_end = None
-    time_start_iso = time_start.isoformat() + "Z"
+    time_start_iso = datetime_iso_naive(time_start) + "Z"
 
     # command execution times
     cmd_start = None
@@ -818,7 +819,7 @@ def run_job(job, queue_when_finished=True):
     job_running_file = os.path.join(job_dir, ".running")
     try:
         with open(job_running_file, "w") as f:
-            f.write(f"{datetime.now(UTC).isoformat()}Z\n")
+            f.write(f"{datetime_iso_naive()}Z\n")
     except Exception as e:
         error = str(e)
         job_status_json = {
@@ -1178,7 +1179,7 @@ def run_job(job, queue_when_finished=True):
 
         # command execution start time
         cmd_start = datetime.now(UTC)
-        cmd_start_iso = cmd_start.isoformat() + "Z"
+        cmd_start_iso = datetime_iso_naive(cmd_start) + "Z"
         job["job_info"]["cmd_start"] = cmd_start_iso
 
         # if all pre-processors signaled True, run command
@@ -1207,7 +1208,7 @@ def run_job(job, queue_when_finished=True):
 
         # command execution end time and duration
         cmd_end = datetime.utcnow()
-        job["job_info"]["cmd_end"] = cmd_end.isoformat() + "Z"
+        job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
         job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
         # write status, stderr, and stdout to job json
@@ -1275,7 +1276,7 @@ def run_job(job, queue_when_finished=True):
 
         # save job duration
         time_end = datetime.now(UTC)
-        job["job_info"]["time_end"] = time_end.isoformat() + "Z"
+        job["job_info"]["time_end"] = datetime_iso_naive(time_end) + "Z"
         job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 
         # set completed status
@@ -1337,7 +1338,7 @@ def run_job(job, queue_when_finished=True):
         # if cmd_end not set and cmd_start was, do it now
         if cmd_end is None and cmd_start is not None:
             cmd_end = datetime.utcnow()
-            job["job_info"]["cmd_end"] = cmd_end.isoformat() + "Z"
+            job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
             job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
         # if exit code of pymonitoredrunner is 0, set to 1
@@ -1372,7 +1373,7 @@ def run_job(job, queue_when_finished=True):
         # if time_end not set, do it now
         if time_end is None:
             time_end = datetime.now(UTC)
-            job["job_info"]["time_end"] = time_end.isoformat() + "Z"
+            job["job_info"]["time_end"] = datetime_iso_naive(time_end) + "Z"
             job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 
         # set failed/deduped status
@@ -1482,7 +1483,7 @@ def run_job(job, queue_when_finished=True):
         # transition running file to done file
         os.rename(job_running_file, job_done_file)
         with open(job_done_file, "w") as f:
-            f.write(f"{datetime.now(UTC).isoformat()}Z\n")
+            f.write(f"{datetime_iso_naive()}Z\n")
 
         # log job info metrics
         log_job_info(job)
@@ -1550,7 +1551,7 @@ def set_revoked_job_done(root_work, job_id):
                     os.rename(job_running_file, job_done_file)
                     logger.info(f"Renamed {job_running_file} to {job_done_file}.")
                 with open(job_done_file, "w") as f:
-                    f.write(f"{datetime.now(UTC).isoformat()}Z\n")
+                    f.write(f"{datetime_iso_naive()}Z\n")
                 logger.info(f"Wrote timestamp to {job_done_file}.")
             return
         else:

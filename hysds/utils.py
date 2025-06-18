@@ -851,3 +851,20 @@ def validate_index_pattern(index):
     if "".join(set(index)) == "*":
         return False
     return True
+
+
+def datetime_iso_naive(datetime_value=None):
+    """
+    datetime.utcnow() is being deprecated in favor of datetime.now(UTC)
+
+    However, there are differences:
+
+    print(datetime.now(UTC).isoformat())  # '2025-06-18T21:20:57.526708+00:00'
+    print(datetime.utcnow().isoformat())  # '2025-06-18T21:21:08.395675'
+
+    This function is intended to maintain backwards compatibility
+
+    """
+    if datetime_value is None:
+        datetime_value = datetime.now(UTC)
+    return datetime_value.replace(tzinfo=None).isoformat()

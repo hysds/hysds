@@ -15,6 +15,7 @@ from atomicwrites import atomic_write
 
 from hysds.celery import app
 from hysds.log_utils import logger
+from hysds.utils import datetime_iso_naive
 
 # max time to wait for image to load
 IMAGE_LOAD_TIME_MAX = 600
@@ -195,7 +196,7 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
             load_lock = f"{image_file}.load.lock"
             try:
                 with atomic_write(load_lock) as f:
-                    f.write(f"{datetime.utcnow().isoformat()}Z\n")
+                    f.write(f"{datetime_iso_naive()}Z\n")
                 logger.info(f"Loading image {image_file} ({image_name})")
                 p = Popen(
                     ["docker", "load", "-i", image_file], stderr=PIPE, stdout=PIPE

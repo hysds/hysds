@@ -14,7 +14,7 @@ from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.log_utils import logger
-from hysds.utils import download_file, get_disk_usage, makedirs
+from hysds.utils import download_file, get_disk_usage, makedirs, datetime_iso_naive
 
 
 def download_file_wrapper_backoff_handler(b, max_tries=6):
@@ -75,8 +75,8 @@ def download_file_wrapper(url, path, cache=False, event=None):
             "url": url,
             "path": path,
             "disk_usage": path_disk_usage,
-            "time_start": loc_t1.isoformat() + "Z",
-            "time_end": loc_t2.isoformat() + "Z",
+            "time_start": datetime_iso_naive(loc_t1) + "Z",
+            "time_end": datetime_iso_naive(loc_t2) + "Z",
             "duration": loc_dur,
             "transfer_rate": path_disk_usage / loc_dur,
         }

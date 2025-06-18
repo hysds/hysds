@@ -20,7 +20,7 @@ from hysds.celery import app
 from hysds.job_worker import AZ_INFO, INS_TYPE_INFO, get_facts
 from hysds.log_utils import backoff_max_tries, backoff_max_value
 from hysds.orchestrator import get_function
-from hysds.utils import makedirs
+from hysds.utils import makedirs, datetime_iso_naive
 
 # from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 
@@ -115,7 +115,7 @@ def run_task(self, payload):
         task_logger.info(f"sys_path: {str(sys_path)}")
         task_logger.info(f"args: {str(args)}")
         task_logger.info(f"kwargs: {json.dumps(kwargs, indent=2)}")
-        task_logger.info(f"task started: {datetime.utcnow().isoformat()}")
+        task_logger.info(f"task started: {datetime_iso_naive()}")
 
         # get task result
         result = func(*args, **kwargs)
@@ -129,7 +129,7 @@ def run_task(self, payload):
         # os.rename(task_running_file, task_done_file)
         # with open(task_done_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
-        task_logger.info(f"task finished: {datetime.utcnow().isoformat()}")
+        task_logger.info(f"task finished: {datetime_iso_naive()}")
 
     # return task url
     return task_url

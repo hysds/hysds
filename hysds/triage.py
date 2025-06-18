@@ -16,7 +16,7 @@ import hysds
 from hysds.celery import app
 from hysds.dataset_ingest import publish_dataset
 from hysds.log_utils import logger
-from hysds.utils import makedirs
+from hysds.utils import makedirs, datetime_iso_naive
 
 
 def get_triage_partition_format():
@@ -28,7 +28,7 @@ def triage(job, ctx):
 
     # set time_start if not defined (job failed prior to setting it)
     if "time_start" not in job["job_info"]:
-        job["job_info"]["time_start"] = f"{datetime.now(UTC).isoformat('T')}Z"
+        job["job_info"]["time_start"] = f"{datetime_iso_naive()}Z"
 
     # default triage id
     default_triage_id_format = "triaged_job-{job_id}_task-{job[task_id]}"
@@ -136,7 +136,7 @@ def triage(job, ctx):
             f = os.path.normpath(f)
             dst = os.path.join(triage_dir, os.path.basename(f))
             if os.path.exists(dst):
-                dst = f"{dst}.{datetime.now(UTC).isoformat('T')}Z"
+                dst = f"{dst}.{datetime_iso_naive()}Z"
             try:
                 if os.path.islink(f):
                     # Skip broken symlinks
