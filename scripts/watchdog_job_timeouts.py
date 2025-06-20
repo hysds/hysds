@@ -10,7 +10,7 @@ import random
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, UTC
 
 import job_utils
 
@@ -58,7 +58,7 @@ def tag_timedout_jobs(url, timeout):
         logging.info(f"time_limit: {time_limit}")
         time_start = parse_iso8601(src["job"]["job_info"]["time_start"])
         logging.info(f"time_start: {time_start}")
-        time_now = datetime.utcnow()
+        time_now = datetime.now(UTC)
         logging.info(f"time_now: {time_now}")
         duration = (time_now - time_start).total_seconds()
         logging.info(f"duration: {duration}")
