@@ -1207,7 +1207,7 @@ def run_job(job, queue_when_finished=True):
             pid = 0
 
         # command execution end time and duration
-        cmd_end = datetime.utcnow()
+        cmd_end = datetime.now(UTC)
         job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
         job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
@@ -1337,7 +1337,7 @@ def run_job(job, queue_when_finished=True):
 
         # if cmd_end not set and cmd_start was, do it now
         if cmd_end is None and cmd_start is not None:
-            cmd_end = datetime.utcnow()
+            cmd_end = datetime.now(UTC)
             job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
             job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
