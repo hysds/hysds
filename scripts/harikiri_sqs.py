@@ -13,7 +13,7 @@ import re
 import socket
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, UTC
 from pprint import pformat
 from random import randint
 from subprocess import call
@@ -119,7 +119,7 @@ def is_jobless(root_work, inactivity_secs, logger=None):
                 return False
             t = os.path.getmtime(done_file)
             done_dt = datetime.utcfromtimestamp(t)
-            age = (datetime.utcnow() - done_dt).total_seconds()
+            age = (datetime.now(UTC).replace(tzinfo=None) - done_dt).total_seconds()
             if most_recent is None or age < most_recent:
                 most_recent = age
             logging.info(f"{job_dir}: age={age}")

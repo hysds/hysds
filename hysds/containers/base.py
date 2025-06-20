@@ -8,7 +8,6 @@ import os
 import shutil
 import sys
 from abc import ABC, abstractmethod
-from datetime import datetime
 from tempfile import mkdtemp
 
 import osaka.main
@@ -18,6 +17,7 @@ from atomicwrites import atomic_write
 
 from hysds.celery import app
 from hysds.log_utils import logger
+from hysds.utils import datetime_iso_naive
 
 
 class Base(ABC):
@@ -318,7 +318,7 @@ class Base(ABC):
                 load_lock = f"{image_file}.load.lock"
                 try:
                     with atomic_write(load_lock) as f:
-                        f.write(f"{datetime.utcnow().isoformat()}Z\n")
+                        f.write(f"{datetime_iso_naive()}Z\n")
                     logger.info(f"Loading image {image_file} ({image_name})")
                     p = self.load_image(image_file)
                     stdout, stderr = p.communicate()

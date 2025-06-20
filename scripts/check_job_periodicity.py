@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import socket
-from datetime import datetime
+from datetime import datetime, UTC
 from email.header import Header
 
 # Import the email modules we'll need
@@ -225,7 +225,7 @@ def check_failed_job(job_type, periodicity, error, slack_url=None, email=None):
         end_dt = datetime.strptime(
             latest_job["job"]["job_info"]["time_end"], "%Y-%m-%dT%H:%M:%S.%fZ"
         )
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         delta = (now - end_dt).total_seconds()
         logging.info(f"Failed Job delta: {delta}")
         error += f"\nThe last failed job of type {job_type} was {delta / 3600.0:.2f}-hours ago:\n"
@@ -267,7 +267,7 @@ def check_job_execution(job_type, periodicity=0, slack_url=None, email=None):
         end_dt = datetime.strptime(
             latest_job["job"]["job_info"]["time_end"], "%Y-%m-%dT%H:%M:%S.%fZ"
         )
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         delta = (now - end_dt).total_seconds()
         if "time_limit" in latest_job["job"]["job_info"]:
             logging.info("Using job time limit as periodicity")

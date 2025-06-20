@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import traceback
-from datetime import datetime
+from datetime import datetime, UTC
 from pprint import pformat
 
 import backoff
@@ -21,6 +21,7 @@ from hysds.log_utils import (
     backoff_max_value,
     log_job_status,
 )
+from hysds.utils import datetime_iso_naive
 
 standard_library.install_aliases()
 
@@ -83,14 +84,14 @@ def log_task_event(event_type, event, uuid=[]):
     info = {
         "resource": "task",
         "index": event.get(
-            "index", f"task_status-{datetime.utcnow().strftime('%Y.%m.%d')}"
+            "index", f"task_status-{datetime.now(UTC).strftime('%Y.%m.%d')}"
         ),
         "type": parse_job_type(event),
         "status": event_type,
         "celery_hostname": event.get("hostname", None),
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": f"{datetime.utcnow().isoformat()}Z",
+        "@timestamp": f"{datetime_iso_naive()}Z",
         "event": event,
     }
 
@@ -117,7 +118,7 @@ def log_worker_event(event_type, event, uuid=[]):
         "celery_hostname": event["hostname"],
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": f"{datetime.utcnow().isoformat()}Z",
+        "@timestamp": f"{datetime_iso_naive()}Z",
         "event": event,
     }
 

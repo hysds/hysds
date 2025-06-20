@@ -659,7 +659,7 @@ def mark_localized_datasets(job, ctx):
     for dataset_file, prod_dir in find_dataset_json(job_dir):
         signal_file = os.path.join(prod_dir, ".localized")
         with atomic_write(signal_file, overwrite=True) as f:
-            f.write(f"{datetime.utcnow().isoformat()}Z\n")
+            f.write(f"{datetime_iso_naive()}Z\n")
 
     # signal run_job() to continue
     return True
