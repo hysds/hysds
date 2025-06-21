@@ -225,121 +225,15 @@ def get_threshold(path, disk_usage):
 
 
 def get_disk_usage(path, follow_symlinks=True):
-    """Return disk usage in bytes.
+    """Return disk usage size in bytes."""
 
-    If the original path is a directory (and not a symlink to a directory),
-    returns an integer (apparent_size).
-    Otherwise (file or symlink, including symlink to directory), returns a tuple (apparent_size, disk_usage).
-    This behavior is to match existing test expectations.
-    Apparent_size is equivalent to `du -sb` (sum of file sizes).
-    Disk_usage is equivalent to `du -B1 --apparent-size` (actual blocks used, 512 bytes per block).
-    """
-    original_path_is_actual_dir = os.path.isdir(path) and not os.path.islink(path)
-    effective_path = path
-
-    if not os.path.lexists(effective_path):
-        return 0 if original_path_is_actual_dir else (0, 0)
-
-    # Determine if we need to resolve a symlink for the primary path
-    if os.path.islink(effective_path):
-        if not follow_symlinks:
-            st = os.lstat(effective_path)
-            # For a symlink itself (not followed), return tuple (size of link, 0 actual blocks for link content)
-            return st.st_size, 0
-        try:
-            resolved_path = os.path.realpath(effective_path)
-            if not os.path.exists(resolved_path):
-                return 0 if original_path_is_actual_dir else (0, 0)
-            effective_path = resolved_path  # Continue with resolved path
-        except (OSError, RuntimeError):
-            return 0 if original_path_is_actual_dir else (0, 0)
-
-    # If, after potential symlink resolution, the path is a file:
-    if os.path.isfile(effective_path):
-        try:
-            st = os.lstat(effective_path)
-            # For a file (or symlink resolved to a file), return tuple
-            return st.st_size, st.st_blocks * 512
-        except OSError:
-            return 0 if original_path_is_actual_dir else (0, 0)
-
-    # If, after potential symlink resolution, the path is a directory:
-    if os.path.isdir(effective_path):
-        apparent_total_bytes = 0
-        total_bytes = 0
-        have = set()  # To handle hard links correctly
-
-        for dirpath_iter, dirnames_iter, filenames_iter in os.walk(
-            effective_path, followlinks=follow_symlinks
-        ):
-            try:
-                # Add current directory's size (metadata size)
-                st_dir = os.lstat(dirpath_iter)
-                apparent_total_bytes += st_dir.st_size
-                total_bytes += st_dir.st_blocks * 512
-
-                # Add sizes of files in the current directory
-                for f_iter in filenames_iter:
-                    fp_iter = os.path.join(dirpath_iter, f_iter)
-                    try:
-                        # Decide whether to use lstat (for symlink itself or if not following)
-                        # or stat (for target if following symlinks for files)
-                        current_st = os.lstat(fp_iter)
-                        is_link_iter = os.path.islink(fp_iter)
-
-                        if is_link_iter and follow_symlinks:
-                            try:
-                                target_fp_iter = os.path.realpath(fp_iter)
-                                if os.path.exists(target_fp_iter) and os.path.isfile(
-                                    target_fp_iter
-                                ):
-                                    current_st = os.lstat(
-                                        target_fp_iter
-                                    )  # Use target's stat
-                                else:  # Broken symlink or symlink to non-file
-                                    apparent_total_bytes += os.lstat(
-                                        fp_iter
-                                    ).st_size  # Size of the link itself
-                                    continue  # No further processing for this symlink
-                            except (OSError, RuntimeError):
-                                apparent_total_bytes += os.lstat(
-                                    fp_iter
-                                ).st_size  # Error, count link size
-                                continue
-                        elif is_link_iter and not follow_symlinks:
-                            apparent_total_bytes += (
-                                current_st.st_size
-                            )  # Size of the link itself
-                            continue  # No further processing for this symlink
-
-                        # For regular files or resolved symlinks to files
-                        if current_st.st_ino not in have:
-                            have.add(current_st.st_ino)
-                            apparent_total_bytes += current_st.st_size
-                            total_bytes += current_st.st_blocks * 512
-                    except OSError:
-                        continue  # Skip files we can't access
-
-                # If not following symlinks for os.walk, add size of symlinks to directories
-                if not follow_symlinks:
-                    for d_iter in dirnames_iter:
-                        dp_iter = os.path.join(dirpath_iter, d_iter)
-                        if os.path.islink(dp_iter):
-                            try:
-                                st_link_dir_iter = os.lstat(dp_iter)
-                                apparent_total_bytes += st_link_dir_iter.st_size
-                            except OSError:
-                                continue  # Skip symlinked dirs we can't access
-            except OSError:
-                continue  # Skip directories we can't access
-
-        if original_path_is_actual_dir:
-            return apparent_total_bytes
-        else:  # Original path was a symlink that resolved to this directory, or a file
-            return apparent_total_bytes, total_bytes
-
-    # Fallback for anything not a file or dir (e.g. broken symlink not caught, or other types)
-    return 0 if original_path_is_actual_dir else (0, 0)
+    opts = "-sbL" if follow_symlinks else "-sb"
+    size = 0
+    try:
+        size = int(check_output(["du", opts, path]).split()[0])
+    except:
+        pass
+    return size
 
 
 def makedirs(_dir, mode=0o777):
