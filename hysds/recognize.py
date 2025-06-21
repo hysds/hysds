@@ -1,21 +1,13 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import open
 from future import standard_library
 
 standard_library.install_aliases()
-from builtins import object
-import sys
+import json
 import os
+import pwd
 import re
 import socket
+import sys
 import types
-import pwd
-import json
 from pprint import pprint
 
 
@@ -38,7 +30,7 @@ class RecognizerError(Exception):
     pass
 
 
-class Recognizer(object):
+class Recognizer:
     def __init__(self, dataset_file, path, id, version):
         self.dataset_file = dataset_file
         self.id = id
@@ -53,9 +45,7 @@ class Recognizer(object):
         # compile match patterns
         for ds in self.dataset_info["datasets"]:
             if "match_pattern" not in ds:
-                raise RecognizerError(
-                    "No 'match_pattern' defined:\n{}".format(pprint(ds))
-                )
+                raise RecognizerError(f"No 'match_pattern' defined:\n{pprint(ds)}")
             ds["match_pattern"] = re.compile(ds["match_pattern"])
             if "alt_match_pattern" not in ds:
                 ds["alt_match_pattern"] = None
@@ -103,7 +93,7 @@ class Recognizer(object):
                 self.currentIpath = ds["ipath"]
                 return self.currentIpath
         raise RecognizerError(
-            "No dataset configured for {}. Check {}.".format(path, self.dataset_file)
+            f"No dataset configured for {path}. Check {self.dataset_file}."
         )
 
     def setDataset(self, dataset):

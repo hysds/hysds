@@ -10,17 +10,13 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
-import time
-from billiard import Process
 import logging
+import time
+
+from billiard import Process
 
 logger = logging.getLogger()
 
@@ -97,7 +93,7 @@ class AbstractInterruptableProcess(Process):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug("=> Process interrupted. %s" % (str(e)))
+            logger.debug(f"=> Process interrupted. {str(e)}")
 
             # raised when user presses CTRL-C
             self.stop()
@@ -126,7 +122,7 @@ class AbstractInterruptableProcess(Process):
                 # this area and the while check is interruptable.
             # end while
         except KeyboardInterrupt as e:
-            logger.debug("=> Sleep interrupted. %s" % (str(e)))
+            logger.debug(f"=> Sleep interrupted. {str(e)}")
 
             # raised when user presses CTRL-C
             self.stop()
