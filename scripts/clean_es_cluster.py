@@ -1,5 +1,4 @@
-from hysds.es_util import get_mozart_es, get_grq_es
-
+from hysds.es_util import get_grq_es, get_mozart_es
 
 if __name__ == "__main__":
     mozart_es = get_mozart_es()
@@ -8,14 +7,16 @@ if __name__ == "__main__":
     # MOZART
     aliases = mozart_es.es.indices.get_alias()
     for k, _ in aliases.items():
-        if k.startswith("job_status-") or \
-                k.startswith("worker_status-") or \
-                k.startswith("event_status-") or \
-                k.startswith("task_status-") or \
-                k.startswith("hysds_ios-") or \
-                k.startswith("user_rules-") or \
-                k == "job_specs" or \
-                k == "containers":
+        if (
+            k.startswith("job_status-")
+            or k.startswith("worker_status-")
+            or k.startswith("event_status-")
+            or k.startswith("task_status-")
+            or k.startswith("hysds_ios-")
+            or k.startswith("user_rules-")
+            or k == "job_specs"
+            or k == "containers"
+        ):
             print(f"deleted {k} index")
             mozart_es.es.indices.delete(index=k)
 
@@ -47,12 +48,20 @@ if __name__ == "__main__":
     policy_name = "ilm_policy_mozart"
     if build_flavor == "oss" and distribution != "opensearch":
         # Elasticsearch OSS
-        mozart_es.es.transport.perform_request("DELETE", f"/_opendistro/_ism/policies/{policy_name}", params={"ignore": 404})
+        mozart_es.es.transport.perform_request(
+            "DELETE",
+            f"/_opendistro/_ism/policies/{policy_name}",
+            params={"ignore": 404},
+        )
     elif distribution == "opensearch":
         if hasattr(mozart_es.es, "index_management"):
             mozart_es.es.plugins.index_management.delete_policy(policy_name, ignore=404)
         else:
-            mozart_es.es.transport.perform_request("DELETE", f"/_plugins/_ism/policies/{policy_name}", params={"ignore": 404})
+            mozart_es.es.transport.perform_request(
+                "DELETE",
+                f"/_plugins/_ism/policies/{policy_name}",
+                params={"ignore": 404},
+            )
     else:  # regular Elasticsearch
         mozart_es.es.ilm.delete_lifecycle(policy=policy_name, ignore=404)
     print("deleted ILM/ISM policy")

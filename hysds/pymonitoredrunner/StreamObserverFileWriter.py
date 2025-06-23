@@ -10,23 +10,16 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from builtins import open
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
-from builtins import object
-import os
 import logging
+import os
 
 logger = logging.getLogger()
 
 
-class StreamObserverFileWriter(object):
+class StreamObserverFileWriter:
     """
     writes stream to local file.
     """
@@ -54,7 +47,7 @@ class StreamObserverFileWriter(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'filepath: "%s"' % (self._filepath)
+        return f'filepath: "{self._filepath}"'
 
     # end def
 
@@ -67,10 +60,8 @@ class StreamObserverFileWriter(object):
             self._file.write(line.decode())
             # TODO: doesn't seem to write lines unless flush after every line here. this shouldn't be needed.
             self._file.flush()
-        except IOError as e:
-            logger.warning(
-                'Unable to write output to "%s": %s' % (self._filepath, str(e))
-            )
+        except OSError as e:
+            logger.warning(f'Unable to write output to "{self._filepath}": {str(e)}')
 
     # end def
 
