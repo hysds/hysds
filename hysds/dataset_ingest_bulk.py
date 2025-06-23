@@ -384,7 +384,7 @@ def ingest_to_object_store(
 
         # upload dataset to repo; track disk usage and start/end times of transfer
         prod_dir_usage = get_disk_usage(local_prod_path)
-        tx_t1 = datetime.now(UTC)
+        tx_t1 = datetime.now(UTC).replace(tzinfo=None)
         if dry_run:
             logger.info(f"Would've published {local_prod_path} to {pub_path_url}")
         else:
@@ -539,7 +539,7 @@ def ingest_to_object_store(
                         publ_ctx_file=publ_ctx_file,
                         publ_ctx_url=publ_ctx_url,
                     )
-        tx_t2 = datetime.now(UTC)
+        tx_t2 = datetime.now(UTC).replace(tzinfo=None)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
         # create PROV-ES JSON file for publish processStep
@@ -797,7 +797,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             ingest_kwargs["force"] = True
 
         # upload
-        tx_t1 = datetime.now(UTC)
+        tx_t1 = datetime.now(UTC).replace(tzinfo=None)
         metrics, prod_json = ingest_to_object_store(
             *(
                 prod_id,
@@ -808,7 +808,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             **ingest_kwargs,
         )
 
-        tx_t2 = datetime.now(UTC)
+        tx_t2 = datetime.now(UTC).replace(tzinfo=None)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
         prod_dir_usage = get_disk_usage(prod_dir)
 
