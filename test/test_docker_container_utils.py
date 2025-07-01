@@ -1,17 +1,17 @@
-import sys
 import json
 import re
+import sys
 
 try:
     import unittest.mock as umock
 except ImportError:
-    import mock as umock
-import unittest
-import logging
-import tempfile
-import shutil
-from contextlib import nullcontext
+    from unittest import mock as umock
 
+import logging
+import shutil
+import tempfile
+import unittest
+from contextlib import nullcontext
 
 # hysds.celery searches for configuration on import. So we need to make sure we
 # mock it out before the first time it is imported
@@ -75,7 +75,7 @@ class TestContainerUtils(unittest.TestCase):
             elif args[0] == "EVICT_CACHE":
                 return True
             else:
-                raise RuntimeError("Handling {} not implemented yet.".format(args[0]))
+                raise RuntimeError(f"Handling {args[0]} not implemented yet.")
 
         # mock data
         self.app_mock = umock.patch("hysds.containers.base.app").start()
@@ -117,9 +117,7 @@ class TestContainerUtils(unittest.TestCase):
                 runtime_options,
             )
         logging.info(
-            "docker_params: {}".format(
-                json.dumps(docker_params, indent=2, sort_keys=True)
-            )
+            f"docker_params: {json.dumps(docker_params, indent=2, sort_keys=True)}"
         )
 
         return docker_params
@@ -142,7 +140,7 @@ class TestContainerUtils(unittest.TestCase):
         cmd_line_list = docker.create_container_cmd(params, cmd_line_list)
         cmd_line_list = [str(i) for i in cmd_line_list]
         cmd_line = " ".join(cmd_line_list)
-        logging.info("cmd_line: {}".format(cmd_line))
+        logging.info(f"cmd_line: {cmd_line}")
 
         return cmd_line
 

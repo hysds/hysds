@@ -1,24 +1,20 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
 
 import json
-import time
-import backoff
 import socket
+import time
 
+import backoff
 import elasticsearch.exceptions
 import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
+from hysds.es_util import get_grq_es, get_mozart_es
+from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 from hysds.utils import validate_index_pattern
-from hysds.log_utils import logger, backoff_max_tries, backoff_max_value
-from hysds.es_util import get_mozart_es, get_grq_es
 
 GRQ_ES_URL = app.conf.GRQ_ES_URL  # ES
 DATASET_ALIAS = app.conf.DATASET_ALIAS
@@ -45,19 +41,21 @@ def ensure_dataset_indexed(objectid, system_version, alias):
         }
     }
 
-    logger.info("ensure_dataset_indexed query: %s" % json.dumps(query))
+    logger.info(f"ensure_dataset_indexed query: {json.dumps(query)}")
     try:
         grq_es = get_grq_es()
         count = grq_es.get_count(index=alias, body=query)
         if count == 0:
-            error_message = "Failed to find indexed dataset: %s (%s)" % (
-                objectid,
-                system_version,
+            error_message = (
+                f"Failed to find indexed dataset: {objectid} ({system_version})"
             )
             logger.error(error_message)
             raise RuntimeError(error_message)
-        logger.info("Found indexed dataset: %s (%s)" % (objectid, system_version))
-    except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
+        logger.info(f"Found indexed dataset: {objectid} ({system_version})")
+    except (
+        elasticsearch.exceptions.ElasticsearchException,
+        opensearchpy.exceptions.OpenSearchException,
+    ) as e:
         logger.error(e)
         raise e
 
@@ -77,14 +75,8 @@ def update_query(_id, system_version, rule):
     if rule.get("query_all", False) is False:
         filts.append({"term": {"_id": _id}})
 
-    final_query = {
-        "query": {
-            "bool": {
-                "must": filts
-            }
-        }
-    }
-    logger.info("Final query: %s" % json.dumps(final_query))
+    final_query = {"query": {"bool": {"must": filts}}}
+    logger.info(f"Final query: {json.dumps(final_query)}")
     return final_query
 
 
@@ -106,22 +98,16 @@ def evaluate_user_rules_dataset(
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
-    query = {
-        "query": {
-            "term": {
-                "enabled": True
-            }
-        }
-    }
+    query = {"query": {"term": {"enabled": True}}}
     mozart_es = get_mozart_es()
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
-    logger.info("Total %d enabled rules to check." % len(rules))
+    logger.info(f"Total {len(rules)} enabled rules to check.")
 
     for document in rules:
         time.sleep(1)  # sleep between queries
 
         rule = document["_source"]
-        logger.info("rule: %s" % json.dumps(rule, indent=2))
+        logger.info(f"rule: {json.dumps(rule, indent=2)}")
 
         try:
             updated_query = update_query(objectid, system_version, rule)
@@ -141,29 +127,40 @@ def evaluate_user_rules_dataset(
             index_pattern = ""
         index_pattern = index_pattern.strip()
         if not index_pattern or not validate_index_pattern(index_pattern):
-            logger.warning("index_pattern %s not valid, defaulting to %s" % (index_pattern, DATASET_ALIAS))
+            logger.warning(
+                f"index_pattern {index_pattern} not valid, defaulting to {DATASET_ALIAS}"
+            )
             index_pattern = DATASET_ALIAS
-        logger.info("updated query: %s" % json.dumps(final_qs, indent=2))
+        logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
         # check for matching rules
         try:
             result = search_es(index=index_pattern, body=final_qs)
             if result["hits"]["total"]["value"] == 0:
-                logger.info("Rule '%s' didn't match for %s (%s)" % (rule_name, objectid, system_version))
+                logger.info(
+                    f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
+                )
                 continue
             doc_res = result["hits"]["hits"][0]
-            logger.info("Rule '%s' successfully matched for %s (%s)" % (rule_name, objectid, system_version))
-        except (elasticsearch.exceptions.ElasticsearchException, opensearchpy.exceptions.OpenSearchException) as e:
+            logger.info(
+                f"Rule '{rule_name}' successfully matched for {objectid} ({system_version})"
+            )
+        except (
+            elasticsearch.exceptions.ElasticsearchException,
+            opensearchpy.exceptions.OpenSearchException,
+        ) as e:
             logger.error("Failed to query ES")
             logger.error(e)
             continue
 
         if job_type.startswith("hysds-io-"):
             job_type = job_type.replace("hysds-io-", "", 1)
-        job_name = "%s-%s" % (job_type, objectid)
+        job_name = f"{job_type}-{objectid}"
 
         queue_dataset_trigger(doc_res, rule, job_name)  # submit trigger task
-        logger.info("Trigger task submitted for %s (%s): %s" % (objectid, system_version, job_type))
+        logger.info(
+            f"Trigger task submitted for {objectid} ({system_version}): {job_type}"
+        )
     return True
 
 
@@ -177,7 +174,9 @@ def queue_dataset_evaluation(info):
         "function": "hysds.user_rules_dataset.evaluate_user_rules_dataset",
         "args": [info["id"], info["system_version"]],
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=app.conf.USER_RULES_DATASET_QUEUE)  # noqa
+    hysds.task_worker.run_task.apply_async(
+        (payload,), queue=app.conf.USER_RULES_DATASET_QUEUE
+    )  # noqa
 
 
 @backoff.on_exception(
@@ -191,4 +190,6 @@ def queue_dataset_trigger(doc_res, rule, job_name):
         "args": [doc_res, rule],
         "kwargs": {"job_name": job_name, "component": "grq"},
     }
-    hysds.task_worker.run_task.apply_async((payload,), queue=USER_RULES_TRIGGER_QUEUE)  # noqa
+    hysds.task_worker.run_task.apply_async(
+        (payload,), queue=USER_RULES_TRIGGER_QUEUE
+    )  # noqa

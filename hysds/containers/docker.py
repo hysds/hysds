@@ -1,5 +1,6 @@
+from subprocess import PIPE, Popen, check_output
+
 import backoff
-from subprocess import check_output,  Popen, PIPE
 
 from hysds.containers.base import Base
 
@@ -62,24 +63,33 @@ class Docker(Base):
             "--init",
             "--rm",
             "-u",
-            "%s:%s" % (params["uid"], params["gid"]),
+            f"{params['uid']}:{params['gid']}",
         ]
 
         # add runtime options
         for k, v in params["runtime_options"].items():
-            docker_cmd_base.extend(["--{}".format(k), v])
+            docker_cmd_base.extend([f"--{k}", v])
 
         # add volumes
         for k, v in params["volumes"]:
-            docker_cmd_base.extend(["-v", "%s:%s" % (k, v)])
+            docker_cmd_base.extend(["-v", f"{k}:{v}"])
 
         # set work directory and image
         docker_cmd_base.extend(["-w", params["working_dir"], params["image_name"]])
 
         return docker_cmd_base
 
-    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_verdi_home=None):
+    def create_container_params(
+        self,
+        image_name,
+        image_url,
+        image_mappings,
+        root_work_dir,
+        job_dir,
+        runtime_options=None,
+        verdi_home=None,
+        host_verdi_home=None,
+    ):
         """
         Builds docker params
         :param image_name:
@@ -92,8 +102,22 @@ class Docker(Base):
         :param host_verdi_home:
         :return:
         """
-        params = super().create_container_params(image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                                 runtime_options, verdi_home, host_verdi_home)
+        params = super().create_container_params(
+            image_name,
+            image_url,
+            image_mappings,
+            root_work_dir,
+            job_dir,
+            runtime_options,
+            verdi_home,
+            host_verdi_home,
+        )
         docker_sock = "/var/run/docker.sock"
-        params['volumes'].insert(0, (docker_sock, docker_sock, ))
+        params["volumes"].insert(
+            0,
+            (
+                docker_sock,
+                docker_sock,
+            ),
+        )
         return params

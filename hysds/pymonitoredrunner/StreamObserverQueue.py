@@ -10,21 +10,16 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from builtins import object
 from future import standard_library
 
 standard_library.install_aliases()
-import threading
 import logging
+import threading
 
 logger = logging.getLogger()
 
 
-class StreamObserverQueue(object):
+class StreamObserverQueue:
     """
     Stores stream to a thread queue.
     """
@@ -49,7 +44,7 @@ class StreamObserverQueue(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'queue: "%s"' % (self._queue)
+        return f'queue: "{self._queue}"'
 
     # end def
 
