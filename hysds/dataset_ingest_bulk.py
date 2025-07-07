@@ -7,6 +7,7 @@ from builtins import str
 from builtins import int
 from builtins import open
 from future import standard_library
+from redis.exceptions import RedisError
 
 standard_library.install_aliases()
 
@@ -35,7 +36,9 @@ from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
-    backoff_max_tries
+    backoff_max_tries, acquire_publish_context_lock, release_publish_context_lock, \
+    DedupPublishContextFoundException
+
 from hysds.celery import app
 from hysds.recognize import Recognizer
 from hysds.orchestrator import do_submit_job
@@ -59,6 +62,10 @@ class NoClobberPublishContextException(Exception):
 
 
 class NotAllProductsIngested(Exception):
+    pass
+
+
+class PublishContextLockException(Exception):
     pass
 
 
@@ -396,6 +403,22 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + ".orig"
             try:
+                # Acquire lock first before trying to write to the object store
+                try:
+                    lock_status = acquire_publish_context_lock(publish_context_url=publ_ctx_url, task_id=task_id)
+                    if lock_status is True:
+                        logger.info(
+                            f"Successfully acquired lock for publish_context_url={publ_ctx_url}, task_id={task_id}."
+                        )
+                except DedupPublishContextFoundException as dpe:
+                    error_message = (
+                        f"Lock was not successfully acquired. Still exists in REDIS. Assuming stale lock:\n{str(dpe)}"
+                    )
+                    logger.error(error_message)
+                    raise NoClobberPublishContextException(error_message)
+                except RedisError as re:
+                    raise
+
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -430,6 +453,11 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
+                    # Check to see if the dataset exists. If so, then raise the error at this point
+                    if dataset_exists(objectid):
+                        logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
+                        raise
+
                     msg = (
                             "This job is a retry of a previous job that resulted "
                             + "in an orphaned dataset. Forcing publish."
@@ -502,6 +530,23 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                             )
                         else:
                             raise
+
+                # If we have gotten to this point, we assume the lock is stale and we
+                # checked to see that the dataset does not yet already exist. So
+                # we should force acquire the lock
+                try:
+                    lock_status = acquire_publish_context_lock(
+                        publish_context_url=publ_ctx_url, task_id=task_id, prevent_overwrite=False
+                    )
+                    if lock_status is True:
+                        logger.info(
+                            f"Successfully acquired lock through force for publish_context_url={publ_ctx_url}, "
+                            f"task_id={task_id}."
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
+                    )
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -722,6 +767,26 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     publ_ctx_url
                 )
             )
+        if task_id is not None:
+            try:
+                num_records_deleted, lock_task_id = release_publish_context_lock(
+                    publish_context_url=publ_ctx_url, task_id=task_id
+                )
+                if num_records_deleted == 0:
+                    logger.warning(
+                        f"No lock was found for publish_context_url={publ_ctx_url} or one was found, "
+                        f"but did not match task_id={task_id}: lock_task_id={lock_task_id}"
+                    )
+                else:
+                    logger.info(
+                        f"Successfully released lock for publish_context_url={publ_ctx_url}, task_id={task_id}: "
+                        f"number_of_records_deleted={num_records_deleted}"
+                    )
+
+            except PublishContextLockException as p:
+                logger.warning(
+                    f"Failed to release lock for publish_context_url={publ_ctx_url}, task_id={task_id}: {str(p)}"
+                )
     try:
         shutil.rmtree(publ_ctx_dir)
     except:

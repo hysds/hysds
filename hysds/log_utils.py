@@ -41,6 +41,7 @@ EVENT_STATUS_POOL = None
 SOCKET_POOL = None
 REVOKED_TASK_POOL = None
 PAYLOAD_HASH_POOL = None
+PUBLISH_CONTEXT_HASH_POOL = None
 
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
@@ -58,6 +59,10 @@ REVOKED_TASK_TMPL = "hysds-revoked-task-%s"
 PAYLOAD_HASH_KEY_TMPL = "hysds-payload-hash-%s"
 
 
+class DedupPublishContextFoundException(Exception):
+    pass
+
+
 def backoff_max_value():
     """Return max value for backoff."""
     return app.conf.BACKOFF_MAX_VALUE
@@ -66,6 +71,16 @@ def backoff_max_value():
 def backoff_max_tries():
     """Return max tries for backoff."""
     return app.conf.BACKOFF_MAX_TRIES
+
+
+def publish_wait_backoff_max_value():
+    """Return max value for backoff."""
+    return app.conf.get("PUBLISH_WAIT_BACKOFF_MAX_VALUE", 30)
+
+
+def publish_wait_backoff_max_time():
+    """Return max time for backoff."""
+    return app.conf.get("PUBLISH_WAIT_BACKOFF_MAX_TIME", 300)
 
 
 def hard_time_limit_gap():
@@ -143,6 +158,15 @@ def set_redis_payload_hash_pool():
     global PAYLOAD_HASH_POOL
     if PAYLOAD_HASH_POOL is None:
         PAYLOAD_HASH_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_JOB_STATUS_URL
+        )
+
+
+def set_redis_publish_context_hash_pool():
+    """Set redis connection pool for payload hash status."""
+    global PUBLISH_CONTEXT_HASH_POOL
+    if PUBLISH_CONTEXT_HASH_POOL is None:
+        PUBLISH_CONTEXT_HASH_POOL = BlockingConnectionPool.from_url(
             app.conf.REDIS_JOB_STATUS_URL
         )
 
@@ -628,3 +652,68 @@ def payload_hash_exists(payload_hash):
         return False
     else:
         return None
+
+def dedup_publish_context(details):
+    logger.info("Giving up waiting for lock to expire with args {args} and kwargs {kwargs}".format(**details))
+    return None
+
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+@backoff.on_exception(
+    backoff.expo,
+    DedupPublishContextFoundException,
+    max_time=publish_wait_backoff_max_time,
+    max_value=publish_wait_backoff_max_value,
+    on_giveup=dedup_publish_context
+)
+def acquire_publish_context_lock(publish_context_url, task_id, prevent_overwrite=True):
+    """
+    Return True if we were able to store the record successfully. If prevent_overwrite=True,
+    this will return None if the key exists.
+
+    :param publish_context_url:
+    :param task_id:
+    :param prevent_overwrite:
+    :return:
+    """
+
+    set_redis_publish_context_hash_pool()
+    global PUBLISH_CONTEXT_HASH_POOL
+
+    r = StrictRedis(connection_pool=PUBLISH_CONTEXT_HASH_POOL)
+    # According to the REDIS set function, a return value of "True" means that the hash does not exist and it was
+    # able to store it successfully. Otherwise, a "None" value is returned, meaning the key/value already exists.
+    status = r.set(
+        publish_context_url, task_id, ex=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 300), nx=prevent_overwrite
+    )
+    if status is None:
+        value = r.get(publish_context_url)
+        if value:
+            raise DedupPublishContextFoundException(
+                f"Lock still exists in Redis: publish_context_url={publish_context_url}, task_id={value}"
+            )
+    else:
+        return status
+
+
+@backoff.on_exception(
+    backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def release_publish_context_lock(publish_context_url, task_id):
+    """
+    Release the lock
+
+    :param publish_context_url: The publish context url
+    :param task_id: The task id
+    :return: A tuple (number of records deleted, record value)
+    """
+    set_redis_publish_context_hash_pool()
+    global PUBLISH_CONTEXT_HASH_POOL
+
+    r = StrictRedis(connection_pool=PUBLISH_CONTEXT_HASH_POOL)
+    lock_task_id = r.get(publish_context_url)
+    if lock_task_id == task_id:
+        return r.delete(publish_context_url), lock_task_id
+    else:
+        return 0, lock_task_id
