@@ -468,14 +468,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         publish_context_lock.close()
                     raise
 
-                # Need to verify that the original task is finished. Let's check
-                # before proceeding
-                try:
-                    is_task_finished(orig_task_id)
-                    logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
-                except TaskNotFinishedException as te:
-                    logger.warning(str(te))
-                    logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
+                # If we still did not get a lock, then we should verify that the original task
+                # in the publish context is finished before proceeding.
+                if publish_context_lock and publish_context_lock.get_lock_status() is None:
+                    try:
+                        is_task_finished(orig_task_id)
+                        logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                    except TaskNotFinishedException as te:
+                        logger.warning(str(te))
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:

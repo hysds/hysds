@@ -46,6 +46,7 @@ class PublishContextLock:
         self.redis_client = StrictRedis(
             connection_pool=self._get_connection_pool()
         )
+        self.lock_status = None
 
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
@@ -55,6 +56,12 @@ class PublishContextLock:
             self.redis_client.close()
         except redis.ConnectionError as e:
             raise RedisError(f"Error occurred while trying to close the REDIS connection: {str(e)}")
+
+
+    def get_lock_status(self):
+        """ Returns the lock status. 'True' if a lock was successfully acquired. 'None' otherwise."""
+        return self.lock_status
+
 
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
@@ -71,14 +78,17 @@ class PublishContextLock:
         # According to the REDIS set function, a return value of "True" means that the hash does not exist and it was
         # able to store it successfully. Otherwise, a "None" value is returned, meaning the key/value already exists.
         # This None return value only occurs if nx=True. Otherwise, the record will be overwritten
-        status = self.redis_client.set(
+        self.lock_status = self.redis_client.set(
             publish_context_url,
             task_id,
             #ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
             ex=1200,
             nx=prevent_overwrite
         )
-        if status is None:
+        if self.lock_status is None:
+            # If None, that means the lock exists. Check the value (the task_id associated with the lock)
+            # and see if it matches with the given task_id. If it matches, then just re-acquire the lock.
+            # This is to satisfy the re-delivery use-case.
             value = self.redis_client.get(publish_context_url)
             if value:
                 value = value.decode() if hasattr(value, "decode") else value
@@ -95,16 +105,15 @@ class PublishContextLock:
                         f"publish_context_url={publish_context_url}, task_id_in_lock={value}. Re-acquiring lock."
                     )
                     # The lock being acquired already exists and the task_ids match. So, return True
-                    status = self.redis_client.set(
+                    self.lock_status = self.redis_client.set(
                         publish_context_url,
                         task_id,
                         # ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
                         ex=1200,
                         nx=False
                     )
-        else:
-            return status
-        return status
+
+        return self.lock_status
 
 
     @backoff.on_exception(
