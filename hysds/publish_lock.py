@@ -26,7 +26,9 @@ def dedup_publish_context(details):
 
 
 class DedupPublishContextFoundException(Exception):
-    pass
+    def __init__(self, message):
+        self.message = message
+        super(DedupPublishContextFoundException, self).__init__(message)
 
 
 class PublishContextLock:
@@ -75,6 +77,7 @@ class PublishContextLock:
             ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
             nx=prevent_overwrite
         )
+        logger.info(f"acquire_lock status={status}")
         if status is None:
             value = self.redis_client.get(publish_context_url)
             if value:
