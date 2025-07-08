@@ -690,6 +690,7 @@ def acquire_publish_context_lock(publish_context_url, task_id, prevent_overwrite
     if status is None:
         value = r.get(publish_context_url)
         if value:
+            value = value.decode() if hasattr(value, "decode") else value
             raise DedupPublishContextFoundException(
                 f"Lock still exists in Redis: publish_context_url={publish_context_url}, task_id={value}"
             )
@@ -713,6 +714,7 @@ def release_publish_context_lock(publish_context_url, task_id):
 
     r = StrictRedis(connection_pool=PUBLISH_CONTEXT_HASH_POOL)
     lock_task_id = r.get(publish_context_url)
+    lock_task_id = lock_task_id.decode() if hasattr(lock_task_id, "decode") else lock_task_id
     if lock_task_id == task_id:
         return r.delete(publish_context_url), lock_task_id
     else:

@@ -36,8 +36,9 @@ from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
-    backoff_max_tries, acquire_publish_context_lock, release_publish_context_lock, \
-    DedupPublishContextFoundException
+    backoff_max_tries, DedupPublishContextFoundException
+
+from hysds.publish_lock import PublishContextLock
 
 from hysds.celery import app
 from hysds.recognize import Recognizer
@@ -363,6 +364,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
     osaka_params = {}  # set osaka params
 
+    publish_context_lock = None
+
     # publish dataset
     if r.publishConfigured():
         logger.info("Dataset publish is configured.")
@@ -405,7 +408,11 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             try:
                 # Acquire lock first before trying to write to the object store
                 try:
-                    lock_status = acquire_publish_context_lock(publish_context_url=publ_ctx_url, task_id=task_id)
+                    publish_context_lock = PublishContextLock()
+                    lock_status = publish_context_lock.acquire_lock(
+                        publish_context_url=publ_ctx_url,
+                        task_id=task_id
+                    )
                     if lock_status is True:
                         logger.info(
                             f"Successfully acquired lock for publish_context_url={publ_ctx_url}, task_id={task_id}."
@@ -535,8 +542,10 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 # checked to see that the dataset does not yet already exist. So
                 # we should force acquire the lock
                 try:
-                    lock_status = acquire_publish_context_lock(
-                        publish_context_url=publ_ctx_url, task_id=task_id, prevent_overwrite=False
+                    lock_status = publish_context_lock.acquire_lock(
+                        publish_context_url=publ_ctx_url,
+                        task_id=task_id,
+                        prevent_overwrite=False
                     )
                     if lock_status is True:
                         logger.info(
@@ -767,10 +776,11 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     publ_ctx_url
                 )
             )
-        if task_id is not None:
+        if task_id is not None and publish_context_lock is not None:
             try:
-                num_records_deleted, lock_task_id = release_publish_context_lock(
-                    publish_context_url=publ_ctx_url, task_id=task_id
+                num_records_deleted, lock_task_id = publish_context_lock.release(
+                    publish_context_url=publ_ctx_url,
+                    task_id=task_id
                 )
                 if num_records_deleted == 0:
                     logger.warning(
@@ -782,10 +792,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         f"Successfully released lock for publish_context_url={publ_ctx_url}, task_id={task_id}: "
                         f"number_of_records_deleted={num_records_deleted}"
                     )
-
             except PublishContextLockException as p:
                 logger.warning(
                     f"Failed to release lock for publish_context_url={publ_ctx_url}, task_id={task_id}: {str(p)}"
+                )
+            try:
+                publish_context_lock.close()
+            except Exception as e:
+                logger.warning(
+                    f"Failed to close REDIS connection properly: {str(e)}"
                 )
     try:
         shutil.rmtree(publ_ctx_dir)
