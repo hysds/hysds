@@ -562,24 +562,24 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                                 publish_context_lock.close()
                             raise
 
-                # If we have gotten to this point, we assume the lock is stale and we
-                # checked to see that the dataset does not yet already exist. So
-                # we should force acquire the lock
-                try:
-                    lock_status = publish_context_lock.acquire_lock(
-                        publish_context_url=publ_ctx_url,
-                        task_id=task_id,
-                        prevent_overwrite=False
-                    )
-                    if lock_status is True:
-                        logger.info(
-                            f"Successfully acquired lock through force for publish_context_url={publ_ctx_url}, "
-                            f"task_id={task_id}."
+                # If the lock status is still None, we need to force the acquisition of the lock
+                # at this point since we should assume it is stale
+                if publish_context_lock.get_lock_status() is None:
+                    try:
+                        lock_status = publish_context_lock.acquire_lock(
+                            publish_context_url=publ_ctx_url,
+                            task_id=task_id,
+                            prevent_overwrite=False
                         )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
-                    )
+                        if lock_status is True:
+                            logger.info(
+                                f"Successfully acquired lock through force for publish_context_url={publ_ctx_url}, "
+                                f"task_id={task_id}."
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
+                        )
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
