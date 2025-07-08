@@ -203,7 +203,7 @@ def write_to_object_store(
             logger.info("Uploading %s to %s." % (abs_path, dest_url))
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
 
-    sleep_time = random.randint(300, 600)
+    sleep_time = random.randint(500, 1000)
     logger.info(f"Sleeping for {sleep_time} seconds")
     time.sleep(sleep_time)
 
