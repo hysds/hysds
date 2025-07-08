@@ -509,7 +509,7 @@ def is_task_finished(_id):
         logger.info("get_task_status result: %s" % json.dumps(res, indent=2))
         doc = res["hits"]["hits"][0]
         status = doc["_source"]["status"]
-        if status in ["task-succeeded", "task-failed"]:
+        if status in ["task-succeeded", "task-failed", "task-revoked"]:
             return True
         else:
             raise TaskNotFinishedException(f"Task {_id} not finished. status={status}")
