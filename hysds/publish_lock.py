@@ -21,7 +21,7 @@ def publish_wait_backoff_max_time():
 
 
 def dedup_publish_context(details):
-    logger.info("Giving up waiting for lock to expire with args {args} and kwargs {kwargs}".format(**details))
+    logger.info("Giving up waiting for lock to expire with kwargs {kwargs}".format(**details))
     return None
 
 
@@ -78,14 +78,13 @@ class PublishContextLock:
             ex=1200,
             nx=prevent_overwrite
         )
-        logger.info(f"acquire_lock status={status}")
         if status is None:
             value = self.redis_client.get(publish_context_url)
             if value:
                 value = value.decode() if hasattr(value, "decode") else value
-                raise DedupPublishContextFoundException(
-                    f"Lock still exists in Redis: publish_context_url={publish_context_url}, task_id={value}"
-                )
+                message = f"Lock still exists in REDIS: publish_context_url={publish_context_url}, task_id={value}"
+                logger.warning(message)
+                raise DedupPublishContextFoundException(message)
         else:
             return status
         return status

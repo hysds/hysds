@@ -39,9 +39,9 @@ from billiard.pool import Pool, cpu_count  # noqa
 from hysds.utils import (get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets,
                          is_task_finished, TaskNotFinishedException)
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
-    backoff_max_tries, DedupPublishContextFoundException
+    backoff_max_tries
 
-from hysds.publish_lock import PublishContextLock
+from hysds.publish_lock import PublishContextLock, DedupPublishContextFoundException
 
 from hysds.celery import app
 from hysds.recognize import Recognizer
