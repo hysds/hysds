@@ -74,7 +74,8 @@ class PublishContextLock:
         status = self.redis_client.set(
             publish_context_url,
             task_id,
-            ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
+            #ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
+            ex=1200,
             nx=prevent_overwrite
         )
         logger.info(f"acquire_lock status={status}")
