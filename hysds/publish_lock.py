@@ -82,9 +82,26 @@ class PublishContextLock:
             value = self.redis_client.get(publish_context_url)
             if value:
                 value = value.decode() if hasattr(value, "decode") else value
-                message = f"Lock still exists in REDIS: publish_context_url={publish_context_url}, task_id={value}"
-                logger.warning(message)
-                raise DedupPublishContextFoundException(message)
+                if value != task_id:
+                    message = (
+                        f"Lock exists in REDIS, but for a different task than {task_id}: "
+                        f"publish_context_url={publish_context_url}, task_id_in_lock={value}"
+                    )
+                    logger.warning(message)
+                    raise DedupPublishContextFoundException(message)
+                else:
+                    logger.info(
+                        f"Lock already exists in REDIS for this task, {task_id}: "
+                        f"publish_context_url={publish_context_url}, task_id_in_lock={value}. Re-acquiring lock."
+                    )
+                    # The lock being acquired already exists and the task_ids match. So, return True
+                    status = self.redis_client.set(
+                        publish_context_url,
+                        task_id,
+                        # ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
+                        ex=1200,
+                        nx=False
+                    )
         else:
             return status
         return status

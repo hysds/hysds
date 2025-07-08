@@ -477,7 +477,7 @@ def get_job_status(_id):
 
 
 def giveup_check_finished_task(details):
-    logger.info("Giving up checking to see if task is finished with args {args} and kwargs {kwargs}".format(**details))
+    logger.info("Giving up checking to see if task is finished with args {args}".format(**details))
     return None
 
 
@@ -506,7 +506,7 @@ def is_task_finished(_id):
         logger.warning("task not found, _id: %s" % _id)
         raise TaskNotFinishedException(f"Task not found in task_status-current: {_id}")
     else:
-        logger.info("get_job_status result: %s" % json.dumps(res, indent=2))
+        logger.info("get_task_status result: %s" % json.dumps(res, indent=2))
         doc = res["hits"]["hits"][0]
         status = doc["_source"]["status"]
         if status in ["task-succeeded", "task-failed"]:

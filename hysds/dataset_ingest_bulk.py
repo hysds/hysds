@@ -461,24 +461,24 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 orig_task_id = orig_publ_ctx.get("task_id", None)
                 logger.warn("orig payload_id: {}".format(orig_payload_id))
                 logger.warn("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warn("orig task_id: {}".format(orig_payload_id))
+                logger.warn("orig task_id: {}".format(orig_task_id))
 
                 if orig_payload_id is None:
                     if publish_context_lock:
                         publish_context_lock.close()
                     raise
 
+                # Need to verify that the original task is finished. Let's check
+                # before proceeding
+                try:
+                    is_task_finished(orig_task_id)
+                    logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                except TaskNotFinishedException as te:
+                    logger.warning(str(te))
+                    logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
+
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
-                    # Need to also verify that the original task is finished. Let's check
-                    # before proceeding
-                    try:
-                        is_task_finished(orig_task_id)
-                        logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
-                    except TaskNotFinishedException as te:
-                        logger.warning(str(te))
-                        logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
-
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
                         logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
