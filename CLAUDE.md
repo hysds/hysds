@@ -104,8 +104,8 @@ This codebase requires Python 3.12+ with specific modernization patterns:
 ### Datetime Handling
 ```python
 # Use timezone-aware datetime
-from datetime import datetime, UTC
-created_time = datetime.now(UTC)  # Not datetime.utcnow()
+from datetime import datetime, timezone
+created_time = datetime.now(timezone.utc)  # Not datetime.utcnow()
 ```
 
 ### Logging

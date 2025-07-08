@@ -9,7 +9,7 @@ import os
 import re
 import shutil
 import traceback
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from glob import glob
 
 import hysds
@@ -99,7 +99,7 @@ def triage(job, ctx):
     if triage_partition_format:
         index_met = {
             "index": {
-                "suffix": f"{ds['version']}_{datetime.now(UTC).strftime(triage_partition_format)}_triaged_job"
+                "suffix": f"{ds['version']}_{datetime.now(timezone.utc).strftime(triage_partition_format)}_triaged_job"
             }
         }
         ds.update(index_met)

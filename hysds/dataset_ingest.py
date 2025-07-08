@@ -10,7 +10,7 @@ import socket
 import sys
 import traceback
 import types
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from glob import glob
 from io import StringIO
 from pprint import pformat, pprint
@@ -204,7 +204,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
         ingest_kwargs["force"] = True
 
     # upload
-    tx_t1 = datetime.now(UTC)
+    tx_t1 = datetime.now(timezone.utc)
 
     metrics, prod_json = ingest(
         *(
@@ -217,7 +217,7 @@ def publish_dataset(prod_dir, dataset_file, job, ctx):
         ),
         **ingest_kwargs,
     )
-    tx_t2 = datetime.now(UTC)
+    tx_t2 = datetime.now(timezone.utc)
     tx_dur = (tx_t2 - tx_t1).total_seconds()
     prod_dir_usage = get_disk_usage(prod_dir)
 
@@ -576,7 +576,7 @@ def ingest(
 
         # upload dataset to repo; track disk usage and start/end times of transfer
         prod_dir_usage = get_disk_usage(local_prod_path)
-        tx_t1 = datetime.now(UTC)
+        tx_t1 = datetime.now(timezone.utc)
         if dry_run:
             logger.info(f"Would've published {local_prod_path} to {pub_path_url}")
         else:
@@ -731,7 +731,7 @@ def ingest(
                         publ_ctx_file=publ_ctx_file,
                         publ_ctx_url=publ_ctx_url,
                     )
-        tx_t2 = datetime.now(UTC)
+        tx_t2 = datetime.now(timezone.utc)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
         # save dataset metrics on size and transfer

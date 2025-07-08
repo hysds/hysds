@@ -9,7 +9,7 @@ import os
 import socket
 import sys
 import time
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 import msgpack
 import psutil
@@ -41,7 +41,7 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
     instance_stats = {
         "type": "instance_stats",
         "@version": "1",
-        "@timestamp": f"{datetime.now(UTC).replace(tzinfo=None).isoformat()}Z",
+        "@timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
         "stats": instance_stats,
     }
 

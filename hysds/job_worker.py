@@ -10,7 +10,7 @@ import signal
 import socket
 import time
 import traceback
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from itertools import compress
 from subprocess import CalledProcessError, check_output
 
@@ -706,7 +706,7 @@ def run_job(job, queue_when_finished=True):
     webdav_url = worker_cfg.get("webdav_url", app.conf.get("WEBDAV_URL"))
 
     # job execution times
-    time_start = datetime.now(UTC)
+    time_start = datetime.now(timezone.utc)
     time_end = None
     time_start_iso = datetime_iso_naive(time_start) + "Z"
 
@@ -1178,7 +1178,7 @@ def run_job(job, queue_when_finished=True):
             pass
 
         # command execution start time
-        cmd_start = datetime.now(UTC)
+        cmd_start = datetime.now(timezone.utc)
         cmd_start_iso = datetime_iso_naive(cmd_start) + "Z"
         job["job_info"]["cmd_start"] = cmd_start_iso
 
@@ -1207,7 +1207,7 @@ def run_job(job, queue_when_finished=True):
             pid = 0
 
         # command execution end time and duration
-        cmd_end = datetime.now(UTC)
+        cmd_end = datetime.now(timezone.utc)
         job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
         job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
@@ -1275,7 +1275,7 @@ def run_job(job, queue_when_finished=True):
                 json.dump(context, f, indent=2, sort_keys=True)
 
         # save job duration
-        time_end = datetime.now(UTC)
+        time_end = datetime.now(timezone.utc)
         job["job_info"]["time_end"] = datetime_iso_naive(time_end) + "Z"
         job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 
@@ -1337,7 +1337,7 @@ def run_job(job, queue_when_finished=True):
 
         # if cmd_end not set and cmd_start was, do it now
         if cmd_end is None and cmd_start is not None:
-            cmd_end = datetime.now(UTC)
+            cmd_end = datetime.now(timezone.utc)
             job["job_info"]["cmd_end"] = datetime_iso_naive(cmd_end) + "Z"
             job["job_info"]["cmd_duration"] = (cmd_end - cmd_start).total_seconds()
 
@@ -1372,7 +1372,7 @@ def run_job(job, queue_when_finished=True):
 
         # if time_end not set, do it now
         if time_end is None:
-            time_end = datetime.now(UTC)
+            time_end = datetime.now(timezone.utc)
             job["job_info"]["time_end"] = datetime_iso_naive(time_end) + "Z"
             job["job_info"]["duration"] = (time_end - time_start).total_seconds()
 

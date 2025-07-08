@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - CHANGELOG.md file to track changes
 
 ### Changed
-- Updated `datetime.utcnow()` to `datetime.now(UTC)` throughout the codebase
+- Updated `datetime.utcnow()` to `datetime.now(timezone.utc)` throughout the codebase
 - Replaced deprecated `logger.warn()` calls with `logger.warning()`
 - Refactored `get_disk_usage` to use Python's native `os.lstat` and `os.walk`
 - Updated timezone handling to be explicit with `UTC` timezone

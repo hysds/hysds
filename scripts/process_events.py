@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import traceback
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pprint import pformat
 
 import backoff
@@ -84,7 +84,7 @@ def log_task_event(event_type, event, uuid=[]):
     info = {
         "resource": "task",
         "index": event.get(
-            "index", f"task_status-{datetime.now(UTC).strftime('%Y.%m.%d')}"
+            "index", f"task_status-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
         ),
         "type": parse_job_type(event),
         "status": event_type,

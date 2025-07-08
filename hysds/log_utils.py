@@ -8,7 +8,7 @@ import re
 import socket
 import traceback
 import types
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from uuid import uuid4
 
 import backoff
@@ -222,7 +222,7 @@ def log_job_status(job):
     job["resource"] = "job"
     job["type"] = job.get("job", {}).get("type", "unknown")
     job["@version"] = "1"
-    job["@timestamp"] = f"{datetime.now(UTC).replace(tzinfo=None).isoformat()}Z"
+    job["@timestamp"] = f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z"
     if "tag" in job.get("job", {}):
         tags = job.setdefault("tags", [])
         if isinstance(tags, str):
@@ -266,7 +266,7 @@ def log_job_info(job):
     job_info = {
         "type": "job_info",
         "@version": "1",
-        "@timestamp": f"{datetime.now(UTC).replace(tzinfo=None).isoformat()}Z",
+        "@timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
         "job": filtered_info,
         "job_type": job["type"],
     }
@@ -299,7 +299,7 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
         "resource": "event",
         "type": event_type,
         "status": event_status,
-        "@timestamp": f"{datetime.now(UTC).replace(tzinfo=None).isoformat()}Z",
+        "@timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
         "hostname": hostname,
         "uuid": uuid,
         "tags": tags,
@@ -330,7 +330,7 @@ def log_prov_es(job, prov_es_info, prov_es_file):
     # create sofware agent
     sa_label = (
         f"hysds:pge_wrapper/{job['job_info']['execute_node']}/{job['job_info']['pid']}/"
-        f"{datetime.now(UTC).replace(tzinfo=None).isoformat()}"
+        f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}"
     )
     sa_id = f"hysds:{get_uuid(sa_label)}"
     doc.softwareAgent(

@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import socket
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from email.encoders import encode_base64
 from email.header import Header
 
@@ -310,7 +310,7 @@ def check_queue_execution(
                 start_dt = datetime.strptime(
                     latest_job["job"]["job_info"]["time_start"], "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
-                now = datetime.now(UTC).replace(tzinfo=None)
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 delta = (now - start_dt).total_seconds()
                 if "time_limit" in latest_job["job"]["job_info"]:
                     logging.info("Using job time limit as periodicity")

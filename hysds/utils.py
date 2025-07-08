@@ -13,7 +13,7 @@ import re
 import shutil
 import traceback
 from bisect import insort
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from importlib import import_module
 from io import StringIO
 from subprocess import check_output
@@ -149,7 +149,7 @@ def download_file(url, path, cache=False, root_work_dir=None):
                     f"Failed to download {url} to cache {cache_dir}: {str(e)}\n{tb}"
                 )
             with atomic_write(signal_file, overwrite=True) as f:
-                f.write(f"{datetime.now(UTC).isoformat()}Z\n")
+                f.write(f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z\n")
         for i in os.listdir(cache_dir):
             if i == ".localized":
                 continue
@@ -330,7 +330,7 @@ def parse_iso8601(t):
         dt = datetime.strptime(t, "%Y-%m-%dT%H:%M:%S.%fZ")
     except ValueError:
         dt = datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
-    return dt.replace(tzinfo=UTC)
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def get_short_error(e):
@@ -447,7 +447,7 @@ def query_dedup_job(dedup_key, filter_id=None, states=None, is_worker=False):
         return {
             "_id": hit["_id"],
             "status": hit["_source"]["status"],
-            "query_timestamp": datetime.now(UTC).isoformat(),
+            "query_timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -749,16 +749,16 @@ def validate_index_pattern(index):
 
 def datetime_iso_naive(datetime_value=None):
     """
-    datetime.utcnow() is being deprecated in favor of datetime.now(UTC)
+    datetime.utcnow() is being deprecated in favor of datetime.now(timezone.utc)
 
     However, there are differences:
 
-    print(datetime.now(UTC).isoformat())  # '2025-06-18T21:20:57.526708+00:00'
+    print(datetime.now(timezone.utc).isoformat())  # '2025-06-18T21:20:57.526708+00:00'
     print(datetime.utcnow().isoformat())  # '2025-06-18T21:21:08.395675'
 
     This function is intended to maintain backwards compatibility
 
     """
     if datetime_value is None:
-        datetime_value = datetime.now(UTC)
+        datetime_value = datetime.now(timezone.utc)
     return datetime_value.replace(tzinfo=None).isoformat()

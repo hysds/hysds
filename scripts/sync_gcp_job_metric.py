@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 import requests
 from google.cloud import monitoring
@@ -49,7 +49,7 @@ def submit_metric(resource_id, project, job, job_count):
         labels={"resource_id": resource_id},
     )
     resource = client.resource("global", {})
-    client.write_point(metric, resource, job_count, end_time=datetime.now(UTC).replace(tzinfo=None))
+    client.write_point(metric, resource, job_count, end_time=datetime.now(timezone.utc).replace(tzinfo=None))
     logging.info(
         f"updated job count for {job} queue as metric {metric_ns}:{metric_name}: {job_count}"
     )

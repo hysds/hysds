@@ -12,7 +12,7 @@ import sys
 import time
 import traceback
 import uuid
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from functools import lru_cache
 from importlib import reload
 from inspect import getfullargspec as getargspec
@@ -55,7 +55,7 @@ def get_timestamp(fraction=True):
     """Return the current date and time formatted for a message header."""
 
     (year, month, day, hh, mm, ss, wd, y, z) = time.gmtime()
-    d = datetime.now(UTC)
+    d = datetime.now(timezone.utc)
     if fraction:
         s = f"{d.year:04d}{d.month:02d}{d.day:02d}T{d.hour:02d}{d.minute:02d}{d.second:02d}.{d.microsecond}Z"
     else:
@@ -148,7 +148,7 @@ def submit_job(j):
         "job_info": j,
     }
 
-    current_time = datetime.now(UTC)
+    current_time = datetime.now(timezone.utc)
     job["job_info"]["index"] = f"job_status-{current_time.strftime('%Y.%m.%d')}"
 
     # set job type

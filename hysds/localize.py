@@ -7,7 +7,7 @@ standard_library.install_aliases()
 import logging
 import os
 import traceback
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 
 import backoff
 from billiard import Manager, get_context  # noqa
@@ -65,10 +65,10 @@ def download_file_wrapper(url, path, cache=False, event=None):
         logger.warning(f"Previous localize task failed, skipping {url}...")
         return
 
-    loc_t1 = datetime.now(UTC)
+    loc_t1 = datetime.now(timezone.utc)
     try:
         download_file(url, path, cache=cache)
-        loc_t2 = datetime.now(UTC)
+        loc_t2 = datetime.now(timezone.utc)
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
         return {

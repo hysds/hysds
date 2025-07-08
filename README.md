@@ -26,7 +26,7 @@ Core component for the Hybrid Science Data System
 
 This version of HySDS is fully compatible with Python 3.12. The following changes were made to ensure compatibility:
 
-- Updated `datetime.utcnow()` to `datetime.now(UTC)` throughout the codebase
+- Updated `datetime.utcnow()` to `datetime.now(timezone.utc)` throughout the codebase
 - Replaced deprecated `logger.warn()` calls with `logger.warning()`
 - Refactored `get_disk_usage` to use Python's native `os.lstat` and `os.walk`
 - Updated timezone handling to be explicit with `UTC` timezone

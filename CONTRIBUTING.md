@@ -7,8 +7,8 @@ Thank you for considering contributing to HySDS! This document provides guidelin
 This project now requires Python 3.12 or higher. When contributing code, please ensure:
 
 1. **Use timezone-aware datetimes**:
-   - Use `from datetime import datetime, UTC`
-   - Use `datetime.now(UTC)` instead of `datetime.utcnow()`
+   - Use `from datetime import datetime, timezone`
+   - Use `datetime.now(timezone.utc)` instead of `datetime.utcnow()`
    - Ensure all datetime objects are timezone-aware
 
 2. **Logging**:
