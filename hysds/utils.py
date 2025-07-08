@@ -512,7 +512,9 @@ def is_task_finished(_id):
         if status in ["task-succeeded", "task-failed", "task-revoked"]:
             return True
         else:
-            raise TaskNotFinishedException(f"Task {_id} not finished. status={status}")
+            message = f"Task {_id} not finished yet. status={status}"
+            logger.warning(message)
+            raise TaskNotFinishedException(message)
 
 
 @backoff.on_exception(
