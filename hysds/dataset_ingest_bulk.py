@@ -470,13 +470,6 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
-                    # Check to see if the dataset exists. If so, then raise the error at this point
-                    if dataset_exists(objectid):
-                        logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
-                        if publish_context_lock:
-                            publish_context_lock.close()
-                        raise
-
                     # Need to also verify that the original task is finished. Let's check
                     # before proceeding
                     try:
@@ -485,6 +478,13 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     except TaskNotFinishedException as te:
                         logger.warning(str(te))
                         logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
+
+                    # Check to see if the dataset exists. If so, then raise the error at this point
+                    if dataset_exists(objectid):
+                        logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
+                        if publish_context_lock:
+                            publish_context_lock.close()
+                        raise
 
                     msg = (
                             "This job is a retry of a previous job that resulted "
