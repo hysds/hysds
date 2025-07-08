@@ -20,6 +20,7 @@ import shutil
 import traceback
 import logging
 import time
+import random
 
 from glob import glob
 from datetime import datetime
@@ -200,7 +201,10 @@ def write_to_object_store(
             dest_url = os.path.join(url, rel_path)
             logger.info("Uploading %s to %s." % (abs_path, dest_url))
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
-            time.sleep(60)
+
+    sleep_time = random.randint(60, 120)
+    logger.info(f"Sleeping for {sleep_time} seconds")
+    time.sleep(sleep_time)
 
 
 def parse_iso8601(t):
