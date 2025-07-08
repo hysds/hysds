@@ -430,6 +430,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     logger.error(error_message)
                     raise NoClobberPublishContextException(error_message)
                 except RedisError as re:
+                    publish_context_lock.close()
                     raise
 
                 write_to_object_store(
@@ -462,6 +463,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 logger.warn("orig task_id: {}".format(orig_payload_id))
 
                 if orig_payload_id is None:
+                    if publish_context_lock:
+                        publish_context_lock.close()
                     raise
 
                 # overwrite if this job is a retry of the previous job
@@ -469,6 +472,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
                         logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
+                        if publish_context_lock:
+                            publish_context_lock.close()
                         raise
 
                     msg = (
@@ -542,6 +547,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                                 },
                             )
                         else:
+                            if publish_context_lock:
+                                publish_context_lock.close()
                             raise
 
                 # If we have gotten to this point, we assume the lock is stale and we
@@ -580,6 +587,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                                 publ_ctx_url
                             )
                         )
+                    if publish_context_lock:
+                        publish_context_lock.close()
                     raise
                 else:
                     msg = "Detected orphaned dataset %s, deleting from data store before re-publishing..." % objectid
@@ -622,6 +631,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     prov_es_info = json.load(f)
                 except Exception as e:
                     tb = traceback.format_exc()
+                    if publish_context_lock:
+                        publish_context_lock.close()
                     raise RuntimeError(
                         "Failed to load PROV-ES from {}: {}\n{}".format(
                             prod_prov_es_file, str(e), tb
