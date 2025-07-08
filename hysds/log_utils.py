@@ -60,7 +60,9 @@ PAYLOAD_HASH_KEY_TMPL = "hysds-payload-hash-%s"
 
 
 class DedupPublishContextFoundException(Exception):
-    pass
+    def __init__(self, message):
+        self.message = message
+        super(DedupPublishContextFoundException, self).__init__(message)
 
 
 def backoff_max_value():
@@ -687,6 +689,7 @@ def acquire_publish_context_lock(publish_context_url, task_id, prevent_overwrite
     status = r.set(
         publish_context_url, task_id, ex=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 300), nx=prevent_overwrite
     )
+    logger.info(f"acquire_publish_context_lock status={status}")
     if status is None:
         value = r.get(publish_context_url)
         if value:
