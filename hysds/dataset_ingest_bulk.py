@@ -36,7 +36,8 @@ from tempfile import mkdtemp
 from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
-from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets
+from hysds.utils import (get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets,
+                         is_task_finished, TaskNotFinishedException)
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
     backoff_max_tries, DedupPublishContextFoundException
 
@@ -425,7 +426,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         )
                 except DedupPublishContextFoundException as dpe:
                     error_message = (
-                        f"Lock was not successfully acquired. Still exists in REDIS. Assuming stale lock:\n{str(dpe)}"
+                        f"Lock was not successfully acquired. Still exists in REDIS:\n{str(dpe)}"
                     )
                     logger.error(error_message)
                     raise NoClobberPublishContextException(error_message)
@@ -475,6 +476,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         if publish_context_lock:
                             publish_context_lock.close()
                         raise
+
+                    # Need to also verify that the original task is finished. Let's check
+                    # before proceeding
+                    try:
+                        is_task_finished(orig_task_id)
+                        logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                    except TaskNotFinishedException as te:
+                        logger.warning(str(te))
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
 
                     msg = (
                             "This job is a retry of a previous job that resulted "
