@@ -408,25 +408,25 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             orig_publ_ctx_file = publ_ctx_file + ".orig"
             try:
                 # Acquire lock first before trying to write to the object store
-                try:
-                    publish_context_lock = PublishContextLock()
-                    lock_status = publish_context_lock.acquire_lock(
-                        publish_context_url=publ_ctx_url,
-                        task_id=task_id
-                    )
-                    if lock_status is True:
-                        logger.info(
-                            f"Successfully acquired lock for publish_context_url={publ_ctx_url}, task_id={task_id}."
+                if task_id:
+                    try:
+                        publish_context_lock = PublishContextLock()
+                        lock_status = publish_context_lock.acquire_lock(
+                            publish_context_url=publ_ctx_url,
+                            task_id=task_id
                         )
-                except DedupPublishContextFoundException as dpe:
-                    error_message = (
-                        f"Lock was not successfully acquired. Still exists in REDIS:\n{str(dpe)}"
-                    )
-                    logger.error(error_message)
-                    raise NoClobberPublishContextException(error_message)
-                except RedisError as re:
-                    publish_context_lock.close()
-                    raise
+                        if lock_status is True:
+                            logger.info(
+                                f"Successfully acquired lock for publish_context_url={publ_ctx_url}, task_id={task_id}."
+                            )
+                    except DedupPublishContextFoundException as dpe:
+                        error_message = (
+                            f"Lock was not successfully acquired. Still exists in REDIS:\n{str(dpe)}"
+                        )
+                        logger.error(error_message)
+                        raise NoClobberPublishContextException(error_message)
+                    except RedisError as re:
+                        logger.warning(f"Redis error occurred while trying to acquire lock: {str(re)}")
 
                 write_to_object_store(
                     local_prod_path,
@@ -558,7 +558,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
                 # If the lock status is still None, we need to force the acquisition of the lock
                 # at this point since we should assume it is stale
-                if publish_context_lock.get_lock_status() is None:
+                if task_id and publish_context_lock.get_lock_status() is None:
                     try:
                         lock_status = publish_context_lock.acquire_lock(
                             publish_context_url=publ_ctx_url,
