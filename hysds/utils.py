@@ -492,7 +492,7 @@ def giveup_check_finished_task(details):
     on_giveup=giveup_check_finished_task
 )
 def is_task_finished(_id):
-    """Get job status."""
+    """Checks to see if the given task is in a finished state."""
     query = {
         "query": {
             "bool": {
@@ -504,7 +504,7 @@ def is_task_finished(_id):
     res = mozart_es.search(index="task_status-current", body=query, _source_includes=["status"])
     if res["hits"]["total"]["value"] == 0:
         logger.warning("task not found, _id: %s" % _id)
-        raise TaskNotFinishedException(f"Task not found in task_status-current: {_id}")
+        return None
     else:
         logger.info("get_task_status result: %s" % json.dumps(res, indent=2))
         doc = res["hits"]["hits"][0]

@@ -659,8 +659,11 @@ def ingest(
                 # in the publish context is finished before proceeding.
                 if orig_task_id and publish_context_lock and publish_context_lock.get_lock_status() is None:
                     try:
-                        is_task_finished(orig_task_id)
-                        logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                        status = is_task_finished(orig_task_id)
+                        if status is True:
+                            logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                        else:
+                            logger.warning(f"Could not determine status of {orig_task_id}. Proceeding with forcing publish.")
                     except TaskNotFinishedException as te:
                         logger.warning(str(te))
                         logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
