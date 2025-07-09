@@ -768,6 +768,7 @@ def ingest(
                     except Exception as e:
                         logger.warning(
                             f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
+                        )
 
                 write_to_object_store(
                     local_prod_path,
