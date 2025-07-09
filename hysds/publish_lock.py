@@ -25,10 +25,6 @@ def dedup_publish_context(details):
     return None
 
 
-class NoClobberPublishContextException(Exception):
-    pass
-
-
 class PublishContextLockException(Exception):
     pass
 
@@ -89,8 +85,7 @@ class PublishContextLock:
         self.lock_status = self.redis_client.set(
             publish_context_url,
             task_id,
-            #ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
-            ex=1200,
+            ex=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 600),
             nx=prevent_overwrite
         )
         if self.lock_status is None:
@@ -120,7 +115,6 @@ class PublishContextLock:
                         ex=1200,
                         nx=False
                     )
-
         return self.lock_status
 
 

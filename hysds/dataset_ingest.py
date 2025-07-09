@@ -48,7 +48,6 @@ from hysds.log_utils import (
 from hysds.publish_lock import (
     PublishContextLock,
     DedupPublishContextFoundException,
-    NoClobberPublishContextException,
     PublishContextLockException
 )
 from hysds.recognize import Recognizer
@@ -59,9 +58,6 @@ from hysds.celery import app
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
 SCRIPT_RE = re.compile(r"script:(.*)$")
 BROWSE_RE = re.compile(r"^(.+)\.browse\.png$")
-
-
-
 
 
 def verify_dataset(dataset):

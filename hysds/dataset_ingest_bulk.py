@@ -19,8 +19,6 @@ import backoff
 import shutil
 import traceback
 import logging
-import time
-import random
 
 from glob import glob
 from datetime import datetime
@@ -44,7 +42,6 @@ from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_p
 from hysds.publish_lock import (
     PublishContextLock,
     DedupPublishContextFoundException,
-    NoClobberPublishContextException,
     PublishContextLockException
 )
 
@@ -65,6 +62,8 @@ class NoDedupJobFoundException(Exception):
         self.message = message
         super(NoDedupJobFoundException, self).__init__(message)
 
+class NoClobberPublishContextException(Exception):
+    pass
 
 class NotAllProductsIngested(Exception):
     pass
@@ -199,10 +198,6 @@ def write_to_object_store(
             dest_url = os.path.join(url, rel_path)
             logger.info("Uploading %s to %s." % (abs_path, dest_url))
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
-
-    sleep_time = random.randint(500, 1000)
-    logger.info(f"Sleeping for {sleep_time} seconds")
-    time.sleep(sleep_time)
 
 
 def parse_iso8601(t):
