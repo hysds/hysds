@@ -62,8 +62,10 @@ class NoDedupJobFoundException(Exception):
         self.message = message
         super(NoDedupJobFoundException, self).__init__(message)
 
+
 class NoClobberPublishContextException(Exception):
     pass
+
 
 class NotAllProductsIngested(Exception):
     pass

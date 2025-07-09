@@ -7,8 +7,6 @@ from hysds.celery import app
 
 from hysds.log_utils import logger
 
-PUBLISH_CONTEXT_HASH_POOL = None
-
 
 def publish_wait_backoff_max_value():
     """Return max value for backoff."""

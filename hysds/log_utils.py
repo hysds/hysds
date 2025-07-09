@@ -41,7 +41,6 @@ EVENT_STATUS_POOL = None
 SOCKET_POOL = None
 REVOKED_TASK_POOL = None
 PAYLOAD_HASH_POOL = None
-PUBLISH_CONTEXT_HASH_POOL = None
 
 # job status key template
 JOB_STATUS_KEY_TMPL = "hysds-job-status-%s"
