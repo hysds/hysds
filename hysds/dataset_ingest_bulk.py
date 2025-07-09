@@ -467,7 +467,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
                 # If we still did not get a lock, then we should verify that the original task
                 # in the publish context is finished before proceeding.
-                if publish_context_lock and publish_context_lock.get_lock_status() is None:
+                if orig_task_id and publish_context_lock and publish_context_lock.get_lock_status() is None:
                     try:
                         is_task_finished(orig_task_id)
                         logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
@@ -801,7 +801,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     publ_ctx_url
                 )
             )
-        if task_id is not None and publish_context_lock is not None:
+        if task_id and publish_context_lock:
             try:
                 num_records_deleted, lock_task_id = publish_context_lock.release(
                     publish_context_url=publ_ctx_url,
