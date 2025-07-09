@@ -31,11 +31,12 @@ from glob import glob
 from datetime import datetime
 from filechunkio import FileChunkIO
 from tempfile import mkdtemp
+from redis.exceptions import RedisError
 
 import hysds
 import osaka
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, get_func, parse_iso8601, \
-    find_dataset_json
+    find_dataset_json, is_task_finished, TaskNotFinishedException
 from hysds.log_utils import (
     logger,
     log_prov_es,
@@ -43,6 +44,12 @@ from hysds.log_utils import (
     backoff_max_value,
     backoff_max_tries,
     log_custom_event,
+)
+from hysds.publish_lock import (
+    PublishContextLock,
+    DedupPublishContextFoundException,
+    NoClobberPublishContextException,
+    PublishContextLockException
 )
 from hysds.recognize import Recognizer
 from hysds.orchestrator import do_submit_job
@@ -52,6 +59,9 @@ from hysds.celery import app
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
 SCRIPT_RE = re.compile(r"script:(.*)$")
 BROWSE_RE = re.compile(r"^(.+)\.browse\.png$")
+
+
+
 
 
 def verify_dataset(dataset):
@@ -549,6 +559,8 @@ def ingest(
     # set product metrics
     prod_metrics = {"ipath": ipath, "path": local_prod_path}
 
+    publish_context_lock = None
+
     # publish dataset
     if r.publishConfigured():
         logger.info("Dataset publish is configured.")
@@ -592,6 +604,27 @@ def ingest(
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + ".orig"
             try:
+                # Acquire lock first before trying to write to the object store
+                try:
+                    publish_context_lock = PublishContextLock()
+                    lock_status = publish_context_lock.acquire_lock(
+                        publish_context_url=publ_ctx_url,
+                        task_id=task_id
+                    )
+                    if lock_status is True:
+                        logger.info(
+                            f"Successfully acquired lock for publish_context_url={publ_ctx_url}, task_id={task_id}."
+                        )
+                except DedupPublishContextFoundException as dpe:
+                    error_message = (
+                        f"Lock was not successfully acquired. Still exists in REDIS:\n{str(dpe)}"
+                    )
+                    logger.error(error_message)
+                    raise NoClobberPublishContextException(error_message)
+                except RedisError as re:
+                    publish_context_lock.close()
+                    raise
+
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -622,13 +655,27 @@ def ingest(
                 logger.warn("orig task_id: {}".format(orig_payload_id))
 
                 if orig_payload_id is None:
+                    if publish_context_lock:
+                        publish_context_lock.close()
                     raise
+
+                # If we still did not get a lock, then we should verify that the original task
+                # in the publish context is finished before proceeding.
+                if publish_context_lock and publish_context_lock.get_lock_status() is None:
+                    try:
+                        is_task_finished(orig_task_id)
+                        logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
+                    except TaskNotFinishedException as te:
+                        logger.warning(str(te))
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
                         logger.info(f"Dataset already exists: {objectid}. No need to force publish.")
+                        if publish_context_lock:
+                            publish_context_lock.close()
                         raise
 
                     msg = (
@@ -703,6 +750,24 @@ def ingest(
                             )
                         else:
                             raise
+
+                # If the lock status is still None, we need to force the acquisition of the lock
+                # at this point since we should assume it is stale
+                if publish_context_lock.get_lock_status() is None:
+                    try:
+                        lock_status = publish_context_lock.acquire_lock(
+                            publish_context_url=publ_ctx_url,
+                            task_id=task_id,
+                            prevent_overwrite=False
+                        )
+                        if lock_status is True:
+                            logger.info(
+                                f"Successfully acquired lock through force for publish_context_url={publ_ctx_url}, "
+                                f"task_id={task_id}."
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
 
                 write_to_object_store(
                     local_prod_path,
@@ -930,6 +995,32 @@ def ingest(
                     publ_ctx_url
                 )
             )
+        if task_id is not None and publish_context_lock is not None:
+            try:
+                num_records_deleted, lock_task_id = publish_context_lock.release(
+                    publish_context_url=publ_ctx_url,
+                    task_id=task_id
+                )
+                if num_records_deleted == 0:
+                    logger.warning(
+                        f"No lock was found for publish_context_url={publ_ctx_url} or one was found, "
+                        f"but did not match task_id={task_id}: lock_task_id={lock_task_id}"
+                    )
+                else:
+                    logger.info(
+                        f"Successfully released lock for publish_context_url={publ_ctx_url}, task_id={task_id}: "
+                        f"number_of_records_deleted={num_records_deleted}"
+                    )
+            except PublishContextLockException as p:
+                logger.warning(
+                    f"Failed to release lock for publish_context_url={publ_ctx_url}, task_id={task_id}: {str(p)}"
+                )
+            try:
+                publish_context_lock.close()
+            except Exception as e:
+                logger.warning(
+                    f"Failed to close REDIS connection properly: {str(e)}"
+                )
     try:
         shutil.rmtree(publ_ctx_dir)
     except:

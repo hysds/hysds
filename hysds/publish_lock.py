@@ -25,6 +25,14 @@ def dedup_publish_context(details):
     return None
 
 
+class NoClobberPublishContextException(Exception):
+    pass
+
+
+class PublishContextLockException(Exception):
+    pass
+
+
 class DedupPublishContextFoundException(Exception):
     def __init__(self, message):
         self.message = message

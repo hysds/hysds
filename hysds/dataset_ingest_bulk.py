@@ -41,7 +41,12 @@ from hysds.utils import (get_disk_usage, makedirs, get_job_status, dataset_exist
 from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
     backoff_max_tries
 
-from hysds.publish_lock import PublishContextLock, DedupPublishContextFoundException
+from hysds.publish_lock import (
+    PublishContextLock,
+    DedupPublishContextFoundException,
+    NoClobberPublishContextException,
+    PublishContextLockException
+)
 
 from hysds.celery import app
 from hysds.recognize import Recognizer
@@ -61,15 +66,7 @@ class NoDedupJobFoundException(Exception):
         super(NoDedupJobFoundException, self).__init__(message)
 
 
-class NoClobberPublishContextException(Exception):
-    pass
-
-
 class NotAllProductsIngested(Exception):
-    pass
-
-
-class PublishContextLockException(Exception):
     pass
 
 
@@ -476,7 +473,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         logger.info(f"Task {orig_task_id} is finished. Proceeding with forcing publish.")
                     except TaskNotFinishedException as te:
                         logger.warning(str(te))
-                        logger.warning(f"Task {orig_task_id} still isn't finished. Assume stale lock.")
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
