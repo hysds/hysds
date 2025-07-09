@@ -1,8 +1,5 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 import hysds
 
 setup(
@@ -10,6 +7,7 @@ setup(
     version=hysds.__version__,
     long_description=hysds.__description__,
     url=hysds.__url__,
+    python_requires=">=3.12",
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
@@ -17,9 +15,9 @@ setup(
         "redis>=3.2.1,<4.5.2",  # https://github.com/redis/redis-py/issues/2629
         "celery>=5.3.1,<6.0.0",
         "prompt-toolkit==1.0.18",  # TODO: celery uses new verison of click which broke this, wil remove later
-        "requests>=2.20.0",
-        "flower>=1.0.0",
-        "eventlet>=0.17.2",
+        "requests>=2.31.0",
+        "flower>=2.0.1",
+        "eventlet>=0.33.3",
         "easywebdav>=1.2.0",
         "lxml>=3.4.0,<5.0.0",
         "httplib2>=0.9",
@@ -38,13 +36,12 @@ setup(
         "prov_es>=0.2.0",
         "hysds_commons>=0.1",
         "atomicwrites>=1.1.5",
-        "future>=0.17.1",
         "greenlet>=0.4.15",
         "fab-classic>=1.19.2",
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "pyyaml"
+        "pyyaml",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],

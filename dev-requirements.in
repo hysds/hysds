@@ -1,0 +1,31 @@
+# Development requirements
+-r requirements.in
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+pytest-xdist>=3.3.1
+
+# Linting
+black>=23.7.0
+flake8>=6.1.0
+isort>=5.12.0
+mypy>=1.5.0
+types-PyYAML>=6.0.12.11
+types-redis>=4.5.7.3
+typing-extensions>=4.7.1
+
+# Documentation
+Sphinx>=7.0.1
+sphinx-rtd-theme>=1.2.2
+sphinx-autodoc-typehints>=1.23.0
+
+# Build and packaging
+build>=0.10.0
+twine>=4.0.2
+wheel>=0.41.2
+
+# Other development tools
+pre-commit>=3.3.3
+tox>=4.6.4

@@ -1,31 +1,23 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import int
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
 
 import getpass
-import os
-import sys
 import json
+import os
 import shutil
-from datetime import datetime
-# from subprocess import Popen, PIPE
-from atomicwrites import atomic_write
+import sys
+from abc import ABC, abstractmethod
 from tempfile import mkdtemp
-
-from hysds.log_utils import logger
-from hysds.celery import app
 
 import osaka.main
 
-from abc import ABC, abstractmethod
+# from subprocess import Popen, PIPE
+from atomicwrites import atomic_write
+
+from hysds.celery import app
+from hysds.log_utils import logger
+from hysds.utils import datetime_iso_naive
 
 
 class Base(ABC):
@@ -43,7 +35,9 @@ class Base(ABC):
         :param image: str
         :return: str/byte
         """
-        raise RuntimeError("method 'inspect_image' must be defined in the derived class")
+        raise RuntimeError(
+            "method 'inspect_image' must be defined in the derived class"
+        )
 
     @abstractmethod
     def inspect_image_with_backoff(self, image):
@@ -52,7 +46,9 @@ class Base(ABC):
         :param image: str
         :return: str/byte
         """
-        raise RuntimeError("method 'inspect_image' must be defined in the derived class")
+        raise RuntimeError(
+            "method 'inspect_image' must be defined in the derived class"
+        )
 
     @abstractmethod
     def pull_image(self, image):
@@ -62,7 +58,6 @@ class Base(ABC):
         :return: str/byte
         """
         raise RuntimeError("method 'pull_image' must be defined in the derived class")
-
 
     @abstractmethod
     def tag_image(self, registry_url, image):
@@ -90,7 +85,9 @@ class Base(ABC):
             ex. [ "docker", "run", "--init", "--rm", "-u", ... ]
         :return: List[str]
         """
-        raise RuntimeError("method 'create_base_cmd' must be defined in the derived class")
+        raise RuntimeError(
+            "method 'create_base_cmd' must be defined in the derived class"
+        )
 
     def create_container_cmd(self, params, cmd_line_list):
         """
@@ -116,7 +113,7 @@ class Base(ABC):
             raise RuntimeError("Cannot mount host root directory")
         for k in blacklist:
             if mount.startswith(k):
-                raise RuntimeError("Cannot mount %s: %s is blacklisted" % (mount, k))
+                raise RuntimeError(f"Cannot mount {mount}: {k} is blacklisted")
         return True
 
     @classmethod
@@ -134,11 +131,20 @@ class Base(ABC):
             shutil.copytree(path, mnt_path)
         else:
             shutil.copy(path, mnt_path)
-        logger.info("Copied container mount {} to {}.".format(path, mnt_path))
+        logger.info(f"Copied container mount {path} to {mnt_path}.")
         return os.path.join(mnt_dir, os.path.basename(path))
 
-    def create_container_params(self, image_name, image_url, image_mappings, root_work_dir, job_dir,
-                                runtime_options=None, verdi_home=None, host_verdi_home=None):
+    def create_container_params(
+        self,
+        image_name,
+        image_url,
+        image_mappings,
+        root_work_dir,
+        job_dir,
+        runtime_options=None,
+        verdi_home=None,
+        host_verdi_home=None,
+    ):
         """
         Build container params for runtime.
         :param image_name: str
@@ -173,24 +179,36 @@ class Base(ABC):
         if app.conf.get("CACHE_READ_ONLY", True) is True:
             params["volumes"].append((root_cache_dir, f"{root_cache_dir}:ro"))
         else:
-            logger.info(f"CACHE_READ_ONLY set to false. Making it writable: {root_cache_dir}")
+            logger.info(
+                f"CACHE_READ_ONLY set to false. Making it writable: {root_cache_dir}"
+            )
             params["volumes"].append((root_cache_dir, f"{root_cache_dir}"))
 
         # add default image mappings
         celery_cfg_file = os.environ.get("HYSDS_CELERY_CFG", app.conf.__file__)
-        if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(image_mappings.values()):
+        if celery_cfg_file not in image_mappings and "celeryconfig.py" not in list(
+            image_mappings.values()
+        ):
             image_mappings[celery_cfg_file] = "celeryconfig.py"
         dsets_cfg_file = os.environ.get(
             "HYSDS_DATASETS_CFG",
-            os.path.normpath(os.path.join(os.path.dirname(sys.executable), "..", "etc", "datasets.json")),
+            os.path.normpath(
+                os.path.join(
+                    os.path.dirname(sys.executable), "..", "etc", "datasets.json"
+                )
+            ),
         )
-        if dsets_cfg_file not in image_mappings and "datasets.json" not in list(image_mappings.values()):
+        if dsets_cfg_file not in image_mappings and "datasets.json" not in list(
+            image_mappings.values()
+        ):
             image_mappings[dsets_cfg_file] = "datasets.json"
 
         # if running on k8s add hosts and resolv.conf; create mount directory
         blacklist = app.conf.WORKER_MOUNT_BLACKLIST
         mnt_dir = None
-        on_k8s = int(app.conf.get("K8S", 0))  # TODO: may look into this for K8 integration
+        on_k8s = int(
+            app.conf.get("K8S", 0)
+        )  # TODO: may look into this for K8 integration
         if on_k8s:
             for f in ("/etc/hosts", "/etc/resolv.conf"):
                 if f not in image_mappings and f not in list(image_mappings.values()):
@@ -210,7 +228,7 @@ class Base(ABC):
                 elif len(v) == 1:
                     v = v[0]
                 else:
-                    raise RuntimeError("Invalid image mapping: %s:%s" % (k, v))
+                    raise RuntimeError(f"Invalid image mapping: {k}:{v}")
             if v.startswith("/"):
                 mnt = v
             else:
@@ -226,22 +244,28 @@ class Base(ABC):
                     host_k = k.replace(verdi_home, host_verdi_home)
                     logger.info(f"Replacing {k} with {host_k} in the volume mount")
                 else:
-                    logger.info(f"Could not find {verdi_home} in {k}. Nothing to replace")
+                    logger.info(
+                        f"Could not find {verdi_home} in {k}. Nothing to replace"
+                    )
             else:
                 logger.info(
                     f"verdi_home and/or host_home are not set. So will not convert source "
                     f"volume mount to point to a location on the host: {k}"
                 )
 
-            params["volumes"].append((host_k, "%s:%s" % (mnt, mode)))
+            params["volumes"].append((host_k, f"{mnt}:{mode}"))
 
         # add runtime resources
         params["runtime_options"] = dict()
         if runtime_options is None:
             runtime_options = dict()
         for k, v in list(runtime_options.items()):
-            if k == "gpus" and int(os.environ.get("HYSDS_GPU_AVAILABLE", 0)) == 0:  # validate we have GPUs
-                logger.warning("Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option")
+            if (
+                k == "gpus" and int(os.environ.get("HYSDS_GPU_AVAILABLE", 0)) == 0
+            ):  # validate we have GPUs
+                logger.warning(
+                    "Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option"
+                )
                 continue
             params["runtime_options"][k] = v
         return params
@@ -255,44 +279,54 @@ class Base(ABC):
             # Custom edit to load image from registry
             try:
                 if registry is not None:
-                    logger.info("Trying to load image {} from registry '{}'".format(image_name, registry))
+                    logger.info(
+                        f"Trying to load image {image_name} from registry '{registry}'"
+                    )
                     registry_url = os.path.join(registry, image_name)
-                    logger.info(f"{self.__class__.__name__.lower()} pull {registry_url}")
+                    logger.info(
+                        f"{self.__class__.__name__.lower()} pull {registry_url}"
+                    )
                     self.pull_image(registry_url)
-                    logger.info(f"{self.__class__.__name__.lower()} tag {registry_url} {image_name}")
+                    logger.info(
+                        f"{self.__class__.__name__.lower()} tag {registry_url} {image_name}"
+                    )
                     self.tag_image(registry_url, image_name)
             except Exception as e:
-                logger.warn("Unable to load image from registry '{}': {}".format(registry, e))
+                logger.warning(f"Unable to load image from registry '{registry}': {e}")
 
             image_info = self.inspect_image(image_name)
-            logger.info("Container image %s cached in repo" % image_name)
+            logger.info(f"Container image {image_name} cached in repo")
         except Exception as e:
-            logger.info("Failed to inspect image %s: %s" % (image_name, str(e)))
+            logger.info(f"Failed to inspect image {image_name}: {str(e)}")
 
             # pull image from url
             if image_url is not None:
                 image_file = os.path.join(cache_dir, os.path.basename(image_url))
                 if not os.path.exists(image_file):
-                    logger.info("Downloading image %s (%s) from %s" % (image_file, image_name, image_url))
+                    logger.info(
+                        f"Downloading image {image_file} ({image_name}) from {image_url}"
+                    )
                     try:
                         osaka.main.get(image_url, image_file)
                     except Exception as e:
-                        raise RuntimeError("Failed to download image {}:\n{}".format(image_url, str(e)))
-                    logger.info("Downloaded image %s (%s) from %s" % (image_file, image_name, image_url))
-                load_lock = "{}.load.lock".format(image_file)
+                        raise RuntimeError(
+                            f"Failed to download image {image_url}:\n{str(e)}"
+                        )
+                    logger.info(
+                        f"Downloaded image {image_file} ({image_name}) from {image_url}"
+                    )
+                load_lock = f"{image_file}.load.lock"
                 try:
                     with atomic_write(load_lock) as f:
-                        f.write("%sZ\n" % datetime.utcnow().isoformat())
-                    logger.info("Loading image %s (%s)" % (image_file, image_name))
+                        f.write(f"{datetime_iso_naive()}Z\n")
+                    logger.info(f"Loading image {image_file} ({image_name})")
                     p = self.load_image(image_file)
                     stdout, stderr = p.communicate()
                     if p.returncode != 0:
                         raise RuntimeError(
-                            "Failed to load image {} ({}): {}".format(
-                                image_file, image_name, stderr.decode()
-                            )
+                            f"Failed to load image {image_file} ({image_name}): {stderr.decode()}"
                         )
-                    logger.info("Loaded image %s (%s)" % (image_file, image_name))
+                    logger.info(f"Loaded image {image_file} ({image_name})")
                     try:
                         os.unlink(image_file)
                     except:
@@ -303,17 +337,19 @@ class Base(ABC):
                         pass
                 except OSError as e:
                     if e.errno == 17:
-                        logger.info("Waiting for image %s (%s) to load" % (image_file, image_name))
+                        logger.info(
+                            f"Waiting for image {image_file} ({image_name}) to load"
+                        )
                         self.inspect_image_with_backoff(image_name)
                     else:
                         raise
             else:
                 # pull image from docker hub
-                logger.info("Pulling image %s from docker hub" % image_name)
+                logger.info(f"Pulling image {image_name} from docker hub")
                 self.pull_image(image_name)
-                logger.info("Pulled image %s from docker hub" % image_name)
+                logger.info(f"Pulled image {image_name} from docker hub")
             image_info = self.inspect_image(image_name)
-        logger.info("image info for %s: %s" % (image_name, image_info.decode()))
+        logger.info(f"image info for {image_name}: {image_info.decode()}")
         return json.loads(image_info)[0]
 
     def get_container_cmd(self, params, cmd_line_list):
