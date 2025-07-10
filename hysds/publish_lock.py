@@ -3,28 +3,16 @@ import redis
 
 from redis import BlockingConnectionPool, StrictRedis, RedisError
 
+from pottery import Redlock
+
 from hysds.celery import app
 
 from hysds.log_utils import logger
 
 
-def publish_wait_backoff_max_value():
-    """Return max value for backoff."""
-    return app.conf.get("PUBLISH_WAIT_BACKOFF_MAX_VALUE", 30)
-
-
 def publish_wait_backoff_max_time():
     """Return max time for backoff."""
     return app.conf.get("PUBLISH_WAIT_BACKOFF_MAX_TIME", 300)
-
-
-def dedup_publish_context(details):
-    logger.info("Giving up waiting for lock to expire with kwargs {kwargs}".format(**details))
-    return None
-
-
-class PublishContextLockException(Exception):
-    pass
 
 
 class DedupPublishContextFoundException(Exception):
@@ -49,6 +37,7 @@ class PublishContextLock:
             connection_pool=self._get_connection_pool()
         )
         self.lock_status = None
+        self.publish_lock = None
 
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
@@ -68,68 +57,36 @@ class PublishContextLock:
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
     )
-    @backoff.on_exception(
-        backoff.expo,
-        DedupPublishContextFoundException,
-        max_time=publish_wait_backoff_max_time,
-        max_value=publish_wait_backoff_max_value,
-        on_giveup=dedup_publish_context
-    )
-    def acquire_lock(self, publish_context_url, task_id, prevent_overwrite=True):
-
-        # According to the REDIS set function, a return value of "True" means that the hash does not exist and it was
-        # able to store it successfully. Otherwise, a "None" value is returned, meaning the key/value already exists.
-        # This None return value only occurs if nx=True. Otherwise, the record will be overwritten
-        self.lock_status = self.redis_client.set(
-            publish_context_url,
-            task_id,
-            ex=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 600),
-            nx=prevent_overwrite
+    def acquire_lock(self, publish_context_url):
+        self.publish_lock = Redlock(
+            key=publish_context_url,
+            masters={self.redis_client},
+            auto_release_time=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 600)
         )
-        if self.lock_status is None:
-            # If None, that means the lock exists. Check the value (the task_id associated with the lock)
-            # and see if it matches with the given task_id. If it matches, then just re-acquire the lock.
-            # This is to satisfy the re-delivery use-case.
-            value = self.redis_client.get(publish_context_url)
-            if value:
-                value = value.decode() if hasattr(value, "decode") else value
-                if value != task_id:
-                    message = (
-                        f"Lock exists in REDIS, but for a different task than {task_id}: "
-                        f"publish_context_url={publish_context_url}, task_id_in_lock={value}"
-                    )
-                    logger.warning(message)
-                    raise DedupPublishContextFoundException(message)
-                else:
-                    logger.info(
-                        f"Lock already exists in REDIS for this task, {task_id}: "
-                        f"publish_context_url={publish_context_url}, task_id_in_lock={value}. Re-acquiring lock."
-                    )
-                    # The lock being acquired already exists and the task_ids match. So, return True
-                    self.lock_status = self.redis_client.set(
-                        publish_context_url,
-                        task_id,
-                        # ex=app.conf.PUBLISH_WAIT_STATUS_EXPIRES,
-                        ex=1200,
-                        nx=False
-                    )
+        logger.info(f"Acquiring lock for {publish_context_url}")
+        self.lock_status = self.publish_lock.acquire(timeout=publish_wait_backoff_max_time())
+        if self.lock_status is False:
+            raise DedupPublishContextFoundException(
+                f"Could not successfully acquire lock for {publish_context_url}. "
+                f"Lock still exists even after waiting {publish_wait_backoff_max_time()} seconds."
+            )
+
         return self.lock_status
 
 
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
     )
-    def release(self, publish_context_url, task_id):
+    def release(self):
         """
         Release the lock
 
-        :param publish_context_url: The publish context url
-        :param task_id: The task id
-        :return: A tuple (number of records deleted, record value)
+        :return: True if there was a current lock and we successfully released it, False otherwise
         """
-        lock_task_id = self.redis_client.get(publish_context_url)
-        lock_task_id = lock_task_id.decode() if hasattr(lock_task_id, "decode") else lock_task_id
-        if lock_task_id == task_id:
-            return self.redis_client.delete(publish_context_url), lock_task_id
-        else:
-            return 0, lock_task_id
+        status = False
+        if self.publish_lock:
+            locked_result = self.publish_lock.locked()
+            if locked_result > 0.0:
+                self.publish_lock.release()
+                status = True
+        return status

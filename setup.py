@@ -44,7 +44,8 @@ setup(
         "pytz",
         "pytest",
         "tabulate>=0.8.6",
-        "pyyaml"
+        "pyyaml",
+        "pottery",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
