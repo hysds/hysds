@@ -15,13 +15,13 @@ def publish_wait_backoff_max_time():
     return app.conf.get("PUBLISH_WAIT_BACKOFF_MAX_TIME", 300)
 
 
-class DedupPublishContextFoundException(Exception):
+class DedupPublishLockFoundException(Exception):
     def __init__(self, message):
         self.message = message
-        super(DedupPublishContextFoundException, self).__init__(message)
+        super(DedupPublishLockFoundException, self).__init__(message)
 
 
-class PublishContextLock:
+class PublishLock:
     _connection_pool = None
 
     @classmethod
@@ -46,31 +46,30 @@ class PublishContextLock:
         try:
             self.redis_client.close()
         except redis.ConnectionError as e:
-            raise RedisError(f"Error occurred while trying to close the REDIS connection: {str(e)}")
+            raise RedisError(f"{str(e)}")
 
 
     def get_lock_status(self):
-        """ Returns the lock status. 'True' if a lock was successfully acquired. 'None' otherwise."""
+        """ Returns the lock status. 'True' if a lock was successfully acquired. 'N' otherwise."""
         return self.lock_status
 
 
     @backoff.on_exception(
         backoff.expo, RedisError, max_tries=app.conf.BACKOFF_MAX_TRIES, max_value=app.conf.BACKOFF_MAX_VALUE
     )
-    def acquire_lock(self, publish_context_url):
+    def acquire_lock(self, publish_url):
         self.publish_lock = Redlock(
-            key=publish_context_url,
+            key=publish_url,
             masters={self.redis_client},
             auto_release_time=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 600)
         )
-        logger.info(f"Acquiring lock for {publish_context_url}")
+        logger.info(f"Acquiring lock for {publish_url}")
         self.lock_status = self.publish_lock.acquire(timeout=publish_wait_backoff_max_time())
         if self.lock_status is False:
-            raise DedupPublishContextFoundException(
-                f"Could not successfully acquire lock for {publish_context_url}. "
-                f"Lock still exists even after waiting {publish_wait_backoff_max_time()} seconds."
+            raise DedupPublishLockFoundException(
+                f"Could not acquire lock for {publish_url}. Lock still exists even after waiting "
+                f"{publish_wait_backoff_max_time()} seconds."
             )
-
         return self.lock_status
 
 
