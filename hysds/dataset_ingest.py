@@ -31,11 +31,12 @@ from glob import glob
 from datetime import datetime
 from filechunkio import FileChunkIO
 from tempfile import mkdtemp
+from redis.exceptions import RedisError
 
 import hysds
 import osaka
 from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, get_func, parse_iso8601, \
-    find_dataset_json
+    find_dataset_json, is_task_finished, TaskNotFinishedException
 from hysds.log_utils import (
     logger,
     log_prov_es,
@@ -44,6 +45,7 @@ from hysds.log_utils import (
     backoff_max_tries,
     log_custom_event,
 )
+from hysds.publish_lock import PublishLock, DedupPublishLockFoundException
 from hysds.recognize import Recognizer
 from hysds.orchestrator import do_submit_job
 from hysds.celery import app
@@ -362,9 +364,31 @@ def write_to_object_store(
             abs_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_path, path)
             dest_url = os.path.join(url, rel_path)
-            logger.info("Uploading %s to %s." % (abs_path, dest_url))
-            osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
-
+            publish_lock = PublishLock()
+            try:
+                try:
+                    publish_lock.acquire_lock(dest_url)
+                except DedupPublishLockFoundException as dpe:
+                    logger.warning(f"{str(dpe)}")
+                logger.info("Uploading %s to %s." % (abs_path, dest_url))
+                osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
+                try:
+                    status = publish_lock.release()
+                    if status is False:
+                        logger.warning(f"No lock was found for {dest_url}")
+                    else:
+                        logger.info(f"Successfully released lock for {dest_url}")
+                except RedisError as re:
+                    logger.warning(
+                        f"Redis error occurred while trying to release lock for {dest_url}: {str(re)}"
+                    )
+            finally:
+                try:
+                    publish_lock.close()
+                except RedisError as re:
+                    logger.warning(
+                        f"Redis error occurred while trying to close client connection: {str(re)}"
+                    )
 
 # TODO: this used to be called unpublish_dataset()
 def delete_from_object_store(url, params=None):
@@ -549,6 +573,8 @@ def ingest(
     # set product metrics
     prod_metrics = {"ipath": ipath, "path": local_prod_path}
 
+    publish_context_lock = None
+
     # publish dataset
     if r.publishConfigured():
         logger.info("Dataset publish is configured.")
@@ -592,6 +618,19 @@ def ingest(
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + ".orig"
             try:
+                # Acquire lock first before trying to write to the object store
+                if task_id:
+                    try:
+                        publish_context_lock = PublishLock()
+                        lock_status = publish_context_lock.acquire_lock(publish_url=publ_ctx_url)
+                        if lock_status is True:
+                            logger.info(f"Successfully acquired lock for {publ_ctx_url}")
+                    except DedupPublishLockFoundException as dpe:
+                        logger.error(f"{str(dpe)}")
+                        raise NoClobberPublishContextException(f"{str(dpe)}")
+                    except RedisError as re:
+                        logger.warning(f"Redis error occurred while trying to acquire lock: {str(re)}")
+
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -619,13 +658,50 @@ def ingest(
                 orig_task_id = orig_publ_ctx.get("task_id", None)
                 logger.warn("orig payload_id: {}".format(orig_payload_id))
                 logger.warn("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warn("orig task_id: {}".format(orig_payload_id))
+                logger.warn("orig task_id: {}".format(orig_task_id))
 
                 if orig_payload_id is None:
+                    if publish_context_lock:
+                        try:
+                            publish_context_lock.release()
+                        except RedisError as re:
+                            logger.warning(
+                                f"Failed to release lock: {str(re)}"
+                            )
+                        try:
+                            publish_context_lock.close()
+                        except RedisError as re:
+                            logger.warning(
+                                f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                            )
                     raise
+
+                # We should check to see if the task_id of the job is different than the
+                # task_id in the publish_context file, the orig_task_id. If so,
+                # to mitigate race conditions, check to see if the orig_task_id is in a
+                # finished state before proceeding.
+                if orig_task_id and task_id and orig_task_id != task_id:
+                    try:
+                        status = is_task_finished(orig_task_id)
+                        if status is True:
+                            logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
+                        else:
+                            logger.warning(
+                                f"Could not determine status of {orig_task_id}. Proceeding with force publish."
+                            )
+                    except TaskNotFinishedException as te:
+                        logger.warning(str(te))
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
+                    # Check to see if the dataset exists. If so, then raise the error at this point
+                    if dataset_exists(objectid):
+                        logger.error(f"Dataset already exists: {objectid}. No need to force publish.")
+                        if publish_context_lock:
+                            publish_context_lock.close()
+                        raise
+
                     msg = (
                         "This job is a retry of a previous job that resulted "
                         + "in an orphaned dataset. Forcing publish."
@@ -697,7 +773,33 @@ def ingest(
                                 },
                             )
                         else:
+                            if publish_context_lock:
+                                try:
+                                    publish_context_lock.release()
+                                except RedisError as re:
+                                    logger.warning(
+                                        f"Failed to release lock: {str(re)}"
+                                    )
+                                try:
+                                    publish_context_lock.close()
+                                except RedisError as re:
+                                    logger.warning(
+                                        f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                                    )
                             raise
+
+                # Let's try to acquire the lock again if we have not yet at this point
+                if publish_context_lock.get_lock_status() is None or publish_context_lock.get_lock_status() is False:
+                    try:
+                        lock_status = publish_context_lock.acquire_lock(publish_url=publ_ctx_url)
+                        if lock_status is True:
+                            logger.info(
+                                f"Successfully acquired lock prior to force publish for {publ_ctx_url}."
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
+                        )
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -716,6 +818,19 @@ def ingest(
                                 publ_ctx_url
                             )
                         )
+                    if publish_context_lock:
+                        try:
+                            publish_context_lock.release()
+                        except RedisError as re:
+                            logger.warning(
+                                f"Failed to release lock: {str(re)}"
+                            )
+                        try:
+                            publish_context_lock.close()
+                        except RedisError as re:
+                            logger.warning(
+                                f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                            )
                     raise
                 else:
                     msg = "Detected orphaned dataset without ES doc. Forcing publish."
@@ -734,6 +849,20 @@ def ingest(
                             }
                         },
                     )
+                    # Let's try to acquire the lock again if we have not yet at this point
+                    if publish_context_lock.get_lock_status() is None or publish_context_lock.get_lock_status() is False:
+                        try:
+                            lock_status = publish_context_lock.acquire_lock(
+                                publish_url=publ_ctx_url,
+                            )
+                            if lock_status is True:
+                                logger.info(
+                                    f"Successfully acquired lock prior to force publish for {publ_ctx_url}."
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Could not successfully acquire lock:\n{str(e)}.\nContinuing on with force publishing."
+                            )
                     write_to_object_store(
                         local_prod_path,
                         pub_path_url,
@@ -893,6 +1022,19 @@ def ingest(
                 prov_es_info = json.load(f)
             except Exception as e:
                 tb = traceback.format_exc()
+                if publish_context_lock:
+                    try:
+                        publish_context_lock.release()
+                    except RedisError as re:
+                        logger.warning(
+                            f"Failed to release lock: {str(re)}"
+                        )
+                    try:
+                        publish_context_lock.close()
+                    except RedisError as re:
+                        logger.warning(
+                            f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                        )
                 raise RuntimeError(
                     "Failed to load PROV-ES from {}: {}\n{}".format(
                         prod_prov_es_file, str(e), tb
@@ -924,6 +1066,21 @@ def ingest(
                     publ_ctx_url
                 )
             )
+        if publish_context_lock:
+            try:
+                status = publish_context_lock.release()
+                if status is False:
+                    logger.warning(f"No lock was found for {publ_ctx_url}")
+                else:
+                    logger.info(f"Successfully released lock for {publ_ctx_url}")
+            except RedisError as re:
+                logger.warning(
+                    f"Redis error occured while trying to release lock for {publ_ctx_url}: {str(re)}"
+                )
+            try:
+                publish_context_lock.close()
+            except RedisError as e:
+                logger.warning(f"Failed to close Redis client connection properly: {str(e)}")
     try:
         shutil.rmtree(publ_ctx_dir)
     except:
