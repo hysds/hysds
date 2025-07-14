@@ -10,10 +10,6 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
@@ -51,7 +47,7 @@ class StreamSubject(AbstractSubject):
         @return: the string representation of this object.
         @rtype: str
         """
-        return "%s" % (AbstractSubject.__str__(self))
+        return f"{AbstractSubject.__str__(self)}"
 
     # end def
 

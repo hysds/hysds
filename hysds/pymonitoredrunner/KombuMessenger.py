@@ -10,23 +10,21 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
+
 standard_library.install_aliases()
-from builtins import object
 import json
+import logging
+from datetime import datetime
+
+from kombu import Connection, Exchange, Queue
 from kombu.common import maybe_declare
 from kombu.utils.debug import setup_logging
-from kombu import Connection, Exchange, Queue
-from datetime import datetime
-import logging
+
 logger = logging.getLogger()
 
 
-class KombuMessenger(object):
+class KombuMessenger:
     """
     Sends messages via Kombu.
     """
@@ -42,15 +40,16 @@ class KombuMessenger(object):
         self._pid = pid
         self._type = type
 
-        self._connection = Connection(
-            'pyamqp://guest:guest@%s:5672//' % self._queueHost)
+        self._connection = Connection(f"pyamqp://guest:guest@{self._queueHost}:5672//")
         self._connection.ensure_connection()
-        self._exchange = Exchange(self._queueName, type='direct')
-        self._queue = Queue(self._queueName, self._exchange,
-                            routing_key=self._queueName)
+        self._exchange = Exchange(self._queueName, type="direct")
+        self._queue = Queue(
+            self._queueName, self._exchange, routing_key=self._queueName
+        )
         self._producer = self._connection.Producer()
         self._publish = self._connection.ensure(
-            self._producer, self._producer.publish, max_retries=3)
+            self._producer, self._producer.publish, max_retries=3
+        )
 
     # end def
 
@@ -59,6 +58,7 @@ class KombuMessenger(object):
         Finalizer.
         """
         self._connection.close()
+
     # end def
 
     def __str__(self):
@@ -67,7 +67,8 @@ class KombuMessenger(object):
         @return: the string representation of this object.
         @rtype: str
         """
-        return 'connection: "%s", id: "%s", queueName: "%s", hostname: "%s", pid: "%s", type: "%s"' % (self._connection, self._id, self._queueName, self._hostname, self._pid, self._type)
+        return f'connection: "{self._connection}", id: "{self._id}", queueName: "{self._queueName}", hostname: "{self._hostname}", pid: "{self._pid}", type: "{self._type}"'
+
     # end def
 
     def send(self, chunk):
@@ -75,21 +76,21 @@ class KombuMessenger(object):
         Send stream chunk with JSON descriptor.
         """
         context = {
-            'id': self._id,
-            'datetime': datetime.isoformat(datetime.now()),
-            'hostname': self._hostname,
-            'pid': self._pid,
-            'type': self._type,
-            'chunk': chunk
+            "id": self._id,
+            "datetime": datetime.isoformat(datetime.now()),
+            "hostname": self._hostname,
+            "pid": self._pid,
+            "type": self._type,
+            "chunk": chunk,
         }
-        #contextStr = json.dumps(context)
+        # contextStr = json.dumps(context)
 
-        self._publish(context, routing_key=self._queueName,
-                      declare=[self._queue])
+        self._publish(context, routing_key=self._queueName, declare=[self._queue])
         # with self._connection.Producer() as producer:
         #    publish = self._connection.ensure(producer, producer.publish, max_retries=3)
         #    publish(context, routing_key=self._queueName, declare=[self._queue])
         # print 'channel.basic_publish(): %s' % contextStr
+
     # end def
 
 

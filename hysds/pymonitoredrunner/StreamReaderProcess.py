@@ -1,17 +1,14 @@
 #!/usr/bin/env python
 
 # logger singleton configured in driver
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
+import logging
+
 from hysds.pymonitoredrunner.commons.process.AbstractInterruptableProcess import (
     AbstractInterruptableProcess,
 )
-import logging
 
 logger = logging.getLogger()
 
