@@ -1,48 +1,37 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
 
 import json
-import requests
-import backoff
 import socket
 import traceback
-from datetime import datetime
 
-from hysds.task_worker import run_task
+import backoff
+import requests
+
 from hysds.celery import app
+from hysds.es_util import get_mozart_es
 from hysds.log_utils import (
-    logger,
-    log_job_status,
-    get_val_via_socket,
+    JOB_STATUS_KEY_TMPL,
+    TASK_WORKER_KEY_TMPL,
     backoff_max_tries,
     backoff_max_value,
-    TASK_WORKER_KEY_TMPL,
-    JOB_STATUS_KEY_TMPL,
+    get_val_via_socket,
+    log_job_status,
+    logger,
 )
-from hysds.es_util import get_mozart_es
+from hysds.utils import datetime_iso_naive
+from hysds.task_worker import run_task
 from hysds.user_rules_job import queue_finished_job
 
 mozart_es = get_mozart_es()
 
 
-@backoff.on_exception(
-    backoff.expo, Exception, max_tries=5, max_value=10
-)
+@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=10)
 def fail_job(event, uuid, exc, short_error):
     """Set job status to job-failed."""
 
-    query = {
-        "query": {
-            "bool": {
-                "must": [{"term": {"uuid": uuid}}]
-            }
-        }
-    }
+    query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
 
     result = mozart_es.search(index="job_status-current", body=query)
     # TODO: Remove this after debugging
@@ -50,7 +39,7 @@ def fail_job(event, uuid, exc, short_error):
     total = result["hits"]["total"]["value"]
     logger.info(f"total results back from fail_job function: {total}")
     if total == 0:
-        msg = "Failed to query for task UUID %s" % uuid
+        msg = f"Failed to query for task UUID {uuid}"
         logger.error(msg)
         raise RuntimeError(msg)
 
@@ -62,8 +51,10 @@ def fail_job(event, uuid, exc, short_error):
         job_status["short_error"] = short_error
         job_status["traceback"] = event.get("traceback", "")
 
-        time_end = datetime.utcnow().isoformat() + "Z"
-        job_status.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+        time_end = datetime_iso_naive() + "Z"
+        job_status.setdefault("job", {}).setdefault("job_info", {})[
+            "time_end"
+        ] = time_end
         log_job_status(job_status)
 
         queue_finished_job(job_status["payload_id"], index=res["_index"])
@@ -81,7 +72,7 @@ def fail_job(event, uuid, exc, short_error):
 def offline_jobs(event):
     """Set job status to job-offline."""
 
-    time_end = datetime.utcnow().isoformat() + "Z"
+    time_end = datetime_iso_naive() + "Z"
     query = {
         "query": {
             "bool": {
@@ -92,14 +83,12 @@ def offline_jobs(event):
             }
         }
     }
-    logger.info("offline jobs query: %s" % json.dumps(query))
+    logger.info(f"offline jobs query: {json.dumps(query)}")
     uuids = []
 
     try:
         job_status_jsons = mozart_es.query(index="job_status-current", body=query)
-        logger.info(
-            "Got {} jobs for {}.".format(len(job_status_jsons), event["hostname"])
-        )
+        logger.info(f"Got {len(job_status_jsons)} jobs for {event['hostname']}.")
 
         for job_status in job_status_jsons:
             job_status_json = job_status["_source"]
@@ -108,28 +97,27 @@ def offline_jobs(event):
             # offline the job only if it hasn't been picked up by another worker
             cur_job_status = get_val_via_socket(JOB_STATUS_KEY_TMPL % uuid)
             cur_job_worker = get_val_via_socket(TASK_WORKER_KEY_TMPL % uuid)
-            logger.info("cur_job_status: {}".format(cur_job_status))
-            logger.info("cur_job_worker: {}".format(cur_job_worker))
+            logger.info(f"cur_job_status: {cur_job_status}")
+            logger.info(f"cur_job_worker: {cur_job_worker}")
 
             if cur_job_status == "job-started" and cur_job_worker == event["hostname"]:
                 job_status_json["status"] = "job-offline"
-                job_status_json[
-                    "error"
-                ] = "Received worker-offline event during job execution."
+                job_status_json["error"] = (
+                    "Received worker-offline event during job execution."
+                )
                 job_status_json["short_error"] = "worker-offline"
                 job_status_json.setdefault("job", {}).setdefault("job_info", {})[
                     "time_end"
                 ] = time_end
                 log_job_status(job_status_json)
-                logger.info("Offlined job with UUID %s" % uuid)
+                logger.info(f"Offlined job with UUID {uuid}")
                 uuids.append(uuid)
             else:
                 logger.info(
-                    "Not offlining job with UUID %s since real-time job status doesn't match"
-                    % uuid
+                    f"Not offlining job with UUID {uuid} since real-time job status doesn't match"
                 )
     except Exception as e:
-        logger.warn(
+        logger.warning(
             "Got exception trying to update task events for offline worker %s: %s\n%s"
             % (event["hostname"], str(e), traceback.format_exc())
         )

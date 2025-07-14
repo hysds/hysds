@@ -1,30 +1,27 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 
-from redis import ConnectionPool, StrictRedis
-from datetime import datetime
-from pprint import pformat
-import backoff
-import re
-import msgpack
-import traceback
-import logging
 import json
-from builtins import str
+import logging
+import re
+import traceback
+from datetime import datetime, timezone
+from pprint import pformat
+
+import backoff
+import msgpack
 from future import standard_library
+from redis import ConnectionPool, StrictRedis
 
 import hysds
 from hysds.celery import app
+from hysds.event_processors import queue_fail_job, queue_offline_jobs
 from hysds.log_utils import (
-    log_job_status,
+    WORKER_STATUS_KEY_TMPL,
     backoff_max_tries,
     backoff_max_value,
-    WORKER_STATUS_KEY_TMPL,
+    log_job_status,
 )
-from hysds.event_processors import queue_fail_job, queue_offline_jobs
+from hysds.utils import datetime_iso_naive
 
 standard_library.install_aliases()
 
@@ -86,13 +83,15 @@ def log_task_event(event_type, event, uuid=[]):
     global POOL
     info = {
         "resource": "task",
-        "index": event.get("index", f"task_status-{datetime.utcnow().strftime('%Y.%m.%d')}"),
+        "index": event.get(
+            "index", f"task_status-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+        ),
         "type": parse_job_type(event),
         "status": event_type,
         "celery_hostname": event.get("hostname", None),
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
+        "@timestamp": f"{datetime_iso_naive()}Z",
         "event": event,
     }
 
@@ -103,9 +102,9 @@ def log_task_event(event_type, event, uuid=[]):
 
     # print log
     try:
-        logging.info("hysds.task_event:%s" % json.dumps(info))
+        logging.info(f"hysds.task_event:{json.dumps(info)}")
     except Exception as e:
-        logging.error("Got exception trying to log task event: %s" % str(e))
+        logging.error(f"Got exception trying to log task event: {str(e)}")
 
 
 def log_worker_event(event_type, event, uuid=[]):
@@ -120,7 +119,7 @@ def log_worker_event(event_type, event, uuid=[]):
         "celery_hostname": event["hostname"],
         "uuid": uuid,
         "@version": "1",
-        "@timestamp": "%sZ" % datetime.utcnow().isoformat(),
+        "@timestamp": f"{datetime_iso_naive()}Z",
         "event": event,
     }
 
@@ -131,9 +130,9 @@ def log_worker_event(event_type, event, uuid=[]):
 
     # print log
     try:
-        logging.info("hysds.worker_event:%s" % json.dumps(info))
+        logging.info(f"hysds.worker_event:{json.dumps(info)}")
     except Exception as e:
-        logging.error("Got exception trying to log worker event: %s" % str(e))
+        logging.error(f"Got exception trying to log worker event: {str(e)}")
 
 
 def log_worker_status(worker, status):
@@ -149,9 +148,9 @@ def log_worker_status(worker, status):
 
     # print log
     try:
-        logging.info("hysds.worker_status:%s:%s" % (worker, status))
+        logging.info(f"hysds.worker_status:{worker}:{status}")
     except Exception as e:
-        logging.error("Got exception trying to log worker status: %s" % str(e))
+        logging.error(f"Got exception trying to log worker status: {str(e)}")
 
 
 def event_monitor(app):
@@ -234,7 +233,7 @@ def event_monitor(app):
 
     def any_event(event):
         state.event(event)
-        logging.info("EVENT: %s" % pformat(event))
+        logging.info(f"EVENT: {pformat(event)}")
 
     with app.connection() as connection:
         recv = app.events.Receiver(

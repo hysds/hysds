@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   code-analysis:
     docker:
-      - image: cimg/python:3.9
+      - image: cimg/python:3.12
         auth:
           username: $DOCKER_USER
           password: $DOCKER_PASS
@@ -41,7 +41,7 @@ jobs:
           path: test-results
   build:
     docker:
-      - image: cimg/python:3.9
+      - image: cimg/python:3.12
         auth:
           username: $DOCKER_USER
           password: $DOCKER_PASS
@@ -58,7 +58,7 @@ jobs:
             pytest .
   publish-pypi:
     docker:
-      - image: cimg/python:3.9
+      - image: cimg/python:3.12
         auth:
           username: $DOCKER_USER
           password: $DOCKER_PASS

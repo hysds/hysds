@@ -1,13 +1,9 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
 import json
 import types
-from pprint import pprint, pformat
+from pprint import pformat, pprint
 
 
 def notify_job_by_email(info):
@@ -42,7 +38,7 @@ def notify_job_by_email(info):
     params["url"] = rule_hit["_source"]["job"]["job_info"]["job_url"]
     job = {
         "type": "notify_job_by_email",
-        "name": "action-notify_job_by_email-%s" % info["job_id"],
+        "name": f"action-notify_job_by_email-{info['job_id']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -84,7 +80,7 @@ def notify_job_by_tweet(info):
     params["url"] = rule_hit["_source"]["job"]["job_info"]["job_url"]
     job = {
         "type": "notify_job_by_tweet",
-        "name": "action-notify_job_by_tweet-%s" % info["objectid"],
+        "name": f"action-notify_job_by_tweet-{info['objectid']}",
         "tag": params["rule_name"],
         "username": params["username"],
         "params": params,
@@ -111,7 +107,7 @@ def retry_job(info):
     if isinstance(job_id, str) and job_id.startswith("action-retry_job"):
         name = job_id
     else:
-        name = "action-retry_job-%s" % job_id
+        name = f"action-retry_job-{job_id}"
     job = {
         "type": "retry_job",
         "name": name,

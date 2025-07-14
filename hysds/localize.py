@@ -1,27 +1,20 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
-from builtins import str
 # from builtins import int
 # from builtins import open
 from future import standard_library
 
 standard_library.install_aliases()
 
-import os
-import backoff
-import traceback
 import logging
+import os
+import traceback
+from datetime import timezone, datetime
 
-from datetime import datetime
-
+import backoff
 from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
 
 from hysds.log_utils import logger
-from hysds.utils import download_file, makedirs, get_disk_usage
+from hysds.utils import download_file, get_disk_usage, makedirs, datetime_iso_naive
 
 
 def download_file_wrapper_backoff_handler(b, max_tries=6):
@@ -41,7 +34,7 @@ def download_file_wrapper_backoff_handler(b, max_tries=6):
     tries = b["tries"]
     kwargs = b["kwargs"]
     args = b["args"]
-    logger.error("download_file_wrapper failed ({}) {} {}".format(tries, args, kwargs))
+    logger.error(f"download_file_wrapper failed ({tries}) {args} {kwargs}")
 
     if tries >= max_tries - 1:
         event = kwargs.get("event", None)
@@ -56,7 +49,7 @@ def download_file_wrapper_backoff_handler(b, max_tries=6):
     Exception,
     max_tries=6,
     interval=5,
-    on_backoff=download_file_wrapper_backoff_handler
+    on_backoff=download_file_wrapper_backoff_handler,
 )
 def download_file_wrapper(url, path, cache=False, event=None):
     """
@@ -69,33 +62,35 @@ def download_file_wrapper(url, path, cache=False, event=None):
         if None that means a previous task failed and will exit early
     """
     if event and event.is_set():
-        logger.warning("Previous localize task failed, skipping %s..." % url)
+        logger.warning(f"Previous localize task failed, skipping {url}...")
         return
 
-    loc_t1 = datetime.utcnow()
+    loc_t1 = datetime.now(timezone.utc)
     try:
         download_file(url, path, cache=cache)
-        loc_t2 = datetime.utcnow()
+        loc_t2 = datetime.now(timezone.utc)
         loc_dur = (loc_t2 - loc_t1).total_seconds()
         path_disk_usage = get_disk_usage(path)
         return {
             "url": url,
             "path": path,
             "disk_usage": path_disk_usage,
-            "time_start": loc_t1.isoformat() + "Z",
-            "time_end": loc_t2.isoformat() + "Z",
+            "time_start": datetime_iso_naive(loc_t1) + "Z",
+            "time_end": datetime_iso_naive(loc_t2) + "Z",
             "duration": loc_dur,
             "transfer_rate": path_disk_usage / loc_dur,
         }
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(tb)
-        raise RuntimeError("Failed to download {}: {}\n{}".format(url, str(e), tb))
+        raise RuntimeError(f"Failed to download {url}: {str(e)}\n{tb}")
 
 
 def init_pool_logger():
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s: %(levelname)s/%(name)s] %(message)s")
+    )
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
@@ -110,16 +105,18 @@ def localize_urls_parallel(job, ctx):
     async_tasks = []
     localize_urls_list = job.get("localize_urls", [])
     num_procs = min(max(cpu_count() - 2, 1), len(localize_urls_list))
-    logger.info("multiprocessing procs used: %d" % num_procs)
+    logger.info(f"multiprocessing procs used: {num_procs}")
 
-    with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
+    with get_context("spawn").Pool(
+        num_procs, initializer=init_pool_logger
+    ) as pool, Manager() as manager:
         event = manager.Event()
         for i in localize_urls_list:  # localize urls
             url = i["url"]
             path = i.get("local_path", None)
             cache = i.get("cache", True)
             if path is None:
-                path = "%s/" % job_dir
+                path = f"{job_dir}/"
             else:
                 if path.startswith("/"):
                     pass
@@ -130,8 +127,14 @@ def localize_urls_parallel(job, ctx):
             dir_path = os.path.dirname(path)
             makedirs(dir_path)
 
-            async_task = pool.apply_async(download_file_wrapper,
-                                          args=(url, path, ), kwds={"cache": cache, "event": event})
+            async_task = pool.apply_async(
+                download_file_wrapper,
+                args=(
+                    url,
+                    path,
+                ),
+                kwds={"cache": cache, "event": event},
+            )
             async_tasks.append(async_task)
         pool.close()
         logger.info("Waiting for dataset localization tasks to complete...")
@@ -150,7 +153,7 @@ def localize_urls_parallel(job, ctx):
                 logger.error(t._value)  # noqa
                 err = t._value  # noqa
         if has_error is True:
-            raise RuntimeError("Failed to download {}".format(err))
+            raise RuntimeError(f"Failed to download {err}")
 
     return True  # signal run_job() to continue
 
@@ -167,7 +170,7 @@ def localize_urls(job, ctx):
         path = i.get("local_path", None)
         cache = i.get("cache", True)
         if path is None:
-            path = "%s/" % job_dir
+            path = f"{job_dir}/"
         else:
             if path.startswith("/"):
                 pass

@@ -1,18 +1,15 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
+import argparse
+import json
+import logging
 import os
 import sys
-import json
 import time
 import traceback
-import logging
-import argparse
+
 import boto3
 import requests
 import urllib3
@@ -21,14 +18,13 @@ from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
 from hysds.celery import app
 
-
 log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
 # class for custom cipher for rabbitmq
 class CustomCipherAdapter(HTTPAdapter):
     def init_poolmanager(self, *args, **kwargs):
-        ssl_context = create_urllib3_context(ciphers="DHE-RSA-AES128-GCM-SHA256")
+        ssl_context = create_urllib3_context(ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
         kwargs['ssl_context'] = ssl_context
         return super(CustomCipherAdapter, self).init_poolmanager(*args, **kwargs)
 
@@ -58,31 +54,30 @@ def get_waiting_job_count(job, user="guest", password="guest"):
 def submit_metric(job, job_count, metric_ns):
     """Submit EC2 custom metric data."""
 
-    metric_name = "JobsWaiting-%s" % job
+    metric_name = f"JobsWaiting-{job}"
     client = boto3.client("cloudwatch")
     client.put_metric_data(
         Namespace=metric_ns,
         MetricData=[{"MetricName": metric_name, "Value": job_count, "Unit": "Count"}],
     )
     logging.info(
-        "updated job count for %s queue as metric %s:%s: %s"
-        % (job, metric_ns, metric_name, job_count)
+        f"updated job count for {job} queue as metric {metric_ns}:{metric_name}: {job_count}"
     )
 
 
 def daemon(job, interval, namespace, user="guest", password="guest"):
     """Submit EC2 custom metric for jobs waiting to be run."""
 
-    logging.info("queue: %s" % job)
-    logging.info("interval: %d" % interval)
-    logging.info("namespace: %s" % namespace)
+    logging.info(f"queue: {job}")
+    logging.info(f"interval: {interval}")
+    logging.info(f"namespace: {namespace}")
     while True:
         try:
             job_count = get_waiting_job_count(job, user, password)
-            logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
+            logging.info(f"jobs_waiting for {job} queue: {job_count}")
             submit_metric(job, job_count, namespace)
         except Exception as e:
-            logging.error("Got error: %s" % e)
+            logging.error(f"Got error: {e}")
             logging.error(traceback.format_exc())
         time.sleep(interval)
 

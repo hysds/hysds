@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
+import argparse
+import json
+import logging
 import os
 import sys
-import json
 import time
 import traceback
-import logging
-import argparse
+
+import backoff
 import boto3
 import botocore
 import requests
@@ -22,7 +20,6 @@ from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 import backoff
 
 from hysds.celery import app
-
 
 log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -35,8 +32,8 @@ class CustomCipherAdapter(HTTPAdapter):
         return super(CustomCipherAdapter, self).init_poolmanager(*args, **kwargs)
 
 def get_job_count(queue, user="guest", password="guest", total_jobs=False):
-    """Return number of waiting jobs for a queue. If total_jobs is set 
-       to True, then the total number of jobs for a queue is returned."""
+    """Return number of waiting jobs for a queue. If total_jobs is set
+    to True, then the total number of jobs for a queue is returned."""
 
     # get rabbitmq admin api host
     host = (
@@ -74,7 +71,7 @@ def get_desired_capacity_max(asg):
     r = describe_asg(c, asg)
     groups = r["AutoScalingGroups"]
     if len(groups) == 0:
-        raise RuntimeError("Autoscaling group {} not found.".format(asg))
+        raise RuntimeError(f"Autoscaling group {asg} not found.")
     return groups[0]["DesiredCapacity"], groups[0]["MaxSize"]
 
 
@@ -122,9 +119,9 @@ def submit_metric(queue, asg, metric, metric_ns, total_jobs=False):
     """Submit EC2 custom metric data."""
 
     if total_jobs:
-        metric_name = "JobsPerInstance-%s" % (asg)
+        metric_name = f"JobsPerInstance-{asg}"
     else:
-        metric_name = "JobsWaitingPerInstance-%s" % (asg)
+        metric_name = f"JobsWaitingPerInstance-{asg}"
     client = boto3.client("cloudwatch")
     put_metric_data(client, metric_name, metric_ns, asg, queue, metric)
     logging.info(
@@ -138,16 +135,16 @@ def daemon(
 ):
     """Submit EC2 custom metric for an ASG's target tracking policy."""
 
-    logging.info("queue: %s" % queue)
-    logging.info("interval: %d" % interval)
-    logging.info("namespace: %s" % namespace)
+    logging.info(f"queue: {queue}")
+    logging.info(f"interval: {interval}")
+    logging.info(f"namespace: {namespace}")
     while True:
         try:
             job_count = float(get_job_count(queue, user, password, total_jobs))
             if total_jobs:
-                logging.info("jobs_total for %s queue: %s" % (queue, job_count))
+                logging.info(f"jobs_total for {queue} queue: {job_count}")
             else:
-                logging.info("jobs_waiting for %s queue: %s" % (queue, job_count))
+                logging.info(f"jobs_waiting for {queue} queue: {job_count}")
             desired_capacity, max_size = map(float, get_desired_capacity_max(asg))
             if desired_capacity == 0:
                 if job_count > 0:
@@ -157,14 +154,14 @@ def daemon(
                         )
                     )
                     logging.info(
-                        "bootstrapped ASG %s to desired=%s" % (asg, desired_capacity)
+                        f"bootstrapped ASG {asg} to desired={desired_capacity}"
                     )
                 else:
                     desired_capacity = 1.0
             metric = job_count / desired_capacity
             submit_metric(queue, asg, metric, namespace, total_jobs)
         except Exception as e:
-            logging.error("Got error: %s" % e)
+            logging.error(f"Got error: {e}")
             logging.error(traceback.format_exc())
         time.sleep(interval)
 

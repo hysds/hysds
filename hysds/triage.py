@@ -1,29 +1,22 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
 import time
-from builtins import str
-from builtins import open
+
 from future import standard_library
 
 standard_library.install_aliases()
 
+import json
 import os
 import re
-import json
 import shutil
 import traceback
-
+from datetime import timezone, datetime
 from glob import glob
-from datetime import datetime
 
 import hysds
-from hysds.utils import makedirs
-from hysds.log_utils import logger
-from hysds.dataset_ingest import publish_dataset
 from hysds.celery import app
+from hysds.dataset_ingest import publish_dataset
+from hysds.log_utils import logger
+from hysds.utils import makedirs, datetime_iso_naive
 
 
 def get_triage_partition_format():
@@ -35,7 +28,7 @@ def triage(job, ctx):
 
     # set time_start if not defined (job failed prior to setting it)
     if "time_start" not in job["job_info"]:
-        job["job_info"]["time_start"] = "{}Z".format(datetime.utcnow().isoformat("T"))
+        job["job_info"]["time_start"] = f"{datetime_iso_naive()}Z"
 
     # default triage id
     default_triage_id_format = "triaged_job-{job_id}_task-{job[task_id]}"
@@ -44,7 +37,7 @@ def triage(job, ctx):
     # if exit code of job command is zero, don't triage anything
     exit_code = job["job_info"]["status"]
     if exit_code == 0:
-        logger.info("Job exited with exit code %s. No need to triage." % exit_code)
+        logger.info(f"Job exited with exit code {exit_code}. No need to triage.")
         return True
 
     # disable triage
@@ -61,44 +54,52 @@ def triage(job, ctx):
     # get job info
     job_dir = job["job_info"]["job_dir"]
     job_id = job["job_info"]["id"]
-    logger.info("job id: {}".format(job_id))
+    logger.info(f"job id: {job_id}")
 
     # Check if the job_id is a triaged dataset. If so, let's parse out the job_id
-    logger.info("Checking to see if the job_id matches the regex: {}".format(default_triage_id_regex))
+    logger.info(
+        f"Checking to see if the job_id matches the regex: {default_triage_id_regex}"
+    )
     match = re.search(default_triage_id_regex, job_id)
     if match:
         logger.info("job_id matches the triage dataset regex. Parsing out job_id")
         parsed_job_id = match.groupdict()["job_id"]
-        logger.info("extracted job_id: {}".format(parsed_job_id))
+        logger.info(f"extracted job_id: {parsed_job_id}")
     else:
-        logger.info("job_id does not match the triage dataset regex: {}".format(default_triage_id_regex))
+        logger.info(
+            f"job_id does not match the triage dataset regex: {default_triage_id_regex}"
+        )
         parsed_job_id = job_id
 
     # create triage dataset
     # Attempt to first use triage id format from user, but if there is any problem use the default id format instead
     try:
-        triage_id = triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
+        triage_id = triage_id_format.format(
+            job_id=parsed_job_id, job=job, job_context=ctx
+        )
     except Exception as e:
         logger.warning(
             "Failed to apply custom triage id format because of {}: {}. Falling back to default triage id".format(
                 e.__class__.__name__, e
             )
         )
-        triage_id = default_triage_id_format.format(job_id=parsed_job_id, job=job, job_context=ctx)
+        triage_id = default_triage_id_format.format(
+            job_id=parsed_job_id, job=job, job_context=ctx
+        )
     triage_dir = os.path.join(job_dir, triage_id)
     makedirs(triage_dir)
 
     # create dataset json
-    ds_file = os.path.join(triage_dir, "{}.dataset.json".format(triage_id))
+    ds_file = os.path.join(triage_dir, f"{triage_id}.dataset.json")
     ds = {
-        "version": "v{}".format(hysds.__version__),
-        "label": "triage for job {}".format(parsed_job_id),
+        "version": f"v{hysds.__version__}",
+        "label": f"triage for job {parsed_job_id}",
     }
     triage_partition_format = get_triage_partition_format()
     if triage_partition_format:
         index_met = {
             "index": {
-                "suffix": f"{ds['version']}_{datetime.utcnow().strftime(triage_partition_format)}_triaged_job"
+                "suffix": f"{ds['version']}_{datetime.now(timezone.utc).strftime(triage_partition_format)}_triaged_job"
             }
         }
         ds.update(index_met)
@@ -111,7 +112,7 @@ def triage(job, ctx):
         json.dump(ds, f, sort_keys=True, indent=2)
 
     # create met json
-    met_file = os.path.join(triage_dir, "{}.met.json".format(triage_id))
+    met_file = os.path.join(triage_dir, f"{triage_id}.met.json")
     with open(met_file, "w") as f:
         json.dump(job["job_info"], f, sort_keys=True, indent=2)
 
@@ -135,19 +136,31 @@ def triage(job, ctx):
             f = os.path.normpath(f)
             dst = os.path.join(triage_dir, os.path.basename(f))
             if os.path.exists(dst):
-                dst = "{}.{}Z".format(dst, datetime.utcnow().isoformat("T"))
+                dst = f"{dst}.{datetime_iso_naive()}Z"
             try:
-                if os.path.isdir(f):
-                    shutil.copytree(f, dst)
+                if os.path.islink(f):
+                    # Skip broken symlinks
+                    if not os.path.exists(f):
+                        logger.warning(f"Skipping broken symlink: {f}")
+                        continue
+                    # For valid symlinks, copy the symlink itself, not the target
+                    linkto = os.readlink(f)
+                    os.symlink(linkto, dst)
+                elif os.path.isdir(f):
+                    try:
+                        shutil.copytree(f, dst)
+                    except (OSError, shutil.Error) as e:
+                        # Create empty directory if we can't copy contents
+                        logger.warning(
+                            f"Could not copy contents of {f} due to error: {str(e)}. Creating empty directory."
+                        )
+                        os.makedirs(dst, exist_ok=True)
                 else:
                     shutil.copy(f, dst)
             except Exception as e:
                 tb = traceback.format_exc()
-                logger.error(
-                    "Skipping copying of {}. Got exception: {}\n{}".format(
-                        f, str(e), tb
-                    )
-                )
+                logger.error(f"Skipping copying of {f}. Got exception: {str(e)}\n{tb}")
+                continue
 
     # publish
     # HC-502: It's ok to clobber triage

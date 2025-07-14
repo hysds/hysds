@@ -1,27 +1,23 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
+import argparse
+import json
+import logging
 import os
 import sys
-import json
 import time
 import traceback
-import logging
-import argparse
+from datetime import datetime, timezone
+
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 from google.cloud import monitoring
-from datetime import datetime
 
 from hysds.celery import app
-
 
 log_format = "[%(asctime)s: %(levelname)s/custom_gcp_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -57,17 +53,16 @@ def submit_metric(resource_id, project, job, job_count):
     """Submit GCP custom metric data."""
 
     metric_ns = "HySDS"
-    metric_name = "JobsWaiting-%s" % job
+    metric_name = f"JobsWaiting-{job}"
     client = monitoring.Client()
     metric = client.metric(
-        "custom.googleapis.com/%s/%s" % (metric_ns, metric_name),
+        f"custom.googleapis.com/{metric_ns}/{metric_name}",
         labels={"resource_id": resource_id},
     )
     resource = client.resource("global", {})
-    client.write_point(metric, resource, job_count, end_time=datetime.utcnow())
+    client.write_point(metric, resource, job_count, end_time=datetime.now(timezone.utc).replace(tzinfo=None))
     logging.info(
-        "updated job count for %s queue as metric %s:%s: %s"
-        % (job, metric_ns, metric_name, job_count)
+        f"updated job count for {job} queue as metric {metric_ns}:{metric_name}: {job_count}"
     )
 
 
@@ -81,18 +76,18 @@ def daemon(project, job, interval):
     )
     resource_id = r.content
 
-    logging.info("resource_id: %s" % resource_id)
-    logging.info("project: %s" % project)
-    logging.info("queue: %s" % job)
-    logging.info("interval: %d" % interval)
+    logging.info(f"resource_id: {resource_id}")
+    logging.info(f"project: {project}")
+    logging.info(f"queue: {job}")
+    logging.info(f"interval: {interval}")
 
     while True:
         try:
             job_count = get_waiting_job_count(job)
-            logging.info("jobs_waiting for %s queue: %s" % (job, job_count))
+            logging.info(f"jobs_waiting for {job} queue: {job_count}")
             submit_metric(resource_id, project, job, job_count)
         except Exception as e:
-            logging.error("Got error: %s" % e)
+            logging.error(f"Got error: {e}")
             logging.error(traceback.format_exc())
         time.sleep(interval)
 
