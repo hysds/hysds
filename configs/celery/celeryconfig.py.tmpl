@@ -1,8 +1,8 @@
 import ssl
 broker_use_ssl = {
-    'ca_certs': "/etc/pki/tls/certs/ca-bundle.crt",
+    'ca_certs': "{{ CA_BUNDLE_CERT }}",
     'cert_reqs': ssl.CERT_NONE,
-    'ciphers': "DHE-RSA-AES128-GCM-SHA256"
+    'ciphers': "{{ CIPHERS }}"
 }
 
 broker_url = "amqps://{{ MOZART_RABBIT_USER }}:{{ MOZART_RABBIT_PASSWORD }}@{{ MOZART_RABBIT_PVT_IP }}:5671/"

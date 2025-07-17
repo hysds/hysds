@@ -56,7 +56,7 @@ output {
     index => "%{[@index]}"
     ssl => true
     ssl_certificate_verification => false
-    cacert => "/etc/pki/tls/certs/ca-bundle.crt"
+    cacert => "{{ CA_BUNDLE_CERT }}"
     user => {{ OS_USER }}
     password => {{ OS_PASSWORD }}
   }
