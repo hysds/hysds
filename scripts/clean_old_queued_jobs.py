@@ -1,17 +1,14 @@
 #!/usr/bin/env python
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
 from future import standard_library
 
 standard_library.install_aliases()
+import json
 import os
 import sys
-import requests
-import json
-from subprocess import Popen, PIPE
 from pprint import pprint
+from subprocess import PIPE, Popen
+
+import requests
 
 from hysds.celery import app
 
@@ -54,7 +51,7 @@ def clean(es_url, time_queued):
     }
     # print json.dumps(query, indent=2)
     r = requests.post(
-        "%s/%s/_search?search_type=scan&scroll=10m&size=100" % (es_url, idx),
+        f"{es_url}/{idx}/_search?search_type=scan&scroll=10m&size=100",
         data=json.dumps(query),
     )
     r.raise_for_status()
@@ -63,7 +60,7 @@ def clean(es_url, time_queued):
     scroll_id = scan_result["_scroll_id"]
     queued_jobs = []
     while True:
-        r = requests.post("%s/_search/scroll?scroll=10m" % es_url, data=scroll_id)
+        r = requests.post(f"{es_url}/_search/scroll?scroll=10m", data=scroll_id)
         res = r.json()
         scroll_id = res["_scroll_id"]
         if len(res["hits"]["hits"]) == 0:
@@ -76,10 +73,10 @@ def clean(es_url, time_queued):
     # loop and check task info
     for job_id in queued_jobs:
         # print job
-        r = requests.delete("%s/%s/%s/_query?q=_id:%s" % (es_url, idx, doctype, job_id))
+        r = requests.delete(f"{es_url}/{idx}/{doctype}/_query?q=_id:{job_id}")
         r.raise_for_status()
         res = r.json()
-        print(("Cleaned out queued job %s." % job_id))
+        print(f"Cleaned out queued job {job_id}.")
 
 
 if __name__ == "__main__":

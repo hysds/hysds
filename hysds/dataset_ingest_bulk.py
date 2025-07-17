@@ -1,52 +1,49 @@
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import absolute_import
-
-from builtins import str
-from builtins import int
-from builtins import open
 from future import standard_library
 from redis.exceptions import RedisError
 
 standard_library.install_aliases()
 
+import json
+import logging
 import os
 import re
-import json
-import requests
-import backoff
 import shutil
 import traceback
-import logging
-
+from datetime import timezone, datetime
 from glob import glob
-from datetime import datetime
-from subprocess import check_output
-
-from io import StringIO
-from lxml.etree import parse
-from urllib.parse import urlparse
 from importlib import import_module
-
+from io import StringIO
+from subprocess import check_output
 from tempfile import mkdtemp
+from urllib.parse import urlparse
 
+import backoff
+import osaka.main
+import requests
 from billiard import Manager, get_context  # noqa
 from billiard.pool import Pool, cpu_count  # noqa
-
-from hysds.utils import (get_disk_usage, makedirs, get_job_status, dataset_exists, find_non_localized_datasets,
-                         is_task_finished, TaskNotFinishedException)
-from hysds.log_utils import logger, log_prov_es, log_custom_event, log_publish_prov_es, backoff_max_value, \
-    backoff_max_tries
+from lxml.etree import parse
 
 from hysds.publish_lock import PublishLock, DedupPublishLockFoundException
 
 from hysds.celery import app
-from hysds.recognize import Recognizer
+from hysds.log_utils import (
+    log_custom_event,
+    log_prov_es,
+    log_publish_prov_es,
+    logger,
+)
 from hysds.orchestrator import do_submit_job
-
-import osaka.main
-
+from hysds.recognize import Recognizer
+from hysds.utils import (
+    dataset_exists,
+    find_non_localized_datasets,
+    get_disk_usage,
+    get_job_status,
+    makedirs,
+    is_task_finished,
+    TaskNotFinishedException
+)
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
 SCRIPT_RE = re.compile(r"script:(.*)$")
@@ -56,7 +53,7 @@ BROWSE_RE = re.compile(r"^(.+)\.browse\.png$")
 class NoDedupJobFoundException(Exception):
     def __init__(self, message):
         self.message = message
-        super(NoDedupJobFoundException, self).__init__(message)
+        super().__init__(message)
 
 
 class NoClobberPublishContextException(Exception):
@@ -73,7 +70,7 @@ def get_module(m):
     try:
         return import_module(m)
     except ImportError:
-        logger.error('Failed to import module "%s".' % m)
+        logger.error(f'Failed to import module "{m}".')
         raise
 
 
@@ -92,15 +89,15 @@ def get_disk_usage(path, follow_symlinks=True):
 def get_remote_dav(url):
     """Get remote dir/file."""
 
-    lpath = "./%s" % os.path.basename(url)
+    lpath = f"./{os.path.basename(url)}"
     if not url.endswith("/"):
         url += "/"
     parsed_url = urlparse(url)
     rpath = parsed_url.path
     r = requests.request("PROPFIND", url, verify=False)
     if r.status_code not in (200, 207):  # handle multistatus (207) as well
-        logger.info("Got status code %d trying to read %s" % (r.status_code, url))
-        logger.info("Content:\n%s" % r.text)
+        logger.info(f"Got status code {r.status_code} trying to read {url}")
+        logger.info(f"Content:\n{r.text}")
         r.raise_for_status()
     tree = parse(StringIO(r.content))
     makedirs(lpath)
@@ -118,10 +115,8 @@ def get_remote_dav(url):
         makedirs(local_dir)
         resp = requests.request("GET", file_url, verify=False, stream=True)
         if resp.status_code != 200:
-            logger.info(
-                "Got status code %d trying to read %s" % (resp.status_code, file_url)
-            )
-            logger.info("Content:\n%s" % resp.text)
+            logger.info(f"Got status code {resp.status_code} trying to read {file_url}")
+            logger.info(f"Content:\n{resp.text}")
         resp.raise_for_status()
         with open(local_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=1024):
@@ -138,7 +133,7 @@ def verify_dataset(dataset):
         raise RuntimeError("Failed to find required field: version")
     for field in ("label", "location", "starttime", "endtime", "creation_timestamp"):
         if field not in dataset:
-            logger.info("Optional field not found: %s" % field)
+            logger.info(f"Optional field not found: {field}")
 
 
 def delete_from_object_store(url, params=None):
@@ -156,7 +151,7 @@ def delete_from_object_store(url, params=None):
 
 
 def write_to_object_store(
-        path, url, params=None, force=False, publ_ctx_file=None, publ_ctx_url=None
+    path, url, params=None, force=False, publ_ctx_file=None, publ_ctx_url=None
 ):
     """
     Publish a dataset to the given url
@@ -185,7 +180,7 @@ def write_to_object_store(
             osaka.main.put(publ_ctx_file, publ_ctx_url, params=params, noclobber=True)
         except osaka.utils.NoClobberException as e:
             raise NoClobberPublishContextException(
-                "Failed to clobber {} when noclobber is True.".format(publ_ctx_url)
+                f"Failed to clobber {publ_ctx_url} when noclobber is True."
             )
 
     # upload datasets
@@ -194,6 +189,7 @@ def write_to_object_store(
             abs_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_path, path)
             dest_url = os.path.join(url, rel_path)
+
             publish_lock = PublishLock()
             try:
                 try:
@@ -229,13 +225,15 @@ def parse_iso8601(t):
         return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
 
 
-def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=False, force=False):
+def ingest_to_object_store(
+    objectid, dsets_file, prod_path, job_path, dry_run=False, force=False
+):
     """Run dataset ingest."""
-    logger.info("datasets: %s" % dsets_file)
-    logger.info("prod_path: %s" % prod_path)
-    logger.info("job_path: %s" % job_path)
-    logger.info("dry_run: %s" % dry_run)
-    logger.info("force: %s" % force)
+    logger.info(f"datasets: {dsets_file}")
+    logger.info(f"prod_path: {prod_path}")
+    logger.info(f"job_path: {job_path}")
+    logger.info(f"dry_run: {dry_run}")
+    logger.info(f"force: {force}")
 
     # get default job path
     if job_path is None:
@@ -249,15 +247,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
             try:
                 job = json.load(f)
             except Exception as e:
-                logger.warn("Failed to read job json:\n{}".format(str(e)))
+                logger.warning(f"Failed to read job json:\n{str(e)}")
     task_id = job.get("task_id", None)
     payload_id = (
         job.get("job_info", {}).get("job_payload", {}).get("payload_task_id", None)
     )
     payload_hash = job.get("job_info", {}).get("payload_hash", None)
-    logger.info("task_id: %s" % task_id)
-    logger.info("payload_id: %s" % payload_id)
-    logger.info("payload_hash: %s" % payload_hash)
+    logger.info(f"task_id: {task_id}")
+    logger.info(f"payload_id: {payload_id}")
+    logger.info(f"payload_hash: {payload_hash}")
 
     # get dataset
     if os.path.isdir(prod_path):
@@ -265,9 +263,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
     else:
         local_prod_path = get_remote_dav(prod_path)
     if not os.path.isdir(local_prod_path):
-        raise RuntimeError(
-            "Failed to find local dataset directory: %s" % local_prod_path
-        )
+        raise RuntimeError(f"Failed to find local dataset directory: {local_prod_path}")
 
     # write publish context
     publ_ctx_name = "_publish.context.json"
@@ -290,12 +286,12 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
     pname = os.path.basename(local_prod_path)
 
     # dataset file
-    dataset_file = os.path.join(local_prod_path, "%s.dataset.json" % pname)
+    dataset_file = os.path.join(local_prod_path, f"{pname}.dataset.json")
 
     # get dataset json
     with open(dataset_file) as f:
         dataset = json.load(f)
-    logger.info("Loaded dataset JSON from file: %s" % dataset_file)
+    logger.info(f"Loaded dataset JSON from file: {dataset_file}")
 
     # check minimum requirements for dataset JSON
     logger.info("Verifying dataset JSON...")
@@ -314,10 +310,10 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
         match = SCRIPT_RE.search(extractor)
         if match:
             extractor = match.group(1)
-    logger.info("Configured metadata extractor: %s" % extractor)
+    logger.info(f"Configured metadata extractor: {extractor}")
 
     # metadata file
-    metadata_file = os.path.join(local_prod_path, "%s.met.json" % pname)
+    metadata_file = os.path.join(local_prod_path, f"{pname}.met.json")
 
     # metadata seed file
     seed_file = os.path.join(local_prod_path, "met.json")
@@ -326,17 +322,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
     if os.path.exists(metadata_file):
         with open(metadata_file) as f:
             metadata = json.load(f)
-        logger.info("Loaded metadata from existing file: %s" % metadata_file)
+        logger.info(f"Loaded metadata from existing file: {metadata_file}")
     else:
         if extractor is None:
             logger.info("No metadata extraction configured. Setting empty metadata.")
             metadata = {}
         else:
-            logger.info(
-                "Running metadata extractor %s on %s" % (extractor, local_prod_path)
-            )
+            logger.info(f"Running metadata extractor {extractor} on {local_prod_path}")
             m = check_output([extractor, local_prod_path])
-            logger.info("Output: %s" % m.decode())
+            logger.info(f"Output: {m.decode()}")
 
             # generate json to update metadata and urls
             metadata = json.loads(m)
@@ -349,24 +343,24 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 with open(seed_file) as f:
                     seed = json.load(f)
                 metadata.update(seed)
-                logger.info("Loaded seed metadata from file: %s" % seed_file)
+                logger.info(f"Loaded seed metadata from file: {seed_file}")
 
             # write it out to file
             with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
-            logger.info("Wrote metadata to %s" % metadata_file)
+            logger.info(f"Wrote metadata to {metadata_file}")
 
             # delete seed file
             if os.path.exists(seed_file):
                 os.unlink(seed_file)
-                logger.info("Deleted seed file %s." % seed_file)
+                logger.info(f"Deleted seed file {seed_file}.")
 
     # read context
-    context_file = os.path.join(local_prod_path, "%s.context.json" % pname)
+    context_file = os.path.join(local_prod_path, f"{pname}.context.json")
     if os.path.exists(context_file):
         with open(context_file) as f:
             context = json.load(f)
-        logger.info("Loaded context from existing file: %s" % context_file)
+        logger.info(f"Loaded context from existing file: {context_file}")
     else:
         context = {}
 
@@ -408,19 +402,19 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 osaka_params["aws_secret_access_key"] = s3_secret_key
 
         # get pub host and path
-        logger.info("Configured pub host & path: %s" % pub_path_url)
+        logger.info(f"Configured pub host & path: {pub_path_url}")
 
         # check scheme
         if not osaka.main.supported(pub_path_url):
             raise RuntimeError(
-                "Scheme %s is currently not supported." % urlparse(pub_path_url).scheme
+                f"Scheme {urlparse(pub_path_url).scheme} is currently not supported."
             )
 
         # upload dataset to repo; track disk usage and start/end times of transfer
         prod_dir_usage = get_disk_usage(local_prod_path)
-        tx_t1 = datetime.utcnow()
+        tx_t1 = datetime.now(timezone.utc).replace(tzinfo=None)
         if dry_run:
-            logger.info("Would've published %s to %s" % (local_prod_path, pub_path_url))
+            logger.info(f"Would've published {local_prod_path} to {pub_path_url}")
         else:
             publ_ctx_url = os.path.join(pub_path_url, publ_ctx_name)
             orig_publ_ctx_file = publ_ctx_file + ".orig"
@@ -447,15 +441,13 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     publ_ctx_url=publ_ctx_url,
                 )
             except NoClobberPublishContextException as e:
-                logger.warn(
-                    "A publish context file was found at {}. Retrieving.".format(
-                        publ_ctx_url
-                    )
+                logger.warning(
+                    f"A publish context file was found at {publ_ctx_url}. Retrieving."
                 )
                 osaka.main.get(publ_ctx_url, orig_publ_ctx_file, params=osaka_params)
                 with open(orig_publ_ctx_file) as f:
                     orig_publ_ctx = json.load(f)
-                logger.warn(
+                logger.warning(
                     "original publish context: {}".format(
                         json.dumps(orig_publ_ctx, indent=2, sort_keys=True)
                     )
@@ -521,10 +513,10 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         raise
 
                     msg = (
-                            "This job is a retry of a previous job that resulted "
-                            + "in an orphaned dataset. Forcing publish."
+                        "This job is a retry of a previous job that resulted "
+                        + "in an orphaned dataset. Forcing publish."
                     )
-                    logger.warn(msg)
+                    logger.warning(msg)
                     log_custom_event(
                         "orphaned_dataset-retry_previous_failed",
                         "clobber",
@@ -544,15 +536,15 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     )
                 else:
                     job_status = get_job_status(orig_payload_id)
-                    logger.warn("orig job status: {}".format(job_status))
+                    logger.warning(f"orig job status: {job_status}")
 
                     # overwrite if previous job failed
                     if job_status == "job-failed":
                         msg = (
-                                "Detected previous job failure that resulted in an "
-                                + "orphaned dataset. Forcing publish."
+                            "Detected previous job failure that resulted in an "
+                            + "orphaned dataset. Forcing publish."
                         )
-                        logger.warn(msg)
+                        logger.warning(msg)
                         log_custom_event(
                             "orphaned_dataset-job_failed",
                             "clobber",
@@ -575,7 +567,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         # overwrite if dataset doesn't exist in grq
                         if not dataset_exists(objectid):
                             msg = "Detected orphaned dataset without ES doc. Forcing publish."
-                            logger.warn(msg)
+                            logger.warning(msg)
                             log_custom_event(
                                 "orphaned_dataset-no_es_doc",
                                 "clobber",
@@ -631,7 +623,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     try:
                         osaka.main.rmall(publ_ctx_url, params=osaka_params)
                     except:
-                        logger.warn(
+                        logger.warning(
                             "Failed to clean up publish context {} after attempting to clobber valid dataset.".format(
                                 publ_ctx_url
                             )
@@ -651,7 +643,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                             )
                     raise
                 else:
-                    msg = "Detected orphaned dataset %s, deleting from data store before re-publishing..." % objectid
+                    msg = f"Detected orphaned dataset {objectid}, deleting from data store before re-publishing..."
                     logger.info(msg)
                     log_custom_event(
                         "orphaned_dataset-no_es_doc",
@@ -689,12 +681,12 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                         publ_ctx_file=publ_ctx_file,
                         publ_ctx_url=publ_ctx_url,
                     )
-        tx_t2 = datetime.utcnow()
+        tx_t2 = datetime.now(timezone.utc).replace(tzinfo=None)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
 
         # create PROV-ES JSON file for publish processStep
         prod_prov_es_file = os.path.join(
-            local_prod_path, "%s.prov_es.json" % os.path.basename(local_prod_path)
+            local_prod_path, f"{os.path.basename(local_prod_path)}.prov_es.json"
         )
         pub_prov_es_bn = "publish.prov_es.json"
         if os.path.exists(prod_prov_es_file):
@@ -719,9 +711,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                                 f"Failed to release lock or close Redis client connection properly: {str(re)}"
                             )
                     raise RuntimeError(
-                        "Failed to load PROV-ES from {}: {}\n{}".format(
-                            prod_prov_es_file, str(e), tb
-                        )
+                        f"Failed to load PROV-ES from {prod_prov_es_file}: {str(e)}\n{tb}"
                     )
             log_publish_prov_es(
                 prov_es_info,
@@ -780,7 +770,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
 
         # add metadata for all browse images and upload to browse location
         imgs_metadata = []
-        imgs = glob("%s/*browse.png" % local_prod_path)
+        imgs = glob(f"{local_prod_path}/*browse.png")
         for img in imgs:
             img_metadata = {"img": os.path.basename(img)}
             small_img = img.replace("browse.png", "browse_small.png")
@@ -789,11 +779,9 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                 if browse_path is not None:
                     this_browse_path = os.path.join(browse_path, small_img_basename)
                     if dry_run:
-                        logger.info(
-                            "Would've uploaded %s to %s" % (small_img, browse_path)
-                        )
+                        logger.info(f"Would've uploaded {small_img} to {browse_path}")
                     else:
-                        logger.info("Uploading %s to %s" % (small_img, browse_path))
+                        logger.info(f"Uploading {small_img} to {browse_path}")
                         osaka.main.put(
                             small_img,
                             this_browse_path,
@@ -827,9 +815,7 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
                     unrecognized.append(img)
             imgs_metadata = [sorter[i] for i in sorted(sorter)]
             imgs_metadata.extend(unrecognized)
-        prod_metrics.update({
-            "browse_path": browse_path
-        })
+        prod_metrics.update({"browse_path": browse_path})
     else:
         logger.info("Browse publish is not configured.")
         browse_urls = []
@@ -873,10 +859,8 @@ def ingest_to_object_store(objectid, dsets_file, prod_path, job_path, dry_run=Fa
         try:
             osaka.main.rmall(publ_ctx_url, params=osaka_params)
         except:
-            logger.warn(
-                "Failed to clean up publish context at {} on successful publish.".format(
-                    publ_ctx_url
-                )
+            logger.warning(
+                f"Failed to clean up publish context at {publ_ctx_url} on successful publish."
             )
         if publish_context_lock:
             try:
@@ -922,13 +906,15 @@ def bulk_index_dataset(grq_update_url, update_jsons):
 
 def queue_dataset(dataset, update_json, queue_name):
     """Add dataset type and URL to queue."""
-    payload = {"job_type": "dataset:%s" % dataset, "payload": update_json}
+    payload = {"job_type": f"dataset:{dataset}", "payload": update_json}
     do_submit_job(payload, queue_name)
 
 
 def init_pool_logger():
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('[%(asctime)s: %(levelname)s/%(name)s] %(message)s'))
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s: %(levelname)s/%(name)s] %(message)s")
+    )
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
@@ -942,7 +928,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
     :param event [Event, Optional] - Event to halt tasks if previous failed, taken from multiprocessing Manager()
     """
     if event and event.is_set():
-        logger.warning("Previous publish task failed, skipping %s..." % prod_dir)
+        logger.warning(f"Previous publish task failed, skipping {prod_dir}...")
         return
 
     try:
@@ -957,7 +943,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
         # check for PROV-ES JSON from PGE; if exists, append related PROV-ES info;
         # also overwrite merged PROV-ES JSON file
         prod_id = os.path.basename(prod_dir)
-        prov_es_file = os.path.join(prod_dir, "%s.prov_es.json" % prod_id)
+        prov_es_file = os.path.join(prod_dir, f"{prod_id}.prov_es.json")
         prov_es_info = {}
         if os.path.exists(prov_es_file):
             with open(prov_es_file) as f:
@@ -966,14 +952,12 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
                 except Exception as e:
                     tb = traceback.format_exc()
                     raise RuntimeError(
-                        "Failed to log PROV-ES from {}: {}\n{}".format(
-                            prov_es_file, str(e), tb
-                        )
+                        f"Failed to log PROV-ES from {prov_es_file}: {str(e)}\n{tb}"
                     )
             log_prov_es(job, prov_es_info, prov_es_file)
 
         # copy _context.json
-        prod_context_file = os.path.join(prod_dir, "%s.context.json" % prod_id)
+        prod_context_file = os.path.join(prod_dir, f"{prod_id}.context.json")
         shutil.copy(context_file, prod_context_file)
 
         # force ingest? (i.e. disable no-clobber)
@@ -983,7 +967,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             ingest_kwargs["force"] = True
 
         # upload
-        tx_t1 = datetime.utcnow()
+        tx_t1 = datetime.now(timezone.utc).replace(tzinfo=None)
         metrics, prod_json = ingest_to_object_store(
             *(
                 prod_id,
@@ -991,10 +975,10 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
                 prod_dir,
                 job_dir,
             ),
-            **ingest_kwargs
+            **ingest_kwargs,
         )
 
-        tx_t2 = datetime.utcnow()
+        tx_t2 = datetime.now(timezone.utc).replace(tzinfo=None)
         tx_dur = (tx_t2 - tx_t1).total_seconds()
         prod_dir_usage = get_disk_usage(prod_dir)
 
@@ -1006,7 +990,7 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             "processing_latency": (tx_t2 - time_start).total_seconds() / 60.0,
             "total_latency": (tx_t2 - time_start).total_seconds() / 60.0,
         }
-        prod_prov_file = os.path.join(prod_dir, "%s.prod_prov.json" % prod_id)
+        prod_prov_file = os.path.join(prod_dir, f"{prod_id}.prod_prov.json")
         if os.path.exists(prod_prov_file):
             with open(prod_prov_file) as f:
                 prod_prov.update(json.load(f))
@@ -1050,15 +1034,15 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
             event.set()
         tb = traceback.format_exc()
         logger.error(tb)
-        raise RuntimeError("Failed to publish {}: {}\n{}".format(prod_dir, str(e), tb))
+        raise RuntimeError(f"Failed to publish {prod_dir}: {str(e)}\n{tb}")
 
 
 def delete_files(metrics):
     if "pub_path_url" in metrics:
-        logger.info("deleting %s" % metrics["pub_path_url"])
+        logger.info(f"deleting {metrics['pub_path_url']}")
         delete_from_object_store(metrics["pub_path_url"])
     if "browse_path" in metrics:
-        logger.info("deleting %s" % metrics["browse_path"])
+        logger.info(f"deleting {metrics['browse_path']}")
         delete_from_object_store(metrics["browse_path"])
 
 
@@ -1069,7 +1053,7 @@ def publish_datasets_parallel(job, ctx):
     exit_code = job["job_info"]["status"]
     if exit_code != 0:
         logger.info(
-            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
+            f"Job exited with exit code {exit_code}. Bypassing dataset publishing."
         )
         return True
 
@@ -1087,16 +1071,30 @@ def publish_datasets_parallel(job, ctx):
 
     async_tasks = []
     num_procs = min(max(cpu_count() - 2, 1), len(datasets_list))
-    logger.info("multiprocessing procs used: %d" % num_procs)
+    logger.info(f"multiprocessing procs used: {num_procs}")
 
-    with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool, Manager() as manager:
+    with get_context("spawn").Pool(
+        num_procs, initializer=init_pool_logger
+    ) as pool, Manager() as manager:
         event = manager.Event()
         for prod_dir in datasets_list:
-            signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
+            signal_file = os.path.join(
+                prod_dir, ".localized"
+            )  # skip if marked as localized input
             if os.path.exists(signal_file):
-                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                logger.info(
+                    f"Skipping publish of {prod_dir}. Marked as localized input."
+                )
                 continue
-            async_task = pool.apply_async(publish_files_wrapper, args=(job, ctx, prod_dir, ), kwds={"event": event})
+            async_task = pool.apply_async(
+                publish_files_wrapper,
+                args=(
+                    job,
+                    ctx,
+                    prod_dir,
+                ),
+                kwds={"event": event},
+            )
             async_tasks.append(async_task)
         pool.close()
         logger.info("Waiting for dataset publishing tasks to complete...")
@@ -1122,23 +1120,31 @@ def publish_datasets_parallel(job, ctx):
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
             logger.handlers.clear()
-        raise NotAllProductsIngested("Product failed to ingest to data store: {}".format(err))
+        raise NotAllProductsIngested(f"Product failed to ingest to data store: {err}")
 
     if len(prods_ingested_to_obj_store) > 0:
         try:
             prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
-            logger.info(f"publishing %d dataset(s) to Elasticsearch" % len(prods_ingested_to_obj_store))
+            logger.info(
+                f"publishing {len(prods_ingested_to_obj_store)} dataset(s) to Elasticsearch"
+            )
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
-            with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
+            with get_context("spawn").Pool(
+                num_procs, initializer=init_pool_logger
+            ) as pool:
                 for _, _, metrics in prods_ingested_to_obj_store:
                     pool.apply_async(delete_files, args=(metrics,))
             pool.close()
-            logger.error("datasets failed to publish to Elasticsearch, deleting object(s) from data store")
+            logger.error(
+                "datasets failed to publish to Elasticsearch, deleting object(s) from data store"
+            )
             pool.join()
             logger.handlers.clear()
-            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+            raise NotAllProductsIngested(
+                f"Products failed to index to elasticsearch: {traceback.format_exc()}"
+            )
 
         if "products_staged" not in job["job_info"]["metrics"]:
             job["job_info"]["metrics"]["products_staged"] = []
@@ -1147,7 +1153,9 @@ def publish_datasets_parallel(job, ctx):
             ipath = prod_json["ipath"]
             queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
             job["job_info"]["metrics"]["products_staged"].append(metadata)
-        logger.info("queued %d dataset(s) to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
+        logger.info(
+            f"queued {len(prods_ingested_to_obj_store)} dataset(s) to {app.conf.DATASET_PROCESSED_QUEUE}"
+        )
 
     # write published products to file
     pub_prods_file = os.path.join(job_dir, "_datasets.json")
@@ -1164,7 +1172,7 @@ def publish_datasets(job, ctx):
     exit_code = job["job_info"]["status"]
     if exit_code != 0:
         logger.info(
-            "Job exited with exit code %s. Bypassing dataset publishing." % exit_code
+            f"Job exited with exit code {exit_code}. Bypassing dataset publishing."
         )
         return True
 
@@ -1182,28 +1190,40 @@ def publish_datasets(job, ctx):
 
     try:
         for prod_dir in dataset_directories:
-            signal_file = os.path.join(prod_dir, ".localized")  # skip if marked as localized input
+            signal_file = os.path.join(
+                prod_dir, ".localized"
+            )  # skip if marked as localized input
             if os.path.exists(signal_file):
-                logger.info("Skipping publish of %s. Marked as localized input." % prod_dir)
+                logger.info(
+                    f"Skipping publish of {prod_dir}. Marked as localized input."
+                )
                 continue
             published_metadata = publish_files_wrapper(job, ctx, prod_dir)
             prods_ingested_to_obj_store.append(published_metadata)
     except Exception:
-        logger.error("Product failed to ingest to data store: %s" % traceback.format_exc())
+        logger.error(
+            f"Product failed to ingest to data store: {traceback.format_exc()}"
+        )
         for _, _, metrics in prods_ingested_to_obj_store:
             delete_files(metrics)
-        raise NotAllProductsIngested("Product failed to ingest to data store: %s" % traceback.format_exc())
+        raise NotAllProductsIngested(
+            f"Product failed to ingest to data store: {traceback.format_exc()}"
+        )
 
     if len(prods_ingested_to_obj_store) > 0:
         try:
             prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
-            logger.info(f"publishing %d dataset(s) to Elasticsearch" % len(prods_ingested_to_obj_store))
+            logger.info(
+                f"publishing {len(prods_ingested_to_obj_store)} dataset(s) to Elasticsearch"
+            )
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
             for _, _, metrics in prods_ingested_to_obj_store:
                 delete_files(metrics)
-            raise NotAllProductsIngested("Products failed to index to elasticsearch: %s" % traceback.format_exc())
+            raise NotAllProductsIngested(
+                f"Products failed to index to elasticsearch: {traceback.format_exc()}"
+            )
 
         if "products_staged" not in job["job_info"]["metrics"]:
             job["job_info"]["metrics"]["products_staged"] = []
@@ -1212,7 +1232,9 @@ def publish_datasets(job, ctx):
             ipath = prod_json["ipath"]
             queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
             job["job_info"]["metrics"]["products_staged"].append(metadata)
-        logger.info("queued %d dataset(s) to %s" % (len(prods_ingested_to_obj_store), app.conf.DATASET_PROCESSED_QUEUE))
+        logger.info(
+            f"queued {len(prods_ingested_to_obj_store)} dataset(s) to {app.conf.DATASET_PROCESSED_QUEUE}"
+        )
 
     # write published products to file
     pub_prods_file = os.path.join(job_dir, "_datasets.json")

@@ -1,32 +1,26 @@
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-from __future__ import absolute_import
-
-
-from builtins import str
 from future import standard_library
 
 standard_library.install_aliases()
-import os
-import sys
-import re
 import json
-import time
+import logging
+import os
+import re
 import shlex
-import tempfile
-import requests
 import shutil
 import socket
-import backoff
-import logging
+import sys
+import tempfile
+import time
 from datetime import datetime
 
+import backoff
+import requests
+
 from hysds.celery import app
-from hysds.orchestrator import get_function
-from hysds.job_worker import get_facts, AZ_INFO, INS_TYPE_INFO
+from hysds.job_worker import AZ_INFO, INS_TYPE_INFO, get_facts
 from hysds.log_utils import backoff_max_tries, backoff_max_value
-from hysds.utils import makedirs
+from hysds.orchestrator import get_function
+from hysds.utils import makedirs, datetime_iso_naive
 
 # from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 
@@ -82,7 +76,7 @@ def run_task(self, payload):
     #                       "%02d" % hr, "%02d" % mi, task_id)
     task_dir = task_dir_abs
     makedirs(task_dir)
-    webdav_url = "http://%s:%s" % (facts["hysds_public_ip"], app.conf.WEBDAV_PORT)
+    webdav_url = f"http://{facts['hysds_public_ip']}:{app.conf.WEBDAV_PORT}"
     # task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                        "%02d" % hr, "%02d" % mi, task_id)
     task_url = os.path.join(webdav_url, "tasks")
@@ -116,16 +110,16 @@ def run_task(self, payload):
         kwargs = payload.get("kwargs", {})
 
         # log task info
-        task_logger.info("task type: %s" % payload["type"])
-        task_logger.info("function to run: %s" % payload["function"])
-        task_logger.info("sys_path: %s" % str(sys_path))
-        task_logger.info("args: %s" % str(args))
-        task_logger.info("kwargs: %s" % json.dumps(kwargs, indent=2))
-        task_logger.info("task started: {}".format(datetime.utcnow().isoformat()))
+        task_logger.info(f"task type: {payload['type']}")
+        task_logger.info(f"function to run: {payload['function']}")
+        task_logger.info(f"sys_path: {str(sys_path)}")
+        task_logger.info(f"args: {str(args)}")
+        task_logger.info(f"kwargs: {json.dumps(kwargs, indent=2)}")
+        task_logger.info(f"task started: {datetime_iso_naive()}")
 
         # get task result
         result = func(*args, **kwargs)
-        task_logger.info("result: {}".format(result))
+        task_logger.info(f"result: {result}")
     finally:
         # restore stdout/stderr
         # sys.stdout, sys.stderr = old_outs
@@ -135,7 +129,7 @@ def run_task(self, payload):
         # os.rename(task_running_file, task_done_file)
         # with open(task_done_file, 'w') as f:
         #    f.write("%sZ\n" % datetime.utcnow().isoformat())
-        task_logger.info("task finished: {}".format(datetime.utcnow().isoformat()))
+        task_logger.info(f"task finished: {datetime_iso_naive()}")
 
     # return task url
     return task_url
