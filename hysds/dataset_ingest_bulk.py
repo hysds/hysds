@@ -546,6 +546,13 @@ def ingest_to_object_store(
                                 }
                             },
                         )
+                    # If job is determined to be in a job-started state, do not force publish
+                    elif job_status == "job-started":
+                        logger.error(
+                            f"Will not try and force publish as the other job with id {orig_payload_id} "
+                            f"has job_status='job-started'"
+                        )
+                        raise
                     else:
                         # overwrite if dataset doesn't exist in grq
                         if not dataset_exists(objectid):
