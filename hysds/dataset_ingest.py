@@ -18,9 +18,6 @@ from subprocess import check_call, check_output
 from tempfile import mkdtemp
 from redis.exceptions import RedisError
 
-import hysds
-from hysds.utils import get_disk_usage, makedirs, get_job_status, dataset_exists, get_func, parse_iso8601, \
-    find_dataset_json, is_task_finished, TaskNotFinishedException
 from urllib.parse import urlparse
 
 import backoff
@@ -31,6 +28,7 @@ from fabric.contrib.files import exists
 from filechunkio import FileChunkIO
 from lxml.etree import parse
 
+import hysds
 from hysds.celery import app
 
 from hysds.log_utils import (
@@ -55,6 +53,8 @@ from hysds.utils import (
     get_job_status,
     makedirs,
     parse_iso8601,
+    is_task_finished,
+    TaskNotFinishedException,
 )
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
@@ -652,9 +652,9 @@ def ingest(
                 orig_payload_id = orig_publ_ctx.get("payload_id", None)
                 orig_payload_hash = orig_publ_ctx.get("payload_hash", None)
                 orig_task_id = orig_publ_ctx.get("task_id", None)
-                logger.warn("orig payload_id: {}".format(orig_payload_id))
-                logger.warn("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warn("orig task_id: {}".format(orig_task_id))
+                logger.warning("orig payload_id: {}".format(orig_payload_id))
+                logger.warning("orig payload_hash: {}".format(orig_payload_hash))
+                logger.warning("orig task_id: {}".format(orig_task_id))
 
                 if orig_payload_id is None:
                     if publish_context_lock:

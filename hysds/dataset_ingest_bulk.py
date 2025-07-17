@@ -28,6 +28,8 @@ from hysds.publish_lock import PublishLock, DedupPublishLockFoundException
 
 from hysds.celery import app
 from hysds.log_utils import (
+    backoff_max_tries,
+    backoff_max_value,
     log_custom_event,
     log_prov_es,
     log_publish_prov_es,
@@ -455,9 +457,9 @@ def ingest_to_object_store(
                 orig_payload_id = orig_publ_ctx.get("payload_id", None)
                 orig_payload_hash = orig_publ_ctx.get("payload_hash", None)
                 orig_task_id = orig_publ_ctx.get("task_id", None)
-                logger.warn("orig payload_id: {}".format(orig_payload_id))
-                logger.warn("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warn("orig task_id: {}".format(orig_task_id))
+                logger.warning("orig payload_id: {}".format(orig_payload_id))
+                logger.warning("orig payload_hash: {}".format(orig_payload_hash))
+                logger.warning("orig task_id: {}".format(orig_task_id))
 
                 if orig_payload_id is None:
                     if publish_context_lock:
