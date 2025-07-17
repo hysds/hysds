@@ -477,25 +477,25 @@ def ingest_to_object_store(
                             )
                     raise
 
-                # We should check to see if the task_id of the job is different than the
-                # task_id in the publish_context file, the orig_task_id. If so,
-                # to mitigate race conditions, check to see if the orig_task_id is in a
-                # finished state before proceeding.
-                if orig_task_id and task_id and orig_task_id != task_id:
-                    try:
-                        status = is_task_finished(orig_task_id)
-                        if status is True:
-                            logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
-                        else:
-                            logger.warning(
-                                f"Could not determine status of {orig_task_id}. Proceeding with force publish."
-                            )
-                    except TaskNotFinishedException as te:
-                        logger.warning(str(te))
-                        logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
-
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
+                    # We should check to see if the task_id of the job is different than the
+                    # task_id in the publish_context file, the orig_task_id. If so,
+                    # to mitigate race conditions, check to see if the orig_task_id is in a
+                    # finished state before proceeding.
+                    if orig_task_id and task_id and orig_task_id != task_id:
+                        try:
+                            status = is_task_finished(orig_task_id)
+                            if status is True:
+                                logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
+                            else:
+                                logger.warning(
+                                    f"Could not determine status of {orig_task_id}. Proceeding with force publish."
+                                )
+                        except TaskNotFinishedException as te:
+                            logger.warning(str(te))
+                            logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
+
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
                         logger.error(f"Dataset already exists: {objectid}. No need to force publish.")
