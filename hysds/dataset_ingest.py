@@ -52,6 +52,8 @@ from hysds.utils import (
     get_job_status,
     makedirs,
     parse_iso8601,
+    is_task_finished,
+    TaskNotFinishedException,
 )
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
@@ -668,6 +670,23 @@ def ingest(
                                 f"Failed to release lock or close Redis client connection properly: {str(re)}"
                             )
                     raise
+
+                # We should check to see if the task_id of the job is different than the
+                # task_id in the publish_context file, the orig_task_id. If so,
+                # to mitigate race conditions, check to see if the orig_task_id is in a
+                # finished state before proceeding.
+                if orig_task_id and task_id and orig_task_id != task_id:
+                    try:
+                        status = is_task_finished(orig_task_id)
+                        if status is True:
+                            logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
+                        else:
+                            logger.warning(
+                                f"Could not determine status of {orig_task_id}. Proceeding with force publish."
+                            )
+                    except TaskNotFinishedException as te:
+                        logger.warning(str(te))
+                        logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
