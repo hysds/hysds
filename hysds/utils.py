@@ -476,6 +476,11 @@ def get_job_status(_id):
     return doc["_source"]["status"]
 
 
+def giveup_check_finished_task(details):
+    logger.info("Giving up checking to see if task is finished with args {args}".format(**details))
+    return None
+
+
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
