@@ -486,7 +486,7 @@ def check_dataset(_id, es_index="grq"):
         }
     }
     grq_es = get_grq_es()
-    count = grq_es.get_count(index=es_index, body=query, ignore=404)
+    count = grq_es.get_count(index=es_index, body=query)
     return count
 
 
