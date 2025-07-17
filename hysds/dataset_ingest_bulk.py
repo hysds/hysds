@@ -455,9 +455,9 @@ def ingest_to_object_store(
                 orig_payload_id = orig_publ_ctx.get("payload_id", None)
                 orig_payload_hash = orig_publ_ctx.get("payload_hash", None)
                 orig_task_id = orig_publ_ctx.get("task_id", None)
-                logger.warning("orig payload_id: {}".format(orig_payload_id))
-                logger.warning("orig payload_hash: {}".format(orig_payload_hash))
-                logger.warning("orig task_id: {}".format(orig_task_id))
+                logger.warning(f"orig payload_id: {orig_payload_id}")
+                logger.warning(f"orig payload_hash: {orig_payload_hash}")
+                logger.warning(f"orig task_id: {orig_task_id}")
 
                 if orig_payload_id is None:
                     if publish_context_lock:
