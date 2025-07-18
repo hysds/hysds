@@ -30,7 +30,10 @@ def set_redis_pool(redis_url):
 
     global POOL
     if POOL is None:
-        POOL = BlockingConnectionPool.from_url(redis_url)
+        POOL = BlockingConnectionPool.from_url(
+            url=redis_url,
+            ssl_cert_reqs="none"
+        )
 
 
 def log_instance_stats(redis_url, redis_key, instance_stats):
@@ -46,7 +49,8 @@ def log_instance_stats(redis_url, redis_key, instance_stats):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=POOL)
+    r = StrictRedis(connection_pool=POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     r.rpush(redis_key, msgpack.dumps(instance_stats))
 
     # print log

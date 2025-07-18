@@ -12,12 +12,21 @@ import traceback
 
 import boto3
 import requests
+import urllib3
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
 from hysds.celery import app
 
 log_format = "[%(asctime)s: %(levelname)s/custom_ec2_metrics-jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
+# class for custom cipher for rabbitmq
+class CustomCipherAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        ssl_context = create_urllib3_context(ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
+        kwargs['ssl_context'] = ssl_context
+        return super(CustomCipherAdapter, self).init_poolmanager(*args, **kwargs)
 
 def get_waiting_job_count(job, user="guest", password="guest"):
     """Return number of jobs waiting."""
@@ -29,9 +38,12 @@ def get_waiting_job_count(job, user="guest", password="guest"):
         .get("hostname", "localhost")
     )
 
+    session = requests.Session()
+    session.mount("https://", CustomCipherAdapter())
+
     # get number of jobs waiting (ready)
-    url = f"http://{host}:15672/api/queues/%2f/{job}"
-    r = requests.get(url, auth=(user, password))
+    url = "https://%s:15673/api/queues/%%2f/%s" % (host, job)
+    r = session.get(url, auth=(user, password), verify=False)
     # r.raise_for_status()
     if r.status_code == 200:
         return r.json()["messages_ready"]

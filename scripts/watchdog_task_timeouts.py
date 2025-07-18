@@ -80,7 +80,7 @@ def daemon(interval, url, timeout):
 
 if __name__ == "__main__":
     desc = "Watchdog tasks stuck in task-started."
-    host = app.conf.get("JOBS_ES_URL", "http://localhost:9200")
+    host = app.conf.get("JOBS_ES_URL", "https://localhost:9200")
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "-i",
