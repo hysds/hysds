@@ -777,8 +777,8 @@ def ingest(
                     # If job is determined to be in a job-started state, do not force publish
                     elif job_status == "job-started":
                         error_message = (
-                            f"Will not try and force publish as the other job with id {orig_payload_id} "
-                            f"has job_status='job-started'"
+                            f"job with payload_id={orig_payload_id} in {publ_ctx_url} has job_status='job-started'. "
+                            f"Will not force publish to avoid possible clobbering."
                         )
                         logger.error(error_message)
                         raise NoClobberPublishContextException(error_message) from e
