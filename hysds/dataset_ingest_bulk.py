@@ -588,6 +588,19 @@ def ingest_to_object_store(
                             f"Will not force publish to avoid possible clobbering."
                         )
                         logger.error(error_message)
+                        if publish_context_lock:
+                            try:
+                                publish_context_lock.release()
+                            except RedisError as re:
+                                logger.warning(
+                                    f"Failed to release lock: {str(re)}"
+                                )
+                            try:
+                                publish_context_lock.close()
+                            except RedisError as re:
+                                logger.warning(
+                                    f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                                )
                         raise NoClobberPublishContextException(error_message) from e
                     else:
                         # overwrite if dataset doesn't exist in grq
