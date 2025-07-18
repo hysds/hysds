@@ -1,5 +1,6 @@
 from future import standard_library
 from redis.exceptions import RedisError
+from requests import RequestException
 
 standard_library.install_aliases()
 
@@ -504,6 +505,11 @@ def ingest_to_object_store(
                             )
                             logger.error(error_message)
                             raise TaskNotFinishedException(error_message) from e
+                        except requests.exceptions.RequestException as re:
+                            logger.warning(
+                                f"Could not determine status of {orig_task_id} due to request exception: {str(re)}."
+                                f" Proceeding with force publish."
+                            )
 
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
