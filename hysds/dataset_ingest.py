@@ -669,7 +669,12 @@ def ingest(
                             logger.warning(
                                 f"Failed to release lock or close Redis client connection properly: {str(re)}"
                             )
-                    raise
+                    error_message = (
+                        f"payload_id does not exist in {publ_ctx_url}. "
+                        f"Cannot determine if we can force publish."
+                    )
+                    logger.error(error_message)
+                    raise NoClobberPublishContextException(error_message) from e
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
@@ -687,15 +692,31 @@ def ingest(
                                     f"Could not determine status of {orig_task_id}. Proceeding with force publish."
                                 )
                         except TaskNotFinishedException as te:
-                            logger.warning(str(te))
-                            logger.warning(f"Task {orig_task_id} still isn't finished. Proceeding with force publish.")
+                            error_message = (
+                                f"Task {orig_task_id} still isn't finished: {str(te)}. "
+                                f"Will not proceed with force publish."
+                            )
+                            logger.error(error_message)
+                            raise TaskNotFinishedException(error_message) from e
 
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
-                        logger.error(f"Dataset already exists: {objectid}. No need to force publish.")
+                        error_message = f"Dataset already exists: {objectid}. No need to force publish."
+                        logger.error(error_message)
                         if publish_context_lock:
-                            publish_context_lock.close()
-                        raise
+                            try:
+                                publish_context_lock.release()
+                            except RedisError as re:
+                                logger.warning(
+                                    f"Failed to release lock: {str(re)}"
+                                )
+                            try:
+                                publish_context_lock.close()
+                            except RedisError as re:
+                                logger.warning(
+                                    f"Failed to release lock or close Redis client connection properly: {str(re)}"
+                                )
+                        raise NoClobberPublishContextException(error_message) from e
 
                     msg = (
                         "This job is a retry of a previous job that resulted "
@@ -750,11 +771,12 @@ def ingest(
                         )
                     # If job is determined to be in a job-started state, do not force publish
                     elif job_status == "job-started":
-                        logger.error(
+                        error_message = (
                             f"Will not try and force publish as the other job with id {orig_payload_id} "
                             f"has job_status='job-started'"
                         )
-                        raise
+                        logger.error(error_message)
+                        raise NoClobberPublishContextException(error_message) from e
                     else:
                         # overwrite if dataset doesn't exist in grq
                         if not dataset_exists(objectid):
@@ -833,7 +855,9 @@ def ingest(
                             logger.warning(
                                 f"Failed to release lock or close Redis client connection properly: {str(re)}"
                             )
-                    raise
+                    error_message = f"Dataset already exists: {objectid}. No need to force publish."
+                    logger.error(error_message)
+                    raise NoClobberPublishContextException(error_message) from e
                 else:
                     msg = "Detected orphaned dataset without ES doc. Forcing publish."
                     logger.warning(msg)
