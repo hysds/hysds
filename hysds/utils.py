@@ -40,6 +40,12 @@ class NoDedupJobFoundException(Exception):
         super().__init__(message)
 
 
+class TaskNotFinishedException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super(TaskNotFinishedException, self).__init__(message)
+
+
 def get_module(m):
     """Import module and return."""
 
@@ -470,6 +476,40 @@ def get_job_status(_id):
     return doc["_source"]["status"]
 
 
+def giveup_check_finished_task(details):
+    logger.info("Giving up checking to see if task is finished with args {args}".format(**details))
+    return None
+
+
+@backoff.on_exception(
+    backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
+)
+def is_task_finished(_id):
+    """Checks to see if the given task is in a finished state."""
+    query = {
+        "query": {
+            "bool": {
+                "must": [{"term": {"_id": _id}}]
+            }
+        }
+    }
+    mozart_es = get_mozart_es()
+    res = mozart_es.search(index="task_status-current", body=query, _source_includes=["status"])
+    if res["hits"]["total"]["value"] == 0:
+        logger.warning("task not found, _id: %s" % _id)
+        return None
+    else:
+        logger.info("get_task_status result: %s" % json.dumps(res, indent=2))
+        doc = res["hits"]["hits"][0]
+        status = doc["_source"]["status"]
+        if status in ["task-succeeded", "task-failed", "task-revoked"]:
+            return True
+        else:
+            message = f"Task {_id} not finished yet. status={status}"
+            logger.warning(message)
+            raise TaskNotFinishedException(message)
+
+
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
@@ -486,7 +526,7 @@ def check_dataset(_id, es_index="grq"):
         }
     }
     grq_es = get_grq_es()
-    count = grq_es.get_count(index=es_index, body=query)
+    count = grq_es.get_count(index=es_index, body=query, ignore=404)
     return count
 
 
