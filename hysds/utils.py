@@ -484,13 +484,6 @@ def giveup_check_finished_task(details):
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
-@backoff.on_exception(
-    backoff.expo,
-    TaskNotFinishedException,
-    max_time=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 300),
-    max_value=32,
-    on_giveup=giveup_check_finished_task
-)
 def is_task_finished(_id):
     """Checks to see if the given task is in a finished state."""
     query = {
