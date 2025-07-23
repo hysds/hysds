@@ -14,6 +14,7 @@ input {
     add_field => {
       "@index" => "logstash-%{+yyyy.MM.dd}"
     }
+    ssl => true
   }
 
   redis {
@@ -27,6 +28,7 @@ input {
     add_field => {
       "@index" => "sdswatch-%{+yyyy.MM.dd}"
     }
+    ssl => true
   }
 }
 
@@ -40,7 +42,7 @@ output {
         {%- if url.startswith('https://') %}
       "{{ url }}"{{ "," if not loop.last else "" }}
         {%- else %}
-      "{{ 'https://'~url if METRICS_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+      "{{ 'https://'~url if METRICS_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
         {%- endif %}
       {%- endfor %}
     ]
@@ -48,9 +50,14 @@ output {
       {%- if METRICS_ES_PVT_IP.startswith('https://') %}
     hosts => ["{{ METRICS_ES_PVT_IP }}"]
       {%- else %}
-    hosts => ["{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'http://'~METRICS_ES_PVT_IP~':9200' }}"]
+    hosts => ["{{ 'https://'~METRICS_ES_PVT_IP if METRICS_AWS_ES == true or 'es.amazonaws.com' in METRICS_ES_PVT_IP else 'https://'~METRICS_ES_PVT_IP~':9200' }}"]
       {%- endif %}
     {%- endif %}
     index => "%{[@index]}"
+    ssl => true
+    ssl_certificate_verification => false
+    cacert => "{{ CA_BUNDLE_CERT }}"
+    user => {{ OS_USER }}
+    password => {{ OS_PASSWORD }}
   }
 }

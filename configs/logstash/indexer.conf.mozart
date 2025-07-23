@@ -11,6 +11,7 @@ input {
     # We use the 'msgpack' codec here because we expect to read
     # msgpack events from redis.
     codec => msgpack
+    ssl => true
   }
 }
 
@@ -95,7 +96,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -103,12 +104,17 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "%{[job][job_info][index]}"
       document_id => "%{payload_id}"
       ecs_compatibility => disabled
+      ssl => true
+      ssl_certificate_verification => false
+      cacert => "{{ CA_BUNDLE_CERT }}"
+      user => {{ OS_USER }}
+      password => {{ OS_PASSWORD }}
     }
     if [delete_document] == "true" {
       {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
@@ -118,7 +124,7 @@ output {
             {%- if url.startswith('https://') %}
               "{{ url }}"{{ "," if not loop.last else "" }}
             {%- else %}
-            "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+            "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
             {%- endif %}
           {%- endfor %}
         ]
@@ -126,13 +132,18 @@ output {
           {%- if MOZART_ES_PVT_IP.startswith('https://') %}
             hosts => ["{{ MOZART_ES_PVT_IP }}"]
           {%- else %}
-            hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+            hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
           {%- endif %}
         {%- endif %}
         index => "%{[original_index]}"
         document_id => "%{payload_id}"
         action => "delete"
         ecs_compatibility => disabled
+        ssl => true
+        ssl_certificate_verification => false
+        cacert => "{{ CA_BUNDLE_CERT }}"
+        user => {{ OS_USER }}
+        password => {{ OS_PASSWORD }}
       }
     }
   } else if [resource] == "worker" {
@@ -143,7 +154,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -151,12 +162,17 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "worker_status-%{+YYYY.MM.dd}"
       document_id => "%{celery_hostname}"
       ecs_compatibility => disabled
+      ssl => true
+      ssl_certificate_verification => false
+      cacert => "{{ CA_BUNDLE_CERT }}"
+      user => {{ OS_USER }}
+      password => {{ OS_PASSWORD }}
     }
   } else if [resource] == "task" {
     {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
@@ -166,7 +182,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -174,12 +190,17 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "%{index}"
       document_id => "%{uuid}"
       ecs_compatibility => disabled
+      ssl => true
+      ssl_certificate_verification => false
+      cacert => "{{ CA_BUNDLE_CERT }}"
+      user => {{ OS_USER }}
+      password => {{ OS_PASSWORD }}
     }
   } else if [resource] == "event" {
     {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
@@ -189,7 +210,7 @@ output {
           {%- if url.startswith('https://') %}
         "{{ url }}"{{ "," if not loop.last else "" }}
           {%- else %}
-        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'http://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
           {%- endif %}
         {%- endfor %}
       ]
@@ -197,12 +218,17 @@ output {
         {%- if MOZART_ES_PVT_IP.startswith('https://') %}
       hosts => ["{{ MOZART_ES_PVT_IP }}"]
         {%- else %}
-      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'http://'~MOZART_ES_PVT_IP~':9200' }}"]
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
         {%- endif %}
       {%- endif %}
       index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
       ecs_compatibility => disabled
+      ssl => true
+      ssl_certificate_verification => false
+      cacert => "{{ CA_BUNDLE_CERT }}"
+      user => {{ OS_USER }}
+      password => {{ OS_PASSWORD }}
     }
   } else {}
 }
