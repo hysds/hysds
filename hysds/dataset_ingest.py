@@ -16,7 +16,6 @@ from io import StringIO
 from pprint import pformat, pprint
 from subprocess import check_call, check_output
 from tempfile import mkdtemp
-from redis.exceptions import RedisError
 
 from urllib.parse import urlparse
 
