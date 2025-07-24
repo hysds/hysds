@@ -16,7 +16,6 @@ from io import StringIO
 from pprint import pformat, pprint
 from subprocess import check_call, check_output
 from tempfile import mkdtemp
-
 from urllib.parse import urlparse
 
 import backoff
@@ -37,7 +36,6 @@ from hysds.log_utils import (
     log_publish_prov_es,
     logger,
 )
-
 from hysds.orchestrator import do_submit_job
 from hysds.recognize import Recognizer
 from hysds.utils import (
