@@ -433,7 +433,9 @@ def ingest_to_object_store(
                     # task_id in the publish_context file, the orig_task_id. If so,
                     # to mitigate race conditions, check to see if the orig_task_id is in a
                     # finished state before proceeding.
+                    wait_for_task_to_finish = False
                     if orig_task_id and task_id and orig_task_id != task_id:
+                        wait_for_task_to_finish = True
                         try:
                             status = is_task_finished(orig_task_id)
                             if status is True:
@@ -456,9 +458,12 @@ def ingest_to_object_store(
                         "This job is a retry of a previous job that resulted "
                         + "in an orphaned dataset. Forcing publish."
                     )
+                    event_type = "orphaned_dataset-retry_previous_failed"
+                    if wait_for_task_to_finish is True:
+                        event_type = "orphaned_dataset-retry_previous_failed_waited_for_other_task_to_finish"
                     logger.warning(msg)
                     log_custom_event(
-                        "orphaned_dataset-retry_previous_failed",
+                        event_type,
                         "clobber",
                         {
                             "orphan_info": {
