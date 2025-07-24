@@ -188,7 +188,7 @@ def write_to_object_store(
             abs_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_path, path)
             dest_url = os.path.join(url, rel_path)
-            logger.info("Uploading %s to %s." % (abs_path, dest_url))
+            logger.info(f"Uploading {abs_path} to {dest_url}.")
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
 
 def parse_iso8601(t):
