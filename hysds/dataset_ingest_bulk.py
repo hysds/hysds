@@ -438,10 +438,6 @@ def ingest_to_object_store(
                             status = is_task_finished(orig_task_id)
                             if status is True:
                                 logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
-                            else:
-                                logger.warning(
-                                    f"Could not determine status of {orig_task_id}. Proceeding with force publish."
-                                )
                         except TaskNotFinishedException as te:
                             error_message = (
                                 f"Task {orig_task_id} associated with {publ_ctx_url} still isn't finished: {str(te)}. "
@@ -449,11 +445,6 @@ def ingest_to_object_store(
                             )
                             logger.error(error_message)
                             raise TaskNotFinishedException(error_message) from e
-                        except requests.exceptions.RequestException as re:
-                            logger.warning(
-                                f"Could not determine status of {orig_task_id} due to request exception: {str(re)}."
-                                f" Proceeding with force publish."
-                            )
 
                     # Check to see if the dataset exists. If so, then raise the error at this point
                     if dataset_exists(objectid):
