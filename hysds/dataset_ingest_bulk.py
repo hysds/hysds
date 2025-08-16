@@ -40,6 +40,8 @@ from hysds.utils import (
     get_disk_usage,
     get_job_status,
     makedirs,
+    is_task_finished,
+    TaskNotFinishedException
 )
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
@@ -188,7 +190,6 @@ def write_to_object_store(
             dest_url = os.path.join(url, rel_path)
             logger.info(f"Uploading {abs_path} to {dest_url}.")
             osaka.main.put(abs_path, dest_url, params=params, noclobber=True)
-
 
 def parse_iso8601(t):
     """Return datetime from ISO8601 string."""
@@ -416,20 +417,53 @@ def ingest_to_object_store(
                 orig_task_id = orig_publ_ctx.get("task_id", None)
                 logger.warning(f"orig payload_id: {orig_payload_id}")
                 logger.warning(f"orig payload_hash: {orig_payload_hash}")
-                logger.warning(f"orig task_id: {orig_payload_id}")
+                logger.warning(f"orig task_id: {orig_task_id}")
 
                 if orig_payload_id is None:
-                    raise
+                    error_message = (
+                        f"payload_id does not exist in {publ_ctx_url}. "
+                        f"Cannot determine if we can force publish."
+                    )
+                    logger.error(error_message)
+                    raise NoClobberPublishContextException(error_message) from e
 
                 # overwrite if this job is a retry of the previous job
                 if payload_id is not None and payload_id == orig_payload_id:
+                    # We should check to see if the task_id of the job is different than the
+                    # task_id in the publish_context file, the orig_task_id. If so,
+                    # to mitigate race conditions, check to see if the orig_task_id is in a
+                    # finished state before proceeding.
+                    wait_for_task_to_finish = False
+                    if orig_task_id and task_id and orig_task_id != task_id:
+                        wait_for_task_to_finish = True
+                        try:
+                            status = is_task_finished(orig_task_id)
+                            if status is True:
+                                logger.info(f"Task {orig_task_id} is finished. Proceeding with force publish.")
+                        except TaskNotFinishedException as te:
+                            error_message = (
+                                f"Task {orig_task_id} associated with {publ_ctx_url} still isn't finished: {str(te)}. "
+                                f"Will not proceed with force publish."
+                            )
+                            logger.error(error_message)
+                            raise TaskNotFinishedException(error_message) from e
+
+                    # Check to see if the dataset exists. If so, then raise the error at this point
+                    if dataset_exists(objectid):
+                        error_message = f"Dataset already exists: {objectid}. No need to force publish."
+                        logger.error(error_message)
+                        raise NoClobberPublishContextException(error_message) from e
+
                     msg = (
                         "This job is a retry of a previous job that resulted "
                         + "in an orphaned dataset. Forcing publish."
                     )
+                    event_type = "orphaned_dataset-retry_previous_failed"
+                    if wait_for_task_to_finish is True:
+                        event_type = "orphaned_dataset-retry_previous_failed_waited_for_other_task_to_finish"
                     logger.warning(msg)
                     log_custom_event(
-                        "orphaned_dataset-retry_previous_failed",
+                        event_type,
                         "clobber",
                         {
                             "orphan_info": {
@@ -474,6 +508,14 @@ def ingest_to_object_store(
                                 }
                             },
                         )
+                    # If job is determined to be in a job-started state, do not force publish
+                    elif job_status == "job-started":
+                        error_message = (
+                            f"job with payload_id={orig_payload_id} in {publ_ctx_url} has job_status='job-started'. "
+                            f"Will not force publish to avoid possible clobbering."
+                        )
+                        logger.error(error_message)
+                        raise NoClobberPublishContextException(error_message) from e
                     else:
                         # overwrite if dataset doesn't exist in grq
                         if not dataset_exists(objectid):
@@ -494,7 +536,9 @@ def ingest_to_object_store(
                                 },
                             )
                         else:
-                            raise
+                            error_message = f"Dataset already exists: {objectid}. No need to force publish."
+                            logger.error(error_message)
+                            raise NoClobberPublishContextException(error_message) from e
                 write_to_object_store(
                     local_prod_path,
                     pub_path_url,
@@ -513,7 +557,9 @@ def ingest_to_object_store(
                                 publ_ctx_url
                             )
                         )
-                    raise
+                    error_message = f"Dataset already exists: {objectid}. No need to force publish.."
+                    logger.error(error_message)
+                    raise osaka.utils.NoClobberException(error_message) from e
                 else:
                     msg = f"Detected orphaned dataset {objectid}, deleting from data store before re-publishing..."
                     logger.info(msg)
