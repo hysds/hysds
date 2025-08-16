@@ -79,7 +79,10 @@ def set_redis_job_status_pool():
 
     global JOB_STATUS_POOL
     if JOB_STATUS_POOL is None:
-        JOB_STATUS_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_STATUS_URL)
+        JOB_STATUS_POOL = BlockingConnectionPool.from_url(
+            url=app.conf.REDIS_JOB_STATUS_URL,
+            ssl_cert_reqs="none",
+        )
 
 
 def set_redis_job_info_pool():
@@ -87,7 +90,10 @@ def set_redis_job_info_pool():
 
     global JOB_INFO_POOL
     if JOB_INFO_POOL is None:
-        JOB_INFO_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_JOB_INFO_URL)
+        JOB_INFO_POOL = BlockingConnectionPool.from_url(
+            url=app.conf.REDIS_JOB_INFO_URL,
+            ssl_cert_reqs="none",
+        )
 
 
 def set_redis_worker_status_pool():
@@ -96,7 +102,8 @@ def set_redis_worker_status_pool():
     global WORKER_STATUS_POOL
     if WORKER_STATUS_POOL is None:
         WORKER_STATUS_POOL = BlockingConnectionPool.from_url(
-            app.conf.REDIS_JOB_STATUS_URL
+            url=app.conf.REDIS_JOB_STATUS_URL,
+            ssl_cert_reqs="none",
         )
 
 
@@ -106,7 +113,8 @@ def set_redis_event_status_pool():
     global EVENT_STATUS_POOL
     if EVENT_STATUS_POOL is None:
         EVENT_STATUS_POOL = BlockingConnectionPool.from_url(
-            app.conf.REDIS_JOB_STATUS_URL
+            url=app.conf.REDIS_JOB_STATUS_URL,
+            ssl_cert_reqs="none"
         )
 
 
@@ -124,7 +132,8 @@ def set_redis_revoked_task_pool():
     global REVOKED_TASK_POOL
     if REVOKED_TASK_POOL is None:
         REVOKED_TASK_POOL = BlockingConnectionPool.from_url(
-            app.conf.REDIS_JOB_STATUS_URL
+            url=app.conf.REDIS_JOB_STATUS_URL,
+            ssl_cert_reqs="none",
         )
 
 
@@ -133,7 +142,8 @@ def set_redis_payload_hash_pool():
     global PAYLOAD_HASH_POOL
     if PAYLOAD_HASH_POOL is None:
         PAYLOAD_HASH_POOL = BlockingConnectionPool.from_url(
-            app.conf.REDIS_JOB_STATUS_URL
+            url=app.conf.REDIS_JOB_STATUS_URL,
+            ssl_cert_reqs="none",
         )
 
 
@@ -147,7 +157,8 @@ def get_val_via_socket(key):
     global SOCKET_POOL
 
     # retrieve value
-    r = StrictRedis(connection_pool=SOCKET_POOL)
+    r = StrictRedis(connection_pool=SOCKET_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     res = r.get(key)
     return res.decode() if hasattr(res, "decode") else res
 
@@ -162,7 +173,8 @@ def log_task_worker(task_id, worker):
     global WORKER_STATUS_POOL
 
     # set task worker for task ID
-    r = StrictRedis(connection_pool=WORKER_STATUS_POOL)
+    r = StrictRedis(connection_pool=WORKER_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     r.setex(TASK_WORKER_KEY_TMPL % task_id, app.conf.HYSDS_JOB_STATUS_EXPIRES, worker)
 
 
@@ -176,7 +188,8 @@ def get_task_worker(task_id):
     global WORKER_STATUS_POOL
 
     # retrieve task worker
-    r = StrictRedis(connection_pool=WORKER_STATUS_POOL)
+    r = StrictRedis(connection_pool=WORKER_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     res = r.get(TASK_WORKER_KEY_TMPL % task_id)
     return res.decode() if hasattr(res, "decode") else res
 
@@ -191,7 +204,8 @@ def get_worker_status(worker):
     global WORKER_STATUS_POOL
 
     # retrieve worker status
-    r = StrictRedis(connection_pool=WORKER_STATUS_POOL)
+    r = StrictRedis(connection_pool=WORKER_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     res = r.get(WORKER_STATUS_KEY_TMPL % worker)
     return res.decode() if hasattr(res, "decode") else res
 
@@ -206,7 +220,8 @@ def get_job_status(task_id):
     global JOB_STATUS_POOL
 
     # retrieve job status
-    r = StrictRedis(connection_pool=JOB_STATUS_POOL)
+    r = StrictRedis(connection_pool=JOB_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     res = r.get(JOB_STATUS_KEY_TMPL % task_id)
     return res.decode() if hasattr(res, "decode") else res
 
@@ -231,7 +246,8 @@ def log_job_status(job):
         job["tags"] = tags
 
     # send update to redis
-    r = StrictRedis(connection_pool=JOB_STATUS_POOL)
+    r = StrictRedis(connection_pool=JOB_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     r.setex(
         JOB_STATUS_KEY_TMPL % job["uuid"],
         app.conf.HYSDS_JOB_STATUS_EXPIRES,
@@ -272,7 +288,8 @@ def log_job_info(job):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=JOB_INFO_POOL)
+    r = StrictRedis(connection_pool=JOB_INFO_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     r.rpush(app.conf.REDIS_JOB_INFO_KEY, msgpack.dumps(job_info))
     logger.info(f"job_info_json:{json.dumps(job_info)}")
 
@@ -308,7 +325,8 @@ def log_custom_event(event_type, event_status, event, tags=[], hostname=None):
     }
 
     # send update to redis
-    r = StrictRedis(connection_pool=EVENT_STATUS_POOL)
+    r = StrictRedis(connection_pool=EVENT_STATUS_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(info))
     logger.info(f"hysds.custom_event:{json.dumps(info)}")
     return uuid
@@ -590,7 +608,8 @@ def is_revoked(task_id):
 
     # retrieve value
     key = REVOKED_TASK_TMPL % task_id
-    r = StrictRedis(connection_pool=REVOKED_TASK_POOL)
+    r = StrictRedis(connection_pool=REVOKED_TASK_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers", None))
     return False if r.get(key) is None else True
 
 
@@ -605,7 +624,8 @@ def payload_hash_exists(payload_hash):
 
     # retrieve value
     key = PAYLOAD_HASH_KEY_TMPL % payload_hash
-    r = StrictRedis(connection_pool=PAYLOAD_HASH_POOL)
+    r = StrictRedis(connection_pool=PAYLOAD_HASH_POOL,
+                    ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers", None))
     # According to the REDIS set function, a return value of "True" means that the hash does not exist and it was
     # able to store it successfully. Otherwise, a "None" value is returned, meaning the key/value already exists.
     status = r.set(key, payload_hash, ex=app.conf.HYSDS_JOB_STATUS_EXPIRES, nx=True)

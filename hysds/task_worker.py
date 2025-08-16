@@ -76,7 +76,7 @@ def run_task(self, payload):
     #                       "%02d" % hr, "%02d" % mi, task_id)
     task_dir = task_dir_abs
     makedirs(task_dir)
-    webdav_url = f"http://{facts['hysds_public_ip']}:{app.conf.WEBDAV_PORT}"
+    webdav_url = "https://%s:%s" % (facts["hysds_public_ip"], app.conf.WEBDAV_PORT)
     # task_url = os.path.join(webdav_url, 'tasks', "%04d" % yr, "%02d" % mo, "%02d" % dy,
     #                        "%02d" % hr, "%02d" % mi, task_id)
     task_url = os.path.join(webdav_url, "tasks")
