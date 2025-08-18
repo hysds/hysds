@@ -28,6 +28,13 @@ from subprocess import check_output
 from urllib.request import urlopen
 
 from io import StringIO
+
+import backoff
+import osaka.main
+import requests
+import celery.states
+from atomicwrites import atomic_write
+from celery.result import AsyncResult
 from lxml.etree import XMLParser, parse, tostring
 from importlib import import_module
 from celery.result import AsyncResult
@@ -48,6 +55,12 @@ class NoDedupJobFoundException(Exception):
     def __init__(self, message):
         self.message = message
         super(NoDedupJobFoundException, self).__init__(message)
+
+
+class TaskNotFinishedException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super(TaskNotFinishedException, self).__init__(message)
 
 
 def get_module(m):
@@ -466,6 +479,36 @@ def get_job_status(_id):
     return doc["_source"]["status"]
 
 
+def giveup_check_finished_task(details):
+    logger.info("Giving up checking to see if task is finished with args {args}".format(**details))
+    return None
+
+
+@backoff.on_exception(
+    backoff.expo,
+    (ConnectionError, TimeoutError),
+    max_tries=8,
+    max_value=32,
+)
+@backoff.on_exception(
+    backoff.expo,
+    TaskNotFinishedException,
+    max_time=app.conf.get("PUBLISH_WAIT_STATUS_EXPIRES", 300),
+    max_value=32,
+    on_giveup=giveup_check_finished_task,
+)
+def is_task_finished(_id):
+    """Checks to see if the given task is in a finished state."""
+    task = app.AsyncResult(_id)
+    state = task.state
+    if state in celery.states.READY_STATES:
+        return True
+    else:
+        message = f"Task {_id} not finished yet. state={state}"
+        logger.warning(message)
+        raise TaskNotFinishedException(message)
+
+
 @backoff.on_exception(
     backoff.expo, requests.exceptions.RequestException, max_tries=8, max_value=32
 )
@@ -482,7 +525,7 @@ def check_dataset(_id, es_index="grq"):
         }
     }
     grq_es = get_grq_es()
-    count = grq_es.get_count(index=es_index, body=query)
+    count = grq_es.get_count(index=es_index, body=query, ignore=404)
     return count
 
 
