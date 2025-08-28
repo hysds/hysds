@@ -103,6 +103,7 @@ python-editor>=1.0.4
 python-ldap>=3.4.0
 python-magic>=0.4.15
 PyYAML>=6.0.1
+pystac==1.13.0
 redis>=4.6.0
 requests>=2.31.0
 rsa>=4.7

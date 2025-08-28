@@ -219,3 +219,10 @@ VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
 CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
 
 EVICT_CACHE = {{ EVICT_CACHE | default(true, boolean=False) }}
+
+# STAC API Configuration
+STAC_API_URL = "{{ STAC_API_URL | default('') }}"
+STAC_API_KEY = "{{ STAC_API_KEY | default('') }}"  # Optional API key for authentication
+STAC_API_TIMEOUT = {{ STAC_API_TIMEOUT | default(30) }}
+STAC_VALIDATION_STRICT = {{ STAC_VALIDATION_STRICT | default(True) }}
+STAC_BATCH_SIZE = {{ STAC_BATCH_SIZE | default(1000) }}  # Batch size for large catalogs

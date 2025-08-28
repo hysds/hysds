@@ -54,6 +54,7 @@ psutil>=5.9.5
 PyYAML>=6.0.1
 redis>=4.6.0
 requests>=2.31.0
+pystac>=1.13.0
 SQLAlchemy>=2.0.19
 Werkzeug>=2.3.7
 WTForms>=3.0.1
