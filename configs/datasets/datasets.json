@@ -68,6 +68,21 @@
           "s3://s3-us-west-1.amazonaws.com:80/my_product_bucket/public/browse/my_custom_dataset2/${agg}/${subagg}"
         ]
       }
+    },
+    {
+      "ipath": "hysds::stac/catalog",
+      "version": "stac_catalog",
+      "level": "catalog", 
+      "type": "stac_catalog",
+      "match_pattern": "/(?P<id>stac_catalog_.+)$",
+      "alt_match_pattern": null,
+      "extractor": null,
+      "publish": {
+        "location": "s3://{{ STAC_S3_BUCKET | default('hysds-stac-catalogs') }}/catalogs/${id}",
+        "urls": [
+          "https://{{ STAC_DATA_URL | default('stac-data.example.com') }}/catalogs/${id}"
+        ]
+      }
     }
   ]
 }
