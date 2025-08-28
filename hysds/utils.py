@@ -47,6 +47,21 @@ class TaskNotFinishedException(Exception):
         super(TaskNotFinishedException, self).__init__(message)
 
 
+class STACValidationError(Exception):
+    """STAC validation failed."""
+    pass
+
+
+class STACAPIError(Exception):
+    """STAC API communication failed."""
+    pass
+
+
+class AssetMissingError(Exception):
+    """STAC asset files missing."""
+    pass
+
+
 def get_module(m):
     """Import module and return."""
 
@@ -799,3 +814,48 @@ def datetime_iso_naive(datetime_value=None):
     if datetime_value is None:
         datetime_value = datetime.now(timezone.utc)
     return datetime_value.replace(tzinfo=None).isoformat()
+
+
+def get_job_stac_enabled(job):
+    """Check if job has STAC output enabled."""
+    job_spec = job.get("job_info", {}).get("job_spec", {})
+    return job_spec.get("stac_output", False)
+
+
+def find_stac_catalogs(work_dir):
+    """Search for valid STAC catalog.json files."""
+    try:
+        import pystac
+    except ImportError:
+        logger.error("pystac library not available. Install with: pip install pystac")
+        return
+
+    for root, dirs, files in os.walk(work_dir, followlinks=True):
+        if "catalog.json" in files:
+            catalog_path = os.path.join(root, "catalog.json")
+            try:
+                # Strict STAC validation using pystac
+                catalog = pystac.Catalog.from_file(catalog_path)
+                catalog.validate()
+                yield catalog_path, root, catalog
+            except Exception as e:
+                logger.debug(f"Skipping invalid STAC catalog {catalog_path}: {e}")
+
+
+def validate_stac_assets_exist(catalog, catalog_dir):
+    """Validate all STAC item assets exist as files."""
+    missing_assets = []
+    
+    for item in catalog.get_all_items():
+        for asset_key, asset in item.assets.items():
+            # Handle relative paths
+            if asset.href.startswith('./'):
+                asset_path = os.path.join(catalog_dir, asset.href[2:])
+            else:
+                asset_path = asset.href
+            
+            if not os.path.exists(asset_path):
+                missing_assets.append(f"Item {item.id}: {asset.href}")
+    
+    if missing_assets:
+        raise AssetMissingError(f"Missing assets: {missing_assets}")
