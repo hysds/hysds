@@ -41,7 +41,11 @@ from hysds.utils import (
     get_job_status,
     makedirs,
     is_task_finished,
-    TaskNotFinishedException
+    TaskNotFinishedException,
+    get_job_stac_enabled,
+    find_stac_catalogs,
+    validate_stac_assets_exist,
+    STACValidationError
 )
 
 FILE_RE = re.compile(r"file://(.*?)(/.*)$")
@@ -1042,22 +1046,30 @@ def publish_datasets_parallel(job, ctx):
 
 
 def publish_datasets(job, ctx):
-    """Publish a dataset. Track metrics."""
-
-    # if exit code of job command is non-zero, don't publish anything
+    """Publish datasets with conditional STAC processing."""
+    
+    # Existing validation logic...
     exit_code = job["job_info"]["status"]
     if exit_code != 0:
-        logger.info(
-            f"Job exited with exit code {exit_code}. Bypassing dataset publishing."
-        )
+        logger.info(f"Job exited with exit code {exit_code}. Bypassing dataset publishing.")
         return True
-
-    # if job command never ran, don't publish anything
+    
     pid = job["job_info"]["pid"]
     if pid == 0:
         logger.info("Job command never ran. Bypassing dataset publishing.")
         return True
+    
+    job_dir = job["job_info"]["job_dir"]
+    
+    # Check if STAC processing enabled
+    if get_job_stac_enabled(job):
+        return process_stac_workflow(job, ctx)
+    else:
+        return process_traditional_workflow(job, ctx)
 
+
+def process_traditional_workflow(job, ctx):
+    """Existing traditional dataset.json workflow."""
     job_dir = job["job_info"]["job_dir"]
     dataset_directories = find_non_localized_datasets(job_dir)
 
@@ -1117,4 +1129,33 @@ def publish_datasets(job, ctx):
     with open(pub_prods_file, "w") as f:
         json.dump(published_prods, f, indent=2, sort_keys=True)
 
+    return True
+
+
+def process_stac_workflow(job, ctx):
+    """New STAC catalog processing workflow."""
+    job_dir = job["job_info"]["job_dir"]
+    
+    # Find STAC catalogs
+    stac_catalogs = list(find_stac_catalogs(job_dir))
+    
+    if not stac_catalogs:
+        raise STACValidationError(f"Job has stac_output: true but no valid catalog.json found in {job_dir}")
+    
+    published_prods = []
+    
+    for catalog_path, catalog_dir, catalog in stac_catalogs:
+        # Strict validation
+        validate_stac_assets_exist(catalog, catalog_dir)
+        
+        # Process catalog - will be implemented in stac_processor.py
+        from hysds.stac_processor import process_stac_catalog
+        stac_results = process_stac_catalog(catalog, catalog_dir, job, ctx)
+        published_prods.extend(stac_results)
+    
+    # Write results
+    pub_prods_file = os.path.join(job_dir, "_datasets.json")
+    with open(pub_prods_file, "w") as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
+    
     return True
