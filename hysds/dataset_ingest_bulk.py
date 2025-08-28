@@ -1133,29 +1133,100 @@ def process_traditional_workflow(job, ctx):
 
 
 def process_stac_workflow(job, ctx):
-    """New STAC catalog processing workflow."""
-    job_dir = job["job_info"]["job_dir"]
+    """New STAC catalog processing workflow with comprehensive error handling."""
     
-    # Find STAC catalogs
+    # Use the error-handling version from stac_processor
+    from hysds.stac_processor import process_stac_workflow_with_error_handling
+    
+    published_prods = process_stac_workflow_with_error_handling(job, ctx)
+    
+    # The error handling version already writes the _datasets.json file
+    return True
+
+def process_mixed_workflow(job, ctx):
+    """Handle jobs with both STAC catalogs and traditional datasets."""
+    
+    job_dir = job["job_info"]["job_dir"]
+    published_prods = []
+    processed_dirs = set()
+    
+    # 1. Process STAC catalogs first (priority)
     stac_catalogs = list(find_stac_catalogs(job_dir))
     
-    if not stac_catalogs:
-        raise STACValidationError(f"Job has stac_output: true but no valid catalog.json found in {job_dir}")
-    
-    published_prods = []
-    
-    for catalog_path, catalog_dir, catalog in stac_catalogs:
-        # Strict validation
-        validate_stac_assets_exist(catalog, catalog_dir)
+    if stac_catalogs:
+        logger.info(f"Found {len(stac_catalogs)} STAC catalogs, processing with priority")
         
-        # Process catalog - will be implemented in stac_processor.py
-        from hysds.stac_processor import process_stac_catalog
-        stac_results = process_stac_catalog(catalog, catalog_dir, job, ctx)
-        published_prods.extend(stac_results)
+        for catalog_path, catalog_dir, catalog in stac_catalogs:
+            # Strict validation
+            validate_stac_assets_exist(catalog, catalog_dir)
+            
+            # Process catalog with error handling
+            from hysds.stac_processor import process_stac_catalog
+            stac_results = process_stac_catalog(catalog, catalog_dir, job, ctx)
+            published_prods.extend(stac_results)
+            processed_dirs.add(catalog_dir)
     
-    # Write results
+    # 2. Process remaining traditional datasets in unprocessed directories
+    from hysds.utils import find_dataset_json
+    remaining_datasets = []
+    
+    for dataset_file, prod_dir in find_dataset_json(job_dir):
+        if prod_dir not in processed_dirs:
+            remaining_datasets.append((dataset_file, prod_dir))
+    
+    if remaining_datasets:
+        logger.info(f"Found {len(remaining_datasets)} traditional datasets alongside STAC catalogs")
+        traditional_results = process_traditional_datasets(remaining_datasets, job, ctx)
+        published_prods.extend(traditional_results)
+    
+    # Write combined results
     pub_prods_file = os.path.join(job_dir, "_datasets.json")
     with open(pub_prods_file, "w") as f:
         json.dump(published_prods, f, indent=2, sort_keys=True)
     
     return True
+
+
+def process_traditional_datasets(dataset_list, job, ctx):
+    """Process a list of traditional dataset.json files."""
+    
+    prods_ingested_to_obj_store = []
+    published_prods = []
+
+    try:
+        for dataset_file, prod_dir in dataset_list:
+            signal_file = os.path.join(prod_dir, ".localized")
+            if os.path.exists(signal_file):
+                logger.info(f"Skipping publish of {prod_dir}. Marked as localized input.")
+                continue
+            
+            published_metadata = publish_files_wrapper(job, ctx, prod_dir)
+            prods_ingested_to_obj_store.append(published_metadata)
+            
+    except Exception:
+        logger.error(f"Product failed to ingest to data store: {traceback.format_exc()}")
+        for _, _, metrics in prods_ingested_to_obj_store:
+            delete_files(metrics)
+        raise NotAllProductsIngested(f"Product failed to ingest to data store: {traceback.format_exc()}")
+
+    if len(prods_ingested_to_obj_store) > 0:
+        try:
+            prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
+            logger.info(f"publishing {len(prods_ingested_to_obj_store)} traditional dataset(s) to Elasticsearch")
+            bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
+            published_prods.extend(prod_jsons)
+        except Exception:
+            for _, _, metrics in prods_ingested_to_obj_store:
+                delete_files(metrics)
+            raise NotAllProductsIngested(f"Products failed to index to elasticsearch: {traceback.format_exc()}")
+
+        if "products_staged" not in job["job_info"]["metrics"]:
+            job["job_info"]["metrics"]["products_staged"] = []
+
+        for prod_json, metadata, _ in prods_ingested_to_obj_store:
+            ipath = prod_json["ipath"]
+            queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
+            job["job_info"]["metrics"]["products_staged"].append(metadata)
+        logger.info(f"queued {len(prods_ingested_to_obj_store)} traditional dataset(s) to {app.conf.DATASET_PROCESSED_QUEUE}")
+
+    return published_prods
