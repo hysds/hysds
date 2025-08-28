@@ -1,16 +1,12 @@
-import os
-import json
-import shutil
 import requests
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 
-import pystac
 from hysds.celery import app
 from hysds.log_utils import logger
 from hysds.recognize import Recognizer
-from hysds.utils import STACAPIError, STACValidationError, get_disk_usage
-from hysds.dataset_ingest_bulk import write_to_object_store, bulk_index_dataset, parse_iso8601
+from hysds.utils import STACAPIError, STACValidationError
+from hysds.dataset_ingest_bulk import write_to_object_store, bulk_index_dataset
 
 
 def process_stac_catalog(catalog, catalog_dir, job, ctx):
@@ -18,6 +14,9 @@ def process_stac_catalog(catalog, catalog_dir, job, ctx):
     
     # Upload catalog directory to S3 first
     s3_base_url = upload_catalog_to_s3(catalog, catalog_dir, job, ctx)
+    
+    # Index collections to STAC API FIRST (items depend on collections existing)
+    index_collections_to_stac_api(catalog)
     
     # Process items in batches to handle large catalogs efficiently
     batch_size = app.conf.get('STAC_BATCH_SIZE', 1000)
@@ -54,9 +53,6 @@ def process_stac_catalog(catalog, catalog_dir, job, ctx):
         index_items_to_stac_api(stac_items_for_api)
         logger.info(f"Processed final batch of {len(grq_datasets)} STAC items")
     
-    # Index collections to STAC API
-    index_collections_to_stac_api(catalog)
-    
     # Update job metrics
     update_job_metrics_for_stac(job, all_grq_datasets, {"status": "success"})
     
@@ -92,11 +88,12 @@ def create_grq_dataset_from_stac_item(stac_item, job):
         "stac_collection": stac_item.collection_id,
         
         # Copy all STAC properties as metadata
-        **stac_item.properties,
+        "metadata": {
+            **stac_item.properties
+        },
         
         # Standard HySDS fields
-        "creation_timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-        "system_version": "hysds-1.3.8"
+        "creation_timestamp": datetime.now(timezone.utc).isoformat() + "Z"
     }
 
 
