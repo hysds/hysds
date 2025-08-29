@@ -1481,9 +1481,15 @@ def run_job(job, queue_when_finished=True):
     # close up job execution
     try:
         # transition running file to done file
-        os.rename(job_running_file, job_done_file)
-        with open(job_done_file, "w") as f:
-            f.write(f"{datetime_iso_naive()}Z\n")
+        if os.path.exists(job_running_file):
+            os.rename(job_running_file, job_done_file)
+            with open(job_done_file, "w") as f:
+                f.write(f"{datetime_iso_naive()}Z\n")
+        elif not os.path.exists(job_done_file):
+            # This case handles a race condition where the file was not created by this task
+            # and not by the revoked handler either. It's a fallback.
+            with open(job_done_file, "w") as f:
+                f.write(f"{datetime_iso_naive()}Z\n")
 
         # log job info metrics
         log_job_info(job)
