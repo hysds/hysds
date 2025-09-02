@@ -1,7 +1,9 @@
 import os
 import json
+import time
 import traceback
 import requests
+import osaka
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 
@@ -10,6 +12,75 @@ from hysds.log_utils import logger
 from hysds.recognize import Recognizer
 from hysds.utils import STACAPIError, STACValidationError, AssetMissingError, find_stac_catalogs, validate_stac_assets_exist
 from hysds.dataset_ingest_bulk import write_to_object_store, bulk_index_dataset
+
+
+def retry_request(func, max_retries=3, initial_delay=1.0, backoff_factor=2.0, max_delay=60.0, 
+                  retry_on_status_codes=None, retry_on_exceptions=None):
+    """
+    Retry HTTP requests with exponential backoff for handling intermittent network errors.
+    
+    Args:
+        func: Function to retry (should return requests.Response)
+        max_retries: Maximum number of retry attempts (default: 3)
+        initial_delay: Initial delay between retries in seconds (default: 1.0)
+        backoff_factor: Multiplier for delay after each retry (default: 2.0)
+        max_delay: Maximum delay between retries (default: 60.0)
+        retry_on_status_codes: Set of HTTP status codes to retry on (default: 5xx errors)
+        retry_on_exceptions: Tuple of exception types to retry on (default: RequestException)
+    
+    Returns:
+        requests.Response: The successful response
+        
+    Raises:
+        The last exception encountered after all retries are exhausted
+    """
+    if retry_on_status_codes is None:
+        retry_on_status_codes = {500, 502, 503, 504}  # Server errors
+    
+    if retry_on_exceptions is None:
+        retry_on_exceptions = (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.RequestException
+        )
+    
+    delay = initial_delay
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            response = func()
+            
+            # Check if we should retry based on status code
+            if hasattr(response, 'status_code') and response.status_code in retry_on_status_codes:
+                if attempt < max_retries:
+                    logger.warning(f"HTTP {response.status_code} error, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries + 1})")
+                    time.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
+                    continue
+                else:
+                    # Last attempt, let the caller handle the status code
+                    return response
+            
+            # Success - return the response
+            return response
+            
+        except retry_on_exceptions as e:
+            last_exception = e
+            if attempt < max_retries:
+                logger.warning(f"Request failed with {type(e).__name__}: {e}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries + 1})")
+                time.sleep(delay)
+                delay = min(delay * backoff_factor, max_delay)
+            else:
+                logger.error(f"Request failed after {max_retries + 1} attempts")
+                raise last_exception
+        except Exception as e:
+            # Don't retry on other types of exceptions
+            raise e
+    
+    # This should not be reached, but just in case
+    if last_exception:
+        raise last_exception
 
 
 def process_stac_catalog(catalog, catalog_dir, job, ctx):
@@ -35,7 +106,7 @@ def process_stac_catalog(catalog, catalog_dir, job, ctx):
         resolve_asset_urls(item, s3_base_url, catalog_dir)
         
         # Create synthetic GRQ dataset record
-        grq_dataset = create_grq_dataset_from_stac_item(item, job)
+        grq_dataset = create_grq_dataset_from_stac_item(item, job, ctx)
         grq_datasets.append(grq_dataset)
         all_grq_datasets.append(grq_dataset)
         
@@ -62,40 +133,39 @@ def process_stac_catalog(catalog, catalog_dir, job, ctx):
     return all_grq_datasets
 
 
-def create_grq_dataset_from_stac_item(stac_item, job):
+def create_grq_dataset_from_stac_item(stac_item, job, context):
     """Convert STAC Item to GRQ-compatible dataset record."""
     
     # Extract asset URLs (now absolute S3 URLs)
     asset_urls = [asset.href for asset in stac_item.assets.values()]
     
+    # Construct ipath (dataset path) - using collection/item pattern
+    ipath = f"stac_item/{stac_item.id}"
+    
     return {
         "id": stac_item.id,
-        "dataset": "stac_item",
-        "dataset_type": stac_item.collection_id,  # Collection ID → dataset_type
-        "dataset_level": "item",
-        "version": "v1.0",
-        "label": f"STAC Item: {stac_item.id}",
-        
-        # Spatial/temporal from STAC item
-        "location": stac_item.geometry,
-        "starttime": stac_item.datetime.isoformat() + "Z" if stac_item.datetime else None,
-        "endtime": stac_item.datetime.isoformat() + "Z" if stac_item.datetime else None,
-        
-        # URLs point to S3 (same as traditional datasets)
-        "urls": asset_urls,
-        "browse_urls": [],  # Could extract from assets if needed
-        
-        # STAC-specific metadata
-        "stac_version": "1.0.0",
-        "stac_item_id": stac_item.id,
-        "stac_collection": stac_item.collection_id,
-        
-        # Copy all STAC properties as metadata
+        "objectid": stac_item.id,  # Duplicate of id as required by GRQ
         "metadata": {
             **stac_item.properties
         },
+        "dataset": "stac_item",
+        "ipath": ipath,
+        "system_version": "v1.0",  # Renamed from version
+        "dataset_level": "item",
+        "dataset_type": stac_item.collection_id,  # Collection ID → dataset_type
+        "urls": asset_urls,
+        "browse_urls": [],  # Could extract from assets if needed
+        "images": [],  # Empty as specified
+        "prov": context.get("_prov", {}),  # Extract from context
         
-        # Standard HySDS fields
+        # Keep STAC-specific fields for enhanced functionality
+        "label": f"STAC Item: {stac_item.id}",
+        "location": stac_item.geometry,
+        "starttime": stac_item.datetime.isoformat() + "Z" if stac_item.datetime else None,
+        "endtime": stac_item.datetime.isoformat() + "Z" if stac_item.datetime else None,
+        "stac_version": "1.0.0",
+        "stac_item_id": stac_item.id,
+        "stac_collection": stac_item.collection_id,
         "creation_timestamp": datetime.now(timezone.utc).isoformat() + "Z"
     }
 
@@ -159,7 +229,7 @@ def upload_catalog_to_s3(catalog, catalog_dir, job, ctx):
 
 
 def index_collections_to_stac_api(catalog):
-    """Index STAC collections to standard STAC API using PUT (idempotent)."""
+    """Index STAC collections to standard STAC API using PUT (idempotent) with retry logic."""
     
     stac_api_url = app.conf.get('STAC_API_URL')
     stac_api_key = app.conf.get('STAC_API_KEY')
@@ -178,13 +248,17 @@ def index_collections_to_stac_api(catalog):
     
     for collection in collections:
         collection_url = urljoin(stac_api_url, f"collections/{collection.id}")
-        try:
-            response = requests.put(
+        
+        def make_request():
+            return requests.put(
                 collection_url,
                 json=collection.to_dict(),
                 headers=headers,
                 timeout=app.conf.get('STAC_API_TIMEOUT', 30)
             )
+        
+        try:
+            response = retry_request(make_request)
             response.raise_for_status()
             logger.debug(f"Successfully upserted collection: {collection.id}")
             
@@ -193,7 +267,7 @@ def index_collections_to_stac_api(catalog):
 
 
 def index_items_to_stac_api(stac_items):
-    """Index STAC items to standard STAC API using PUT (idempotent)."""
+    """Index STAC items to standard STAC API using PUT (idempotent) with retry logic."""
     
     stac_api_url = app.conf.get('STAC_API_URL')
     stac_api_key = app.conf.get('STAC_API_KEY')
@@ -214,13 +288,16 @@ def index_items_to_stac_api(stac_items):
         collection_id = item_dict["collection"]
         item_url = urljoin(stac_api_url, f"collections/{collection_id}/items/{item_id}")
         
-        try:
-            response = requests.put(
+        def make_request():
+            return requests.put(
                 item_url,
                 json=item_dict,
                 headers=headers,
                 timeout=app.conf.get('STAC_API_TIMEOUT', 30)
             )
+        
+        try:
+            response = retry_request(make_request)
             response.raise_for_status()
             logger.debug(f"Successfully upserted item: {item_id}")
             
@@ -349,7 +426,7 @@ def process_stac_catalog_with_tracking(catalog, catalog_dir, job, ctx, s3_base_u
         resolve_asset_urls(item, s3_base_url, catalog_dir)
         
         # Create synthetic GRQ dataset record
-        grq_dataset = create_grq_dataset_from_stac_item(item, job)
+        grq_dataset = create_grq_dataset_from_stac_item(item, job, ctx)
         grq_datasets.append(grq_dataset)
         all_grq_datasets.append(grq_dataset)
         
@@ -418,7 +495,7 @@ def cleanup_failed_stac_operation(s3_upload_results, grq_indexed_ids, stac_colle
 
 
 def cleanup_grq_records(dataset_ids):
-    """Clean up GRQ records by dataset IDs (best-effort rollback)."""
+    """Clean up GRQ records by dataset IDs (best-effort rollback) with retry logic."""
     
     grq_update_url = app.conf.get('GRQ_UPDATE_URL_BULK')
     if not grq_update_url:
@@ -427,9 +504,12 @@ def cleanup_grq_records(dataset_ids):
     
     # Issue delete requests to GRQ for the given dataset IDs
     for dataset_id in dataset_ids:
-        try:
+        def make_request():
             delete_url = f"{grq_update_url}/dataset/{dataset_id}"
-            response = requests.delete(delete_url, timeout=30)
+            return requests.delete(delete_url, timeout=30)
+        
+        try:
+            response = retry_request(make_request, max_retries=2)  # Fewer retries for cleanup
             if response.status_code == 200:
                 logger.debug(f"Cleaned up GRQ record: {dataset_id}")
             else:
@@ -442,7 +522,6 @@ def cleanup_s3_objects(s3_url):
     """Clean up S3 objects using osaka (best-effort rollback)."""
     
     try:
-        import osaka.main
         osaka.main.rmall(s3_url)
         logger.debug(f"Cleaned up S3 objects at: {s3_url}")
     except Exception as e:
@@ -450,7 +529,7 @@ def cleanup_s3_objects(s3_url):
 
 
 def cleanup_stac_api_items(item_refs):
-    """Clean up STAC API items (best-effort rollback)."""
+    """Clean up STAC API items (best-effort rollback) with retry logic."""
     
     stac_api_url = app.conf.get('STAC_API_URL')
     stac_api_key = app.conf.get('STAC_API_KEY')
@@ -464,9 +543,12 @@ def cleanup_stac_api_items(item_refs):
         headers["X-Api-Key"] = stac_api_key
     
     for item_ref in item_refs:
-        try:
+        def make_request():
             item_url = urljoin(stac_api_url, f"collections/{item_ref['collection_id']}/items/{item_ref['item_id']}")
-            response = requests.delete(item_url, headers=headers, timeout=30)
+            return requests.delete(item_url, headers=headers, timeout=30)
+        
+        try:
+            response = retry_request(make_request, max_retries=2)  # Fewer retries for cleanup
             if response.status_code in [200, 204, 404]:  # 404 is OK (already deleted)
                 logger.debug(f"Cleaned up STAC API item: {item_ref['item_id']}")
             else:
@@ -476,7 +558,7 @@ def cleanup_stac_api_items(item_refs):
 
 
 def cleanup_stac_api_collections(collection_ids):
-    """Clean up STAC API collections (best-effort rollback)."""
+    """Clean up STAC API collections (best-effort rollback) with retry logic."""
     
     stac_api_url = app.conf.get('STAC_API_URL')
     stac_api_key = app.conf.get('STAC_API_KEY')
@@ -490,9 +572,12 @@ def cleanup_stac_api_collections(collection_ids):
         headers["X-Api-Key"] = stac_api_key
     
     for collection_id in collection_ids:
-        try:
+        def make_request():
             collection_url = urljoin(stac_api_url, f"collections/{collection_id}")
-            response = requests.delete(collection_url, headers=headers, timeout=30)
+            return requests.delete(collection_url, headers=headers, timeout=30)
+        
+        try:
+            response = retry_request(make_request, max_retries=2)  # Fewer retries for cleanup
             if response.status_code in [200, 204, 404]:  # 404 is OK (already deleted)
                 logger.debug(f"Cleaned up STAC API collection: {collection_id}")
             else:
