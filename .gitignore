@@ -131,3 +131,5 @@ dmypy.json
 test-results/
 
 celeryconfig.py
+.claude/
+.serena/
