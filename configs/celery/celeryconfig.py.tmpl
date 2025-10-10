@@ -25,15 +25,15 @@ task_queue_max_priority = 10
 
 task_reject_on_worker_lost = True
 
-broker_heartbeat = 30
+broker_heartbeat = 60
 broker_heartbeat_checkrate = 2
 
 broker_pool_limit = None
-broker_transport_options = { "confirm_publish": True,  "read_timeout": 30, "write_timeout": 30}
-broker_connection_timeout = 30
+broker_transport_options = { "confirm_publish": True,  "read_timeout": 60, "write_timeout": 60}
+broker_connection_timeout = 60
 
 redis_socket_keepalive = True
-redis_backend_healh_check_interval = 30
+redis_backend_health_check_interval = 30
 
 imports = [
     "hysds.task_worker",
@@ -219,3 +219,6 @@ VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
 CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
 
 EVICT_CACHE = {{ EVICT_CACHE | default(true, boolean=False) }}
+
+PUBLISH_LOCK_EXPIRE_TIME = 600
+PUBLISH_LOCK_WAIT_TIME = 540
