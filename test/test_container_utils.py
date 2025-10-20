@@ -232,3 +232,139 @@ class TestContainerUtils(unittest.TestCase):
 
         # assertions
         self.assertTrue("gpus" not in docker_params[image_name]["runtime_options"])
+
+    def test_runtime_options_env_expansion(self):
+        """Test that environment variables in runtime_options are properly expanded."""
+        
+        # Set up test environment variables
+        test_env_vars = {
+            "HYSDS_ROOT_WORK_DIR": "/data/work_1",
+            "TEST_VAR": "test_value",
+            "PATH_VAR": "/some/path/with/variables"
+        }
+        
+        with umock.patch.dict("os.environ", test_env_vars):
+            # Test runtime_options with environment variables
+            runtime_options = {
+                "env": "HYSDS_ROOT_WORK_DIR=$HYSDS_ROOT_WORK_DIR,TEST_VAR=$TEST_VAR",
+                "volume": "$PATH_VAR:/container/path",
+                "label": "workdir=$HYSDS_ROOT_WORK_DIR"
+            }
+            
+            # Get params using container_utils
+            import hysds.container_utils
+            
+            docker_params = hysds.container_utils.get_docker_params(
+                image_name="test_image",
+                image_url="test_url",
+                image_mappings={},
+                root_work_dir=self.root_work_dir,
+                job_dir=self.job_dir,
+                runtime_options=runtime_options
+            )
+            
+            # Verify environment variable expansion
+            expected_runtime_options = {
+                "env": "HYSDS_ROOT_WORK_DIR=/data/work_1,TEST_VAR=test_value",
+                "volume": "/some/path/with/variables:/container/path",
+                "label": "workdir=/data/work_1"
+            }
+            
+            self.assertEqual(
+                docker_params["runtime_options"], 
+                expected_runtime_options,
+                "Environment variables should be expanded in runtime_options"
+            )
+
+    def test_runtime_options_env_expansion_docker_class(self):
+        """Test that environment variables in runtime_options are properly expanded using Docker class."""
+        
+        # Set up test environment variables
+        test_env_vars = {
+            "HYSDS_ROOT_WORK_DIR": "/data/work_1",
+            "TEST_VAR": "test_value"
+        }
+        
+        # Mock the app.conf.__file__ that's needed by the base class
+        app_mock = umock.patch("hysds.containers.base.app").start()
+        app_mock.conf.__file__ = "/home/ops/verdi/etc/celeryconfig.py"
+        app_mock.conf.get.side_effect = lambda x, default=None: {
+            "K8S": 0,
+            "CONTAINER_REGISTRY": None,
+            "CACHE_READ_ONLY": True,
+            "EVICT_CACHE": True
+        }.get(x, default)
+        
+        with umock.patch.dict("os.environ", test_env_vars):
+            # Test runtime_options with environment variables
+            runtime_options = {
+                "env": "HYSDS_ROOT_WORK_DIR=$HYSDS_ROOT_WORK_DIR",
+                "label": "test=$TEST_VAR"
+            }
+            
+            # Get params using Docker class
+            import hysds.containers.docker
+            
+            docker = hysds.containers.docker.Docker()
+            docker_params = docker.create_container_params(
+                image_name="test_image",
+                image_url="test_url",
+                image_mappings={},
+                root_work_dir=self.root_work_dir,
+                job_dir=self.job_dir,
+                runtime_options=runtime_options
+            )
+            
+            # Verify environment variable expansion
+            expected_runtime_options = {
+                "env": "HYSDS_ROOT_WORK_DIR=/data/work_1",
+                "label": "test=test_value"
+            }
+            
+            self.assertEqual(
+                docker_params["runtime_options"], 
+                expected_runtime_options,
+                "Environment variables should be expanded in runtime_options via Docker class"
+            )
+
+    def test_runtime_options_no_expansion_for_non_strings(self):
+        """Test that non-string values in runtime_options are not processed for expansion."""
+        
+        # Test runtime_options with mixed types
+        runtime_options = {
+            "env": "HYSDS_ROOT_WORK_DIR=$HYSDS_ROOT_WORK_DIR",  # string - should be expanded
+            "gpus": 2,  # integer - should not be expanded
+            "memory": 1024,  # integer - should not be expanded
+            "label": ["workdir=$HYSDS_ROOT_WORK_DIR"]  # list - should not be expanded
+        }
+        
+        test_env_vars = {
+            "HYSDS_ROOT_WORK_DIR": "/data/work_1",
+            "HYSDS_GPU_AVAILABLE": "1"  # Enable GPU to prevent filtering
+        }
+        
+        with umock.patch.dict("os.environ", test_env_vars):
+            import hysds.container_utils
+            
+            docker_params = hysds.container_utils.get_docker_params(
+                image_name="test_image",
+                image_url="test_url",
+                image_mappings={},
+                root_work_dir=self.root_work_dir,
+                job_dir=self.job_dir,
+                runtime_options=runtime_options
+            )
+            
+            # Verify only string values are expanded
+            expected_runtime_options = {
+                "env": "HYSDS_ROOT_WORK_DIR=/data/work_1",  # expanded
+                "gpus": 2,  # unchanged
+                "memory": 1024,  # unchanged
+                "label": ["workdir=$HYSDS_ROOT_WORK_DIR"]  # unchanged
+            }
+            
+            self.assertEqual(
+                docker_params["runtime_options"], 
+                expected_runtime_options,
+                "Only string values should be processed for environment variable expansion"
+            )
