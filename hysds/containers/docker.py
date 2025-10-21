@@ -1,6 +1,7 @@
 from subprocess import PIPE, Popen, check_output
 
 import backoff
+import os
 
 from hysds.containers.base import Base
 
@@ -68,6 +69,8 @@ class Docker(Base):
 
         # add runtime options
         for k, v in params["runtime_options"].items():
+            if isinstance(v, str):
+                v = os.path.expandvars(v)
             docker_cmd_base.extend([f"--{k}", v])
 
         # add volumes
