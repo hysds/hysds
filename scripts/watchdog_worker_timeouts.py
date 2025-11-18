@@ -21,7 +21,8 @@ def tag_timedout_workers(url, timeout):
     """Tag workers stuck that have not sent a heartbeat within a certain threshold."""
 
     status = ["worker-heartbeat"]
-    source_data = ["status", "tags"]
+    # Retrieve full _source to ensure we have all fields
+    source_data = None
     query = job_utils.get_timedout_query(timeout, status, source_data)
     print(json.dumps(query, indent=2))
 
@@ -42,13 +43,23 @@ def tag_timedout_workers(url, timeout):
 
         if "timedout" not in tags:
             tags.append("timedout")
-            new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
-            response = job_utils.update_es(_id, new_doc, index=_index)
-            if response["result"].strip() != "updated":
-                err_str = f"Failed to update status for {_id} : {json.dumps(response, indent=2)}"
-                logging.error(err_str)
-                raise Exception(err_str)
-            logging.info(f"Tagged {_id} as timedout.")
+            src["tags"] = tags
+            # Remove doc_as_upsert to prevent creating new documents
+            # If document doesn't exist, the update will fail gracefully
+            new_doc = {"doc": {"tags": tags}}
+            try:
+                response = job_utils.update_es(_id, new_doc, index=_index)
+                if response["result"].strip() == "updated":
+                    logging.info(f"Tagged {_id} as timedout.")
+                else:
+                    logging.warning(
+                        f"Unexpected result when updating {_id}: {json.dumps(response, indent=2)}"
+                    )
+            except Exception as e:
+                # Document may have been deleted - log warning but don't fail
+                logging.warning(
+                    f"Failed to update worker {_id} (document may not exist): {e}"
+                )
         else:
             logging.info(f"{_id} already tagged as timedout.")
 
