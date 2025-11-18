@@ -21,6 +21,8 @@ from kombu.serialization import loads, prepare_accept_content, registry
 from redis import ConnectionPool, StrictRedis
 
 from hysds.celery import app
+from hysds.log_utils import log_job_status
+from hysds.utils import datetime_iso_naive
 
 log_format = "[%(asctime)s: %(levelname)s/offline_orphaned_jobs] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -56,13 +58,14 @@ def offline_orphaned_jobs(es_url, dry_run=False):
     logging.info(f"encoder: {encoder}")
     logging.info(f"accept: {accept}")
 
-    # query
+    # HC-594: query - retrieve full _source to ensure we have all fields for log_job_status()
+    # Previously only retrieved 3 partial fields which could cause partial record issues
     query = {
         "query": {
             "bool": {"must": [{"terms": {"status": ["job-started", "job-queued"]}}]}
         },
-        "_source": ["status", "tags", "uuid"],
     }
+    logging.info("HC-594: Querying for orphaned jobs with full _source")
     url_tmpl = "{}/job_status-current/_search?search_type=scan&scroll=10m&size=100"
     r = requests.post(url_tmpl.format(es_url), data=json.dumps(query))
     if r.status_code != 200:
@@ -87,12 +90,21 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             results.append(hit)
 
     # check for celery state
+    logging.info(f"HC-594: Processing {len(results)} orphaned jobs")
     for res in results:
         id = res["_id"]
         src = res.get("_source", {})
         status = src["status"]
         tags = src.get("tags", [])
         task_id = src["uuid"]
+
+        # HC-594: Log document state for verification
+        field_count = len(src.keys())
+        has_timestamp = "@timestamp" in src
+        logging.info(
+            f"HC-594: Processing orphaned job {id}: status={status}, "
+            f"field_count={field_count}, has_@timestamp={has_timestamp}"
+        )
 
         # check celery task status in ES
         task_query = {"query": {"term": {"_id": task_id}}, "_source": ["status"]}
@@ -121,22 +133,26 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                 continue
             if dry_run:
                 logging.info(
-                    f"Would've update job status to {updated_status} for {task_id}."
+                    f"HC-594: DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"
                 )
             else:
-                new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
-                r = requests.post(
-                    f"{es_url}/job_status-current/job/{id}/_update",
-                    data=json.dumps(new_doc),
+                # HC-594: Update job_status_json in memory and use log_job_status()
+                # This ensures all required fields are populated and goes through Redis->Logstash pipeline
+                logging.info(
+                    f"HC-594: Updating orphaned job {id} from {status} to {updated_status} "
+                    f"based on task status (field_count={field_count})"
                 )
-                result = r.json()
-                if r.status_code != 200:
-                    logging.error(
-                        "Failed to update tags for %s. Got status code %d:\n%s"
-                        % (id, r.status_code, json.dumps(result, indent=2))
+                src["status"] = updated_status
+                time_end = datetime_iso_naive() + "Z"
+                src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+                try:
+                    log_job_status(src)
+                    logging.info(
+                        f"HC-594: SUCCESS - Set job {id} to {updated_status} via log_job_status(). "
+                        f"Document will have all {len(src.keys())} fields plus @timestamp, @version, resource."
                     )
-                r.raise_for_status()
-                logging.info(f"Set job {id} to {updated_status}.")
+                except Exception as e:
+                    logging.error(f"HC-594: FAILED to log job status for {id}: {e}")
             continue
 
         # get celery task metadata in redis
@@ -150,22 +166,26 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             updated_status = "job-offline"
             if dry_run:
                 logging.info(
-                    f"Would've update job status to {updated_status} for {task_id}."
+                    f"HC-594: DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"
                 )
             else:
-                new_doc = {"doc": {"status": updated_status}, "doc_as_upsert": True}
-                r = requests.post(
-                    f"{es_url}/job_status-current/job/{id}/_update",
-                    data=json.dumps(new_doc),
+                # HC-594: Update job_status_json in memory and use log_job_status()
+                # This ensures all required fields are populated and goes through Redis->Logstash pipeline
+                logging.info(
+                    f"HC-594: Updating orphaned job {id} from {status} to {updated_status} "
+                    f"based on task status (field_count={field_count})"
                 )
-                result = r.json()
-                if r.status_code != 200:
-                    logging.error(
-                        "Failed to update tags for %s. Got status code %d:\n%s"
-                        % (id, r.status_code, json.dumps(result, indent=2))
+                src["status"] = updated_status
+                time_end = datetime_iso_naive() + "Z"
+                src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+                try:
+                    log_job_status(src)
+                    logging.info(
+                        f"HC-594: SUCCESS - Set job {id} to {updated_status} via log_job_status(). "
+                        f"Document will have all {len(src.keys())} fields plus @timestamp, @version, resource."
                     )
-                r.raise_for_status()
-                logging.info(f"Set job {id} to {updated_status}.")
+                except Exception as e:
+                    logging.error(f"HC-594: FAILED to log job status for {id}: {e}")
             continue
 
 

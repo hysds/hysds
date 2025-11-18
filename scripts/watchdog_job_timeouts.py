@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import job_utils
 
 from hysds.celery import app
+from hysds.log_utils import log_job_status
 from hysds.utils import get_short_error, parse_iso8601
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
@@ -27,18 +28,14 @@ def tag_timedout_jobs(url, timeout):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
 
     status = ["job-started", "job-offline"]
-    source_data = [
-        "status",
-        "tags",
-        "uuid",
-        "celery_hostname",
-        "job.job_info.time_start",
-        "job.job_info.time_limit",
-    ]
+    # HC-594: Retrieve full _source to ensure we have all fields needed for log_job_status()
+    # Previously only retrieved 7 partial fields which caused partial record recreation
+    source_data = None
+    logging.info(f"HC-594: Querying for jobs with status {status} older than {timeout}s with full _source")
     query = job_utils.get_timedout_query(timeout, status, source_data)
     results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info(
-        f"Found {len(results)} stuck jobs in job-started or job-offline"
+        f"HC-594: Found {len(results)} stuck jobs in job-started or job-offline"
         + f" older than {timeout} seconds."
     )
 
@@ -51,6 +48,17 @@ def tag_timedout_jobs(url, timeout):
         tags = src.get("tags", [])
         task_id = src["uuid"]
         celery_hostname = src["celery_hostname"]
+
+        # HC-594: Log document state for verification
+        field_count = len(src.keys())
+        has_timestamp = "@timestamp" in src
+        has_resource = "resource" in src
+        has_version = "@version" in src
+        logging.info(
+            f"HC-594: Processing job {_id} from index {_index}: "
+            f"field_count={field_count}, status={status}, "
+            f"has_@timestamp={has_timestamp}, has_resource={has_resource}, has_@version={has_version}"
+        )
         logging.info(f"job_info: {json.dumps(src)}")
 
         # get job duration
@@ -125,43 +133,71 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logging.info(f"updating status from {status} to {new_status}")
+                logging.info(
+                    f"HC-594: Status change detected for {_id}: {status} -> {new_status} "
+                    f"(duration={duration}s, time_limit={time_limit}s)"
+                )
                 if duration > time_limit and "timedout" not in tags:
-                    logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
+                    logging.info(f"HC-594: Adding 'timedout' tag to {_index}/{_id}")
                     tags.append("timedout")
-                updated_doc = {"status": new_status, "tags": tags}
-                if error:
-                    updated_doc["error"] = error
-                    updated_doc["short_error"] = short_error
-                    updated_doc["traceback"] = traceback
-                new_doc = {
-                    "doc": updated_doc,
-                    "doc_as_upsert": True,
-                }
-                logging.info(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(_id, new_doc, index=_index)
-                if response["result"].strip() != "updated":
-                    err_str = "Failed to update status for {} : {}".format(
-                        _id, json.dumps(response, indent=2)
+                else:
+                    logging.info(
+                        f"HC-594: NOT adding 'timedout' tag: duration={duration}s <= time_limit={time_limit}s "
+                        f"or already has tag"
                     )
-                    logging.error(err_str)
-                    raise Exception(err_str)
-                logging.info(f"Set job {_id} to {new_status} and tagged as timedout.")
+
+                # HC-594: Update job_status_json in memory with new values
+                src["status"] = new_status
+                src["tags"] = tags
+                if error:
+                    src["error"] = error
+                    src["short_error"] = short_error
+                    src["traceback"] = traceback
+                    logging.info(f"HC-594: Added error fields to job {_id}")
+
+                # HC-594: Use log_job_status() to ensure all required fields are populated
+                # and the update goes through the proper Redis->Logstash pipeline.
+                # This prevents the race condition where doc_as_upsert recreates partial records.
+                logging.info(
+                    f"HC-594: Calling log_job_status() for {_id} to update via pipeline "
+                    f"(field_count={len(src.keys())})"
+                )
+                try:
+                    log_job_status(src)
+                    logging.info(
+                        f"HC-594: SUCCESS - Updated job {_id} to {new_status} via log_job_status(). "
+                        f"Document will have all {len(src.keys())} fields plus @timestamp, @version, resource."
+                    )
+                except Exception as e:
+                    logging.error(f"HC-594: FAILED to log job status for {_id}: {e}")
+                    logging.error(traceback.format_exc())
                 continue
 
         if "timedout" in tags:
-            logging.info(f"{_id} already tagged as timedout.")
+            logging.info(f"HC-594: Job {_id} already has 'timedout' tag, no action needed")
         else:
             if duration > time_limit:
-                logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
+                logging.info(
+                    f"HC-594: Job {_id} exceeded time limit (duration={duration}s > time_limit={time_limit}s), "
+                    f"adding 'timedout' tag"
+                )
                 tags.append("timedout")
-                new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
-                logging.info(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(_id, new_doc, index=_index)
-                if response["result"].strip() != "updated":
-                    err_str = f"Failed to update status for {_id} : {json.dumps(response, indent=2)}"
-                    logging.error(err_str)
-                    raise Exception(err_str)
+                src["tags"] = tags
+
+                # HC-594: Use log_job_status() to ensure all required fields are populated
+                logging.info(
+                    f"HC-594: Calling log_job_status() for {_id} to add timedout tag via pipeline "
+                    f"(field_count={len(src.keys())})"
+                )
+                try:
+                    log_job_status(src)
+                    logging.info(
+                        f"HC-594: SUCCESS - Tagged job {_id} as timedout via log_job_status(). "
+                        f"Document preserved with all {len(src.keys())} fields."
+                    )
+                except Exception as e:
+                    logging.error(f"HC-594: FAILED to log job status for {_id}: {e}")
+                    logging.error(traceback.format_exc())
 
 
 def daemon(interval, url, timeout):
