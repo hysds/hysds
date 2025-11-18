@@ -30,9 +30,18 @@ def tag_timedout_jobs(url, timeout):
     status = ["job-started", "job-offline"]
     # HC-594: Retrieve full _source to ensure we have all fields needed for log_job_status()
     # Previously only retrieved 7 partial fields which caused partial record recreation
-    source_data = None
+    # Build query inline without _source restriction to get all fields
     logging.info(f"HC-594: Querying for jobs with status {status} older than {timeout}s with full _source")
-    query = job_utils.get_timedout_query(timeout, status, source_data)
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"terms": {"status": status}},
+                    {"range": {"@timestamp": {"lt": f"now-{timeout}s"}}},
+                ]
+            }
+        }
+    }
     results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info(
         f"HC-594: Found {len(results)} stuck jobs in job-started or job-offline"

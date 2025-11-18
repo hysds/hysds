@@ -24,9 +24,18 @@ def tag_timedout_tasks(url, timeout):
 
     status = ["task-started"]
     # HC-594: Retrieve full _source to ensure we have all fields
-    source_data = None
+    # Build query inline without _source restriction to get all fields
     logging.info(f"HC-594: Querying for tasks with status {status} older than {timeout}s with full _source")
-    query = job_utils.get_timedout_query(timeout, status, source_data)
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"terms": {"status": status}},
+                    {"range": {"@timestamp": {"lt": f"now-{timeout}s"}}},
+                ]
+            }
+        }
+    }
     print(json.dumps(query, indent=2))
 
     results = job_utils.run_query_with_scroll(query, index="task_status-current")
