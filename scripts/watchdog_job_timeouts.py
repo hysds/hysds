@@ -29,8 +29,17 @@ def tag_timedout_jobs(url, timeout):
 
     status = ["job-started", "job-offline"]
     # Retrieve full _source to ensure we have all fields needed for log_job_status()
-    source_data = None
-    query = job_utils.get_timedout_query(timeout, status, source_data)
+    # Build query inline without _source restriction to get all fields
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"terms": {"status": status}},
+                    {"range": {"@timestamp": {"lt": f"now-{timeout}s"}}},
+                ]
+            }
+        }
+    }
     results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info(
         f"Found {len(results)} stuck jobs in job-started or job-offline"
