@@ -92,7 +92,7 @@ def tag_timedout_jobs(url, timeout):
 
             error = None
             short_error = None
-            traceback = None
+            error_traceback = None
             # determine new status
             new_status = status
             if len(worker_res["hits"]["hits"]) == 0 and duration > time_limit:
@@ -113,7 +113,7 @@ def tag_timedout_jobs(url, timeout):
                         .get("exception", UNDETERMINED_BY_WATCHDOG)
                     )
                     short_error = get_short_error(error)
-                    traceback = (
+                    error_traceback = (
                         task_info.get("_source", {})
                         .get("event", {})
                         .get("traceback", UNDETERMINED_BY_WATCHDOG)
@@ -130,7 +130,7 @@ def tag_timedout_jobs(url, timeout):
                 if error:
                     src["error"] = error
                     src["short_error"] = short_error
-                    src["traceback"] = traceback
+                    src["traceback"] = error_traceback
 
                 # Use log_job_status() to ensure all required fields are populated
                 # and the update goes through the proper Redis->Logstash pipeline
