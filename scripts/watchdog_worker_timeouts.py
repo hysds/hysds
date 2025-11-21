@@ -53,24 +53,23 @@ def tag_timedout_workers(url, timeout):
         if "timedout" not in tags:
             tags.append("timedout")
             src["tags"] = tags
-            # Remove doc_as_upsert to prevent creating new documents
+            # Remove doc_as_upsert to prevent creating new documents after deletion
             # If document doesn't exist, the update will fail gracefully
             new_doc = {"doc": {"tags": tags}}
             try:
                 response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() == "updated":
-                    logging.info(f"Tagged {_id} as timedout.")
+                    logging.info(f"Tagged worker {_id} as timedout.")
                 else:
                     logging.warning(
-                        f"Unexpected result when updating {_id}: {json.dumps(response, indent=2)}"
+                        f"Unexpected result when updating worker {_id}: {json.dumps(response, indent=2)}"
                     )
             except Exception as e:
                 # Document may have been deleted - log warning but don't fail
+                # This prevents the race condition from causing exceptions
                 logging.warning(
                     f"Failed to update worker {_id} (document may not exist): {e}"
                 )
-        else:
-            logging.info(f"{_id} already tagged as timedout.")
 
 
 def daemon(interval, url, timeout):

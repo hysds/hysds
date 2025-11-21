@@ -55,17 +55,12 @@ def tag_timedout_jobs(url, timeout):
         tags = src.get("tags", [])
         task_id = src["uuid"]
         celery_hostname = src["celery_hostname"]
-        logging.info(f"job_info: {json.dumps(src)}")
 
         # get job duration
         time_limit = src["job"]["job_info"]["time_limit"]
-        logging.info(f"time_limit: {time_limit}")
         time_start = parse_iso8601(src["job"]["job_info"]["time_start"])
-        logging.info(f"time_start: {time_start}")
         time_now = datetime.now(timezone.utc)
-        logging.info(f"time_now: {time_now}")
         duration = (time_now - time_start).total_seconds()
-        logging.info(f"duration: {duration}")
 
         if status == "job-started":
             # get task info, sort by latest since we only look at the first hit
@@ -81,8 +76,6 @@ def tag_timedout_jobs(url, timeout):
                     f"No result found with : query\n{json.dumps(task_query, indent=2)}"
                 )
 
-            logging.info(f"task_res: {json.dumps(task_res)}")
-
             # get worker info
             worker_query = {
                 "query": {"term": {"_id": celery_hostname}},
@@ -97,7 +90,6 @@ def tag_timedout_jobs(url, timeout):
                     f"No result found with : query\n{json.dumps(worker_query, indent=2)}"
                 )
 
-            logging.info(f"worker_res: {json.dumps(worker_res)}")
             error = None
             short_error = None
             traceback = None
@@ -129,9 +121,7 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logging.info(f"updating status from {status} to {new_status}")
                 if duration > time_limit and "timedout" not in tags:
-                    logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
                     tags.append("timedout")
 
                 # Update job_status_json in memory with new values
@@ -152,11 +142,8 @@ def tag_timedout_jobs(url, timeout):
                     logging.error(traceback.format_exc())
                 continue
 
-        if "timedout" in tags:
-            logging.info(f"{_id} already tagged as timedout.")
-        else:
+        if "timedout" not in tags:
             if duration > time_limit:
-                logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
                 tags.append("timedout")
                 src["tags"] = tags
 

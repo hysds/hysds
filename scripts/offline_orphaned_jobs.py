@@ -60,6 +60,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
     logging.info(f"accept: {accept}")
 
     # query - retrieve full _source to ensure we have all fields for log_job_status()
+    # Previously only retrieved 3 partial fields which could cause partial record issues
     query = {
         "query": {
             "bool": {"must": [{"terms": {"status": ["job-started", "job-queued"]}}]}
@@ -89,6 +90,7 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             results.append(hit)
 
     # check for celery state
+    logging.info(f"Processing {len(results)} orphaned jobs")
     for res in results:
         id = res["_id"]
         src = res.get("_source", {})
@@ -123,10 +125,11 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                 continue
             if dry_run:
                 logging.info(
-                    f"Would've update job status to {updated_status} for {task_id}."
+                    f"DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"
                 )
             else:
                 # Update job_status_json in memory and use log_job_status()
+                # This ensures all required fields are populated and goes through Redis->Logstash pipeline
                 src["status"] = updated_status
                 time_end = datetime_iso_naive() + "Z"
                 src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
@@ -148,10 +151,11 @@ def offline_orphaned_jobs(es_url, dry_run=False):
             updated_status = "job-offline"
             if dry_run:
                 logging.info(
-                    f"Would've update job status to {updated_status} for {task_id}."
+                    f"DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"
                 )
             else:
                 # Update job_status_json in memory and use log_job_status()
+                # This ensures all required fields are populated and goes through Redis->Logstash pipeline
                 src["status"] = updated_status
                 time_end = datetime_iso_naive() + "Z"
                 src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
