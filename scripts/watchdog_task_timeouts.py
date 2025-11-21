@@ -23,9 +23,8 @@ def tag_timedout_tasks(url, timeout):
     """Tag tasks stuck in task-started that have timed out."""
 
     status = ["task-started"]
-    # HC-594: Retrieve full _source to ensure we have all fields
+    # Retrieve full _source to ensure we have all fields
     # Build query inline without _source restriction to get all fields
-    logging.info(f"HC-594: Querying for tasks with status {status} older than {timeout}s with full _source")
     query = {
         "query": {
             "bool": {
@@ -50,42 +49,29 @@ def tag_timedout_tasks(url, timeout):
         _id = res["_id"]
         _index = res["_index"]
         src = res.get("_source", {})
-        # status = src["status"]
         tags = src.get("tags", [])
-        # task_id = src["uuid"]
-
-        # HC-594: Log document state for verification
-        field_count = len(src.keys())
-        has_timestamp = "@timestamp" in src
-        logging.info(
-            f"HC-594: Processing task {_id} from index {_index}: "
-            f"field_count={field_count}, has_@timestamp={has_timestamp}, current_tags={tags}"
-        )
 
         if "timedout" not in tags:
             tags.append("timedout")
             src["tags"] = tags
-            # HC-594: Remove doc_as_upsert to prevent creating new documents after deletion
+            # Remove doc_as_upsert to prevent creating new documents after deletion
             # If document doesn't exist, the update will fail gracefully
             new_doc = {"doc": {"tags": tags}}
-            logging.info(f"HC-594: Updating task {_id} to add 'timedout' tag (field_count={field_count})")
 
             try:
                 response = job_utils.update_es(_id, new_doc, index=_index)
                 if response["result"].strip() == "updated":
-                    logging.info(f"HC-594: SUCCESS - Tagged task {_id} as timedout")
+                    logging.info(f"Tagged task {_id} as timedout.")
                 else:
                     logging.warning(
-                        f"HC-594: Unexpected result when updating task {_id}: {json.dumps(response, indent=2)}"
+                        f"Unexpected result when updating task {_id}: {json.dumps(response, indent=2)}"
                     )
             except Exception as e:
-                # HC-594: Document may have been deleted - log warning but don't fail
+                # Document may have been deleted - log warning but don't fail
                 # This prevents the race condition from causing exceptions
                 logging.warning(
-                    f"HC-594: Failed to update task {_id} (document may not exist): {e}"
+                    f"Failed to update task {_id} (document may not exist): {e}"
                 )
-        else:
-            logging.info(f"HC-594: Task {_id} already has 'timedout' tag, no action needed")
 
 
 def daemon(interval, url, timeout):
