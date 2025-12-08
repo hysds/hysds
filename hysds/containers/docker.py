@@ -128,7 +128,7 @@ class Docker(Base):
             host_verdi_home,
         )
         docker_sock = "/var/run/docker.sock"
-        host_docker_sock = get_docker_socket_path()
+        host_docker_sock = Docker.get_docker_socket_path()
         params["volumes"].insert(
             0,
             (
