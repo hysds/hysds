@@ -10,6 +10,7 @@ class Docker(Base):
     def __init__(self):
         super().__init__()
 
+    @staticmethod
     def get_docker_socket_path():
         """Get Docker socket path, supporting both rootless and rootful Docker."""
         xdg_runtime_dir = os.environ.get('XDG_RUNTIME_DIR')
