@@ -267,6 +267,9 @@ class Base(ABC):
                     "Job specified runtime option 'gpus' but no GPUs were detected. Skipping this option"
                 )
                 continue
+            # Expand environment variables in runtime option values
+            if isinstance(v, str):
+                v = os.path.expandvars(v)
             params["runtime_options"][k] = v
         return params
 
