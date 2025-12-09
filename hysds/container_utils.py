@@ -21,6 +21,46 @@ from hysds.utils import datetime_iso_naive
 IMAGE_LOAD_TIME_MAX = 600
 
 
+def has_fully_qualified_registry(image_ref):
+    """
+    Determine if image reference includes a fully qualified registry path.
+
+    A Docker image reference has a fully qualified registry path if the first
+    component (before the first slash) contains a dot (.) or colon (:).
+    However, if there's no slash at all, a colon indicates a tag, not a registry.
+
+    Examples:
+        - docker.io/ubuntu:latest -> True (has dot in 'docker.io')
+        - ghcr.io/user/image:v1 -> True (has dot in 'ghcr.io')
+        - localhost:5000/myimage:v1 -> True (has colon in 'localhost:5000')
+        - 123456.dkr.ecr.us-west-2.amazonaws.com/app -> True (has dots)
+        - ubuntu:latest -> False (colon is for tag, not registry)
+        - myimage -> False (no registry indicator)
+
+    Args:
+        image_ref: Docker image reference string
+
+    Returns:
+        bool: True if registry path is present, False otherwise
+    """
+    if not image_ref:
+        return False
+
+    # Check if there's a slash in the reference
+    if '/' not in image_ref:
+        # No slash means it's a simple image name (possibly with tag)
+        # In this case, any colon is for the tag, not a registry
+        # Only a dot would indicate a registry (but that's rare without a slash)
+        # For practical purposes, no slash = no registry
+        return False
+
+    # Get the first component (before first slash)
+    first_component = image_ref.split('/')[0]
+
+    # Registry path indicated by dot (domain) or colon (port)
+    return '.' in first_component or ':' in first_component
+
+
 def verify_docker_mount(m, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
     """Verify host mount."""
 
@@ -161,7 +201,8 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
         registry = app.conf.get("CONTAINER_REGISTRY", None)
         # Custom edit to load image from registry
         try:
-            if registry is not None:
+            if registry is not None and not has_fully_qualified_registry(image_name):
+                # Only prepend local registry if image doesn't already have a fully qualified registry
                 logger.info(
                     f"Trying to load docker image {image_name} from registry '{registry}'"
                 )
@@ -170,6 +211,11 @@ def ensure_image_loaded(image_name, image_url, cache_dir):
                 check_output(["docker", "pull", registry_url])
                 logger.info(f"docker tag {registry_url} {image_name}")
                 check_output(["docker", "tag", registry_url, image_name])
+            elif has_fully_qualified_registry(image_name):
+                # Image already has a fully qualified registry path, use it directly
+                logger.info(
+                    f"Image {image_name} has fully qualified registry path, skipping local registry"
+                )
         except Exception as e:
             logger.warning(
                 f"Unable to load docker image from registry '{registry}': {e}"
