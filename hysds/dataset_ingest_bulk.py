@@ -1,7 +1,5 @@
 from future import standard_library
 
-from hysds.lock import LockNotAcquiredException
-
 standard_library.install_aliases()
 
 import json
@@ -9,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import traceback
 from datetime import timezone, datetime
 from glob import glob
@@ -17,7 +16,6 @@ from io import StringIO
 from subprocess import check_output
 from tempfile import mkdtemp
 from urllib.parse import urlparse
-from lock import Lock
 
 import backoff
 import osaka.main
@@ -247,12 +245,14 @@ def ingest_to_object_store(
     publ_ctx_name = "_publish.context.json"
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
+    worker_hostname = socket.gethostname()
     with open(publ_ctx_file, "w") as f:
         json.dump(
             {
                 "payload_id": payload_id,
                 "payload_hash": payload_hash,
                 "task_id": task_id,
+                "worker_hostname": worker_hostname,
             },
             f,
             indent=2,
@@ -916,10 +916,58 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
         raise RuntimeError(f"Failed to publish {prod_dir}: {str(e)}\n{tb}")
 
 
-def delete_files(metrics):
+def delete_files(metrics, current_worker_hostname=None):
+    """
+    Delete files from object store if worker hostname matches the one in publish context.
+    
+    :param metrics: Dictionary containing pub_path_url and browse_path
+    :param current_worker_hostname: Current worker's hostname to compare with publish context
+    """
     if "pub_path_url" in metrics:
-        logger.info(f"deleting {metrics['pub_path_url']}")
-        delete_from_object_store(metrics["pub_path_url"])
+        pub_path_url = metrics["pub_path_url"]
+        
+        # Check worker hostname before deleting
+        if current_worker_hostname is not None:
+            publ_ctx_url = os.path.join(pub_path_url, "_publish.context.json")
+            temp_ctx_file = mkdtemp(prefix=".check_pub_context")
+            temp_ctx_path = os.path.join(temp_ctx_file, "_publish.context.json")
+            
+            try:
+                # Download publish context to check hostname
+                osaka.main.get(publ_ctx_url, temp_ctx_path)
+                with open(temp_ctx_path) as f:
+                    pub_ctx = json.load(f)
+                
+                pub_ctx_hostname = pub_ctx.get("worker_hostname", None)
+                
+                if pub_ctx_hostname != current_worker_hostname:
+                    logger.warning(
+                        f"Skipping deletion of {pub_path_url}. "
+                        f"Worker hostname mismatch: current={current_worker_hostname}, "
+                        f"publish_context={pub_ctx_hostname}"
+                    )
+                    return
+                else:
+                    logger.info(
+                        f"Worker hostname matches ({current_worker_hostname}). "
+                        f"Proceeding with deletion of {pub_path_url}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to retrieve or parse publish context from {publ_ctx_url}: {str(e)}. "
+                    f"Skipping deletion of {pub_path_url} to be safe."
+                )
+                return
+            finally:
+                # Cleanup temp directory
+                try:
+                    shutil.rmtree(temp_ctx_file)
+                except:
+                    pass
+        
+        logger.info(f"deleting {pub_path_url}")
+        delete_from_object_store(pub_path_url)
+        
     if "browse_path" in metrics:
         logger.info(f"deleting {metrics['browse_path']}")
         delete_from_object_store(metrics["browse_path"])
@@ -951,17 +999,8 @@ def publish_datasets_parallel(job, ctx):
     async_tasks = []
     num_procs = min(max(cpu_count() - 2, 1), len(datasets_list))
     logger.info(f"multiprocessing procs used: {num_procs}")
-    publish_lock = Lock()
-    publish_lock_key = f"publish-lock-{job['payload_id']}"
-    try:
-        publish_lock_status = publish_lock.acquire_lock(key=publish_lock_key)
-        if publish_lock_status is True:
-            logger.info(f"Successfully acquired lock for {publish_lock_key}")
-        else:
-            raise LockNotAcquiredException(
-                f"Failed to acquire lock for {publish_lock_key}. Will not proceed with publishing datasets."
-            )
-        with get_context("spawn").Pool(
+    
+    with get_context("spawn").Pool(
             num_procs, initializer=init_pool_logger
         ) as pool, Manager() as manager:
             event = manager.Event()
@@ -989,76 +1028,68 @@ def publish_datasets_parallel(job, ctx):
             pool.join()
             logger.handlers.clear()  # removing the handler to prevent broken pipe error
 
-        has_error, err = False, ""
-        for t in async_tasks:
-            if t.successful():
-                result = t.get()
-                if result:
-                    prods_ingested_to_obj_store.append(result)
-            else:
-                has_error = True
-                logger.error(t._value)  # noqa
-                err = t._value  # noqa
+    has_error, err = False, ""
+    for t in async_tasks:
+        if t.successful():
+            result = t.get()
+            if result:
+                prods_ingested_to_obj_store.append(result)
+        else:
+            has_error = True
+            logger.error(t._value)  # noqa
+            err = t._value  # noqa
 
-        if has_error is True:
-            with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
-                for _, _, metrics in prods_ingested_to_obj_store:
-                    pool.apply_async(delete_files, args=(metrics,))
-                pool.close()
-                logger.warning("Rolling back datasets (file) ingest...")
-                pool.join()
-                logger.handlers.clear()
-            raise NotAllProductsIngested(f"Product failed to ingest to data store: {err}")
+    if has_error is True:
+        current_worker_hostname = socket.gethostname()
+        with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
+            for _, _, metrics in prods_ingested_to_obj_store:
+                pool.apply_async(delete_files, args=(metrics, current_worker_hostname))
+            pool.close()
+            logger.warning("Rolling back datasets (file) ingest...")
+            pool.join()
+            logger.handlers.clear()
+        raise NotAllProductsIngested(f"Product failed to ingest to data store: {err}")
 
-        if len(prods_ingested_to_obj_store) > 0:
-            try:
-                prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
-                logger.info(
-                    f"publishing {len(prods_ingested_to_obj_store)} dataset(s) to Elasticsearch"
-                )
-                bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
-                published_prods.extend(prod_jsons)
-            except Exception:
-                with get_context("spawn").Pool(
-                    num_procs, initializer=init_pool_logger
-                ) as pool:
-                    for _, _, metrics in prods_ingested_to_obj_store:
-                        pool.apply_async(delete_files, args=(metrics,))
-                pool.close()
-                logger.error(
-                    "datasets failed to publish to Elasticsearch, deleting object(s) from data store"
-                )
-                pool.join()
-                logger.handlers.clear()
-                raise NotAllProductsIngested(
-                    f"Products failed to index to elasticsearch: {traceback.format_exc()}"
-                )
-
-            if "products_staged" not in job["job_info"]["metrics"]:
-                job["job_info"]["metrics"]["products_staged"] = []
-
-            for prod_json, metadata, _ in prods_ingested_to_obj_store:
-                ipath = prod_json["ipath"]
-                queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
-                job["job_info"]["metrics"]["products_staged"].append(metadata)
+    if len(prods_ingested_to_obj_store) > 0:
+        try:
+            prod_jsons = [prod_json for prod_json, _, _ in prods_ingested_to_obj_store]
             logger.info(
-                f"queued {len(prods_ingested_to_obj_store)} dataset(s) to {app.conf.DATASET_PROCESSED_QUEUE}"
+                f"publishing {len(prods_ingested_to_obj_store)} dataset(s) to Elasticsearch"
+            )
+            bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
+            published_prods.extend(prod_jsons)
+        except Exception:
+            current_worker_hostname = socket.gethostname()
+            with get_context("spawn").Pool(
+                num_procs, initializer=init_pool_logger
+            ) as pool:
+                for _, _, metrics in prods_ingested_to_obj_store:
+                    pool.apply_async(delete_files, args=(metrics, current_worker_hostname))
+            pool.close()
+            logger.error(
+                "datasets failed to publish to Elasticsearch, deleting object(s) from data store"
+            )
+            pool.join()
+            logger.handlers.clear()
+            raise NotAllProductsIngested(
+                f"Products failed to index to elasticsearch: {traceback.format_exc()}"
             )
 
-        # write published products to file
-        pub_prods_file = os.path.join(job_dir, "_datasets.json")
-        with open(pub_prods_file, "w") as f:
-            json.dump(published_prods, f, indent=2, sort_keys=True)
-    finally:
-        if publish_lock:
-            try:
-                lock_release_status = publish_lock.release()
-                if lock_release_status is True:
-                    logger.info(f"Successfully released lock for {publish_lock_key}")
-                else:
-                    logger.warning(f"Did not release lock for {publish_lock_key}")
-            except Exception as e:
-                logger.warning(f"Error occurred while trying to release lock for {publish_lock_key}:\n{str(e)}")
+        if "products_staged" not in job["job_info"]["metrics"]:
+            job["job_info"]["metrics"]["products_staged"] = []
+
+        for prod_json, metadata, _ in prods_ingested_to_obj_store:
+            ipath = prod_json["ipath"]
+            queue_dataset(ipath, prod_json, app.conf.DATASET_PROCESSED_QUEUE)
+            job["job_info"]["metrics"]["products_staged"].append(metadata)
+        logger.info(
+            f"queued {len(prods_ingested_to_obj_store)} dataset(s) to {app.conf.DATASET_PROCESSED_QUEUE}"
+        )
+
+    # write published products to file
+    pub_prods_file = os.path.join(job_dir, "_datasets.json")
+    with open(pub_prods_file, "w") as f:
+        json.dump(published_prods, f, indent=2, sort_keys=True)
 
     return True
 
@@ -1102,8 +1133,9 @@ def publish_datasets(job, ctx):
         logger.error(
             f"Product failed to ingest to data store: {traceback.format_exc()}"
         )
+        current_worker_hostname = socket.gethostname()
         for _, _, metrics in prods_ingested_to_obj_store:
-            delete_files(metrics)
+            delete_files(metrics, current_worker_hostname)
         raise NotAllProductsIngested(
             f"Product failed to ingest to data store: {traceback.format_exc()}"
         )
@@ -1117,8 +1149,9 @@ def publish_datasets(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
+            current_worker_hostname = socket.gethostname()
             for _, _, metrics in prods_ingested_to_obj_store:
-                delete_files(metrics)
+                delete_files(metrics, current_worker_hostname)
             raise NotAllProductsIngested(
                 f"Products failed to index to elasticsearch: {traceback.format_exc()}"
             )
