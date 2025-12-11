@@ -1541,7 +1541,6 @@ def run_job(job, queue_when_finished=True):
             "job_url": job["job_info"]["job_url"],
             "celery_hostname": run_job.request.hostname,
         }
-    
     finally:
         # Always release the job lock
         if job_lock:
