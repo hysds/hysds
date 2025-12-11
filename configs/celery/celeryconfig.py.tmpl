@@ -224,6 +224,3 @@ VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
 CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
 
 EVICT_CACHE = {{ EVICT_CACHE | default(true, boolean=False) }}
-
-PUBLISH_LOCK_EXPIRE_TIME = 600
-PUBLISH_LOCK_WAIT_TIME = 540
