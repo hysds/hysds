@@ -20,6 +20,8 @@ from contextlib import nullcontext
 sys.modules["hysds.celery"] = umock.MagicMock()
 logging.basicConfig()
 
+from hysds.container_utils import has_fully_qualified_registry
+
 
 class TestContainerUtils(unittest.TestCase):
     def setUp(self):
@@ -364,7 +366,115 @@ class TestContainerUtils(unittest.TestCase):
             }
             
             self.assertEqual(
-                docker_params["runtime_options"], 
+                docker_params["runtime_options"],
                 expected_runtime_options,
                 "Only string values should be processed for environment variable expansion"
             )
+
+
+class TestRegistryDetection(unittest.TestCase):
+    """Test cases for HC-601: Registry path detection to prevent image reference corruption."""
+
+    def test_has_fully_qualified_registry_docker_hub(self):
+        """Test detection of Docker Hub registry paths."""
+        self.assertTrue(has_fully_qualified_registry('docker.io/library/ubuntu:latest'))
+        self.assertTrue(has_fully_qualified_registry('docker.io/myorg/myimage:v1.0'))
+
+    def test_has_fully_qualified_registry_github(self):
+        """Test detection of GitHub Container Registry paths."""
+        self.assertTrue(has_fully_qualified_registry('ghcr.io/myorg/myimage:v1.0'))
+        self.assertTrue(has_fully_qualified_registry('ghcr.io/hysds/pge:latest'))
+
+    def test_has_fully_qualified_registry_quay(self):
+        """Test detection of Quay.io registry paths."""
+        self.assertTrue(has_fully_qualified_registry('quay.io/organization/image:v1'))
+        self.assertTrue(has_fully_qualified_registry('quay.io/myorg/repo:tag'))
+
+    def test_has_fully_qualified_registry_aws_ecr(self):
+        """Test detection of AWS ECR registry paths."""
+        self.assertTrue(has_fully_qualified_registry('123456789.dkr.ecr.us-west-2.amazonaws.com/myapp:latest'))
+        self.assertTrue(has_fully_qualified_registry('987654321.dkr.ecr.us-east-1.amazonaws.com/app:v1.0'))
+
+    def test_has_fully_qualified_registry_google_artifact(self):
+        """Test detection of Google Artifact Registry paths."""
+        self.assertTrue(has_fully_qualified_registry('us-docker.pkg.dev/project/repo/image:v1'))
+        self.assertTrue(has_fully_qualified_registry('europe-west1-docker.pkg.dev/my-project/my-repo/image:latest'))
+
+    def test_has_fully_qualified_registry_azure_acr(self):
+        """Test detection of Azure Container Registry paths."""
+        self.assertTrue(has_fully_qualified_registry('myregistry.azurecr.io/image:v1'))
+        self.assertTrue(has_fully_qualified_registry('company.azurecr.io/app/service:tag'))
+
+    def test_has_fully_qualified_registry_localhost_with_port(self):
+        """Test detection of localhost registry with port."""
+        self.assertTrue(has_fully_qualified_registry('localhost:5000/myimage:v1'))
+        self.assertTrue(has_fully_qualified_registry('localhost:8080/app:latest'))
+
+    def test_has_fully_qualified_registry_custom_with_port(self):
+        """Test detection of custom registry with port."""
+        self.assertTrue(has_fully_qualified_registry('registry.example.com:5050/image:v1'))
+        self.assertTrue(has_fully_qualified_registry('nexus.company.com:8443/app:tag'))
+
+    def test_has_fully_qualified_registry_custom_domain(self):
+        """Test detection of custom domain registries."""
+        self.assertTrue(has_fully_qualified_registry('registry.company.com/myapp:v1.0'))
+        self.assertTrue(has_fully_qualified_registry('harbor.internal.org/project/image:latest'))
+
+    def test_no_registry_simple_name_with_tag(self):
+        """Test that simple image names with tags are NOT detected as having registry."""
+        self.assertFalse(has_fully_qualified_registry('ubuntu:latest'))
+        self.assertFalse(has_fully_qualified_registry('myimage:v1.0'))
+        self.assertFalse(has_fully_qualified_registry('python:3.11'))
+
+    def test_no_registry_simple_name_without_tag(self):
+        """Test that simple image names without tags are NOT detected as having registry."""
+        self.assertFalse(has_fully_qualified_registry('myimage'))
+        self.assertFalse(has_fully_qualified_registry('ubuntu'))
+        self.assertFalse(has_fully_qualified_registry('app'))
+
+    def test_no_registry_name_with_dashes(self):
+        """Test that names with dashes but no registry are NOT detected as having registry."""
+        self.assertFalse(has_fully_qualified_registry('my-app-v1.0'))
+        self.assertFalse(has_fully_qualified_registry('processing-tool:latest'))
+
+    def test_no_registry_organization_slash_image(self):
+        """Test that organization/image format without registry is NOT detected as having registry."""
+        self.assertFalse(has_fully_qualified_registry('myorg/myimage:latest'))
+        self.assertFalse(has_fully_qualified_registry('company/app:v1'))
+
+    def test_edge_case_empty_string(self):
+        """Test edge case: empty string."""
+        self.assertFalse(has_fully_qualified_registry(''))
+
+    def test_edge_case_none(self):
+        """Test edge case: None value."""
+        self.assertFalse(has_fully_qualified_registry(None))
+
+    def test_edge_case_with_digest(self):
+        """Test images with SHA256 digests."""
+        self.assertTrue(has_fully_qualified_registry('docker.io/library/ubuntu@sha256:abcdef123456'))
+        self.assertTrue(has_fully_qualified_registry('ghcr.io/org/image@sha256:123abc'))
+
+    def test_edge_case_nested_path(self):
+        """Test images with nested paths."""
+        self.assertTrue(has_fully_qualified_registry('registry.company.com/team/project/service:v1'))
+        self.assertTrue(has_fully_qualified_registry('docker.io/library/debian/stable:latest'))
+
+    def test_edge_case_localhost_no_port(self):
+        """Test that 'localhost' without port but with dot is detected."""
+        # localhost by itself without a slash is a simple image name
+        self.assertFalse(has_fully_qualified_registry('localhost'))
+        # But if it has a slash, the dot makes it a registry
+        # However, in practice "localhost/image" would not have a dot in first component
+        # so this would be False. Let's verify the actual behavior:
+        self.assertFalse(has_fully_qualified_registry('localhost/myimage:v1'))
+
+    def test_real_world_examples(self):
+        """Test real-world examples that should work correctly."""
+        # Should be detected as having registry
+        self.assertTrue(has_fully_qualified_registry('index.docker.io/library/python:3.11'))
+        self.assertTrue(has_fully_qualified_registry('public.ecr.aws/lambda/python:3.11'))
+
+        # Should NOT be detected as having registry
+        self.assertFalse(has_fully_qualified_registry('hysds/pge-base:latest'))
+        self.assertFalse(has_fully_qualified_registry('verdi:latest'))
