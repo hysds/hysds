@@ -431,14 +431,12 @@ def ingest(
     publ_ctx_name = "_publish.context.json"
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
-    worker_hostname = socket.gethostname()
     with open(publ_ctx_file, "w") as f:
         json.dump(
             {
                 "payload_id": payload_id,
                 "payload_hash": payload_hash,
                 "task_id": task_id,
-                "worker_hostname": worker_hostname,
             },
             f,
             indent=2,

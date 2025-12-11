@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import shutil
-import socket
 import traceback
 from datetime import timezone, datetime
 from glob import glob
@@ -245,14 +244,12 @@ def ingest_to_object_store(
     publ_ctx_name = "_publish.context.json"
     publ_ctx_dir = mkdtemp(prefix=".pub_context", dir=job_path)
     publ_ctx_file = os.path.join(publ_ctx_dir, publ_ctx_name)
-    worker_hostname = socket.gethostname()
     with open(publ_ctx_file, "w") as f:
         json.dump(
             {
                 "payload_id": payload_id,
                 "payload_hash": payload_hash,
                 "task_id": task_id,
-                "worker_hostname": worker_hostname,
             },
             f,
             indent=2,
@@ -916,58 +913,10 @@ def publish_files_wrapper(job, ctx, prod_dir, event=None):
         raise RuntimeError(f"Failed to publish {prod_dir}: {str(e)}\n{tb}")
 
 
-def delete_files(metrics, current_worker_hostname=None):
-    """
-    Delete files from object store if worker hostname matches the one in publish context.
-    
-    :param metrics: Dictionary containing pub_path_url and browse_path
-    :param current_worker_hostname: Current worker's hostname to compare with publish context
-    """
+def delete_files(metrics):
     if "pub_path_url" in metrics:
-        pub_path_url = metrics["pub_path_url"]
-        
-        # Check worker hostname before deleting
-        if current_worker_hostname is not None:
-            publ_ctx_url = os.path.join(pub_path_url, "_publish.context.json")
-            temp_ctx_file = mkdtemp(prefix=".check_pub_context")
-            temp_ctx_path = os.path.join(temp_ctx_file, "_publish.context.json")
-            
-            try:
-                # Download publish context to check hostname
-                osaka.main.get(publ_ctx_url, temp_ctx_path)
-                with open(temp_ctx_path) as f:
-                    pub_ctx = json.load(f)
-                
-                pub_ctx_hostname = pub_ctx.get("worker_hostname", None)
-                
-                if pub_ctx_hostname != current_worker_hostname:
-                    logger.warning(
-                        f"Skipping deletion of {pub_path_url}. "
-                        f"Worker hostname mismatch: current={current_worker_hostname}, "
-                        f"publish_context={pub_ctx_hostname}"
-                    )
-                    return
-                else:
-                    logger.info(
-                        f"Worker hostname matches ({current_worker_hostname}). "
-                        f"Proceeding with deletion of {pub_path_url}"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to retrieve or parse publish context from {publ_ctx_url}: {str(e)}. "
-                    f"Skipping deletion of {pub_path_url} to be safe."
-                )
-                return
-            finally:
-                # Cleanup temp directory
-                try:
-                    shutil.rmtree(temp_ctx_file)
-                except:
-                    pass
-        
-        logger.info(f"deleting {pub_path_url}")
-        delete_from_object_store(pub_path_url)
-        
+        logger.info(f"deleting {metrics['pub_path_url']}")
+        delete_from_object_store(metrics["pub_path_url"])
     if "browse_path" in metrics:
         logger.info(f"deleting {metrics['browse_path']}")
         delete_from_object_store(metrics["browse_path"])
@@ -999,34 +948,34 @@ def publish_datasets_parallel(job, ctx):
     async_tasks = []
     num_procs = min(max(cpu_count() - 2, 1), len(datasets_list))
     logger.info(f"multiprocessing procs used: {num_procs}")
-    
+
     with get_context("spawn").Pool(
-            num_procs, initializer=init_pool_logger
-        ) as pool, Manager() as manager:
-            event = manager.Event()
-            for prod_dir in datasets_list:
-                signal_file = os.path.join(
-                    prod_dir, ".localized"
-                )  # skip if marked as localized input
-                if os.path.exists(signal_file):
-                    logger.info(
-                        f"Skipping publish of {prod_dir}. Marked as localized input."
-                    )
-                    continue
-                async_task = pool.apply_async(
-                    publish_files_wrapper,
-                    args=(
-                        job,
-                        ctx,
-                        prod_dir,
-                    ),
-                    kwds={"event": event},
+        num_procs, initializer=init_pool_logger
+    ) as pool, Manager() as manager:
+        event = manager.Event()
+        for prod_dir in datasets_list:
+            signal_file = os.path.join(
+                prod_dir, ".localized"
+            )  # skip if marked as localized input
+            if os.path.exists(signal_file):
+                logger.info(
+                    f"Skipping publish of {prod_dir}. Marked as localized input."
                 )
-                async_tasks.append(async_task)
-            pool.close()
-            logger.info("Waiting for dataset publishing tasks to complete...")
-            pool.join()
-            logger.handlers.clear()  # removing the handler to prevent broken pipe error
+                continue
+            async_task = pool.apply_async(
+                publish_files_wrapper,
+                args=(
+                    job,
+                    ctx,
+                    prod_dir,
+                ),
+                kwds={"event": event},
+            )
+            async_tasks.append(async_task)
+        pool.close()
+        logger.info("Waiting for dataset publishing tasks to complete...")
+        pool.join()
+        logger.handlers.clear()  # removing the handler to prevent broken pipe error
 
     has_error, err = False, ""
     for t in async_tasks:
@@ -1040,10 +989,9 @@ def publish_datasets_parallel(job, ctx):
             err = t._value  # noqa
 
     if has_error is True:
-        current_worker_hostname = socket.gethostname()
         with get_context("spawn").Pool(num_procs, initializer=init_pool_logger) as pool:
             for _, _, metrics in prods_ingested_to_obj_store:
-                pool.apply_async(delete_files, args=(metrics, current_worker_hostname))
+                pool.apply_async(delete_files, args=(metrics,))
             pool.close()
             logger.warning("Rolling back datasets (file) ingest...")
             pool.join()
@@ -1059,12 +1007,11 @@ def publish_datasets_parallel(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
-            current_worker_hostname = socket.gethostname()
             with get_context("spawn").Pool(
                 num_procs, initializer=init_pool_logger
             ) as pool:
                 for _, _, metrics in prods_ingested_to_obj_store:
-                    pool.apply_async(delete_files, args=(metrics, current_worker_hostname))
+                    pool.apply_async(delete_files, args=(metrics,))
             pool.close()
             logger.error(
                 "datasets failed to publish to Elasticsearch, deleting object(s) from data store"
@@ -1133,9 +1080,8 @@ def publish_datasets(job, ctx):
         logger.error(
             f"Product failed to ingest to data store: {traceback.format_exc()}"
         )
-        current_worker_hostname = socket.gethostname()
         for _, _, metrics in prods_ingested_to_obj_store:
-            delete_files(metrics, current_worker_hostname)
+            delete_files(metrics)
         raise NotAllProductsIngested(
             f"Product failed to ingest to data store: {traceback.format_exc()}"
         )
@@ -1149,9 +1095,8 @@ def publish_datasets(job, ctx):
             bulk_index_dataset(app.conf.GRQ_UPDATE_URL_BULK, prod_jsons)
             published_prods.extend(prod_jsons)
         except Exception:
-            current_worker_hostname = socket.gethostname()
             for _, _, metrics in prods_ingested_to_obj_store:
-                delete_files(metrics, current_worker_hostname)
+                delete_files(metrics)
             raise NotAllProductsIngested(
                 f"Products failed to index to elasticsearch: {traceback.format_exc()}"
             )
