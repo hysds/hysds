@@ -484,16 +484,23 @@ def run_job(job, queue_when_finished=True):
     
     # Try to acquire job lock
     job_lock = JobLock(payload_id, job["task_id"], run_job.request.hostname)
+    lock_acquired = False
     redelivered = job.get("delivery_info", {}).get("redelivered", False)
     
     if not job_lock.acquire(wait_time=0):
         # Lock exists and is held by another job
         lock_metadata = job_lock.get_lock_metadata()
         
+        # Handle race condition where lock was released between acquire check and metadata retrieval
+        if lock_metadata is None:
+            lock_holder_info = "unknown (lock released)"
+        else:
+            lock_holder_info = f"task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')}"
+        
         if redelivered:
             logger.info(
                 f"Redelivered job for payload {payload_id} - lock held by "
-                f"task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')}. "
+                f"{lock_holder_info}. "
                 f"Deduping this job."
             )
             return {
@@ -509,12 +516,13 @@ def run_job(job, queue_when_finished=True):
             # Non-redelivered job can't acquire lock - shouldn't happen
             error_msg = (
                 f"Job {payload_id} already running "
-                f"(task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')})"
+                f"({lock_holder_info})"
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
     
     # Lock acquired successfully, start heartbeat
+    lock_acquired = True
     job_lock.start_heartbeat()
     logger.info(f"Acquired lock and started heartbeat for job {payload_id} (task {job['task_id']})")
 
@@ -1542,8 +1550,8 @@ def run_job(job, queue_when_finished=True):
             "celery_hostname": run_job.request.hostname,
         }
     finally:
-        # Always release the job lock
-        if job_lock:
+        # Release the job lock only if we acquired it
+        if lock_acquired and job_lock:
             job_lock.release()
             logger.info(f"Released job lock for payload {payload_id}")
 
