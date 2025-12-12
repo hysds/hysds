@@ -475,6 +475,33 @@ def run_job(job, queue_when_finished=True):
         signal.signal(signal.SIGABRT, handler)
         signal.signal(signal.SIGTERM, handler)
 
+    # get workers dir
+    workers_dir = "workers"
+    workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
+    try:
+        makedirs(workers_dir_abs)
+    except Exception as e:
+        error = str(e)
+        job_status_json = {
+            "uuid": job["task_id"],
+            "job_id": job["job_id"],
+            "payload_id": payload_id,
+            "payload_hash": payload_hash,
+            "dedup": dedup,
+            "status": "job-failed",
+            "job": job,
+            "context": context,
+            "error": error,
+            "short_error": get_short_error(error),
+            "traceback": traceback.format_exc(),
+            "celery_hostname": run_job.request.hostname,
+        }
+        log_job_status(job_status_json)
+        raise WorkerExecutionError(error, job_status_json)
+
+    # set job drain detector file
+    jd_file = os.path.join(workers_dir_abs, f"{run_job.request.hostname}.failures.json")
+
     # ==================================================================================
     # JOB LOCKING APPROACH - Prevents duplicate jobs using distributed locks
     # ==================================================================================
@@ -557,33 +584,6 @@ def run_job(job, queue_when_finished=True):
             job.get("params", {}).get("job_specification", {}).get("dependency_images", [])
         )
         logger.info(f"dependency_images:{json.dumps(dependency_images, indent=2)}")
-
-        # get workers dir
-        workers_dir = "workers"
-        workers_dir_abs = os.path.join(app.conf.ROOT_WORK_DIR, workers_dir)
-        try:
-            makedirs(workers_dir_abs)
-        except Exception as e:
-            error = str(e)
-            job_status_json = {
-                "uuid": job["task_id"],
-                "job_id": job["job_id"],
-                "payload_id": payload_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-failed",
-                "job": job,
-                "context": context,
-                "error": error,
-                "short_error": get_short_error(error),
-                "traceback": traceback.format_exc(),
-                "celery_hostname": run_job.request.hostname,
-            }
-            log_job_status(job_status_json)
-            raise WorkerExecutionError(error, job_status_json)
-
-        # set job drain detector file
-        jd_file = os.path.join(workers_dir_abs, f"{run_job.request.hostname}.failures.json")
 
         # get worker config
         worker_cfg_file = os.environ.get("HYSDS_WORKER_CFG", None)
