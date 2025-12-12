@@ -556,7 +556,7 @@ def run_job(job, queue_when_finished=True):
                 "context": context,
                 "error": error_msg,
                 "short_error": get_short_error(error_msg),
-                "traceback": traceback.format_exc(),
+                "traceback": error_msg,
                 "celery_hostname": run_job.request.hostname,
             }
             fail_job(job_status_json, jd_file)
