@@ -518,7 +518,7 @@ def run_job(job, queue_when_finished=True):
     lock_acquired = False
     redelivered = job.get("delivery_info", {}).get("redelivered", False)
     
-    if not job_lock.acquire(wait_time=0):
+    if not job_lock.acquire(wait_time=10):
         # Lock exists and is held by another job
         lock_metadata = job_lock.get_lock_metadata()
         

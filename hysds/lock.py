@@ -81,7 +81,7 @@ class JobLock:
         self.heartbeat_thread = None
         self.heartbeat_stop_event = None
 
-    def acquire(self, expire_time=None, wait_time=0):
+    def acquire(self, expire_time=None, wait_time=10):
         """
         Try to acquire the job lock.
         
@@ -103,9 +103,7 @@ class JobLock:
             auto_release_time=expire_time
         )
         
-        # Convert wait_time=0 to None for Pottery Redlock
-        # (timeout=0 might mean "fail immediately" differently than we expect)
-        timeout_param = 0 if wait_time == 0 else wait_time
+        timeout_param = wait_time
         
         logger.info(f"Calling locker.acquire(timeout={timeout_param})")
         
