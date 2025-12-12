@@ -167,11 +167,11 @@ class JobLock:
                     self.redis_client.setex(
                         self.metadata_key,
                         additional_time,
-                    json.dumps(metadata)
-                )
-            
-            logger.info(f"Extended job lock for payload {self.payload_id}")
-            return True
+                        json.dumps(metadata)
+                    )
+                
+                logger.info(f"Extended job lock for payload {self.payload_id}")
+                return True
             except Exception as e:
                 logger.error(f"Failed to extend lock: {e}")
                 return False
