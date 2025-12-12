@@ -522,7 +522,7 @@ def run_job(job, queue_when_finished=True):
         # Lock exists and is held by another job
         lock_metadata = job_lock.get_lock_metadata()
         
-        # Handle race condition where lock was released between acquire check and metadata retrieval
+        # Handle case where lock was released between acquire check and metadata retrieval
         if lock_metadata is None:
             lock_holder_info = "unknown (lock released)"
         else:

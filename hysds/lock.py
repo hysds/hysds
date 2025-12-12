@@ -2,6 +2,7 @@ from redis import BlockingConnectionPool, StrictRedis
 import threading
 import time
 import json
+import traceback
 import backoff
 import celery.states
 from pottery import Redlock
@@ -55,6 +56,7 @@ class JobLock:
                 app.conf.REDIS_JOB_STATUS_URL,
                 ssl_cert_reqs="none",
             )
+            logger.info(f"Created Redis connection pool for JobLock: {app.conf.REDIS_JOB_STATUS_URL}")
         return cls._connection_pool
 
     def __init__(self, payload_id, task_id, worker_hostname):
@@ -101,7 +103,20 @@ class JobLock:
             auto_release_time=expire_time
         )
         
-        acquired = self.locker.acquire(timeout=wait_time)
+        # Convert wait_time=0 to None for Pottery Redlock
+        # (timeout=0 might mean "fail immediately" differently than we expect)
+        timeout_param = None if wait_time == 0 else wait_time
+        
+        logger.info(f"Calling locker.acquire(timeout={timeout_param})")
+        
+        try:
+            acquired = self.locker.acquire(timeout=timeout_param)
+            logger.info(f"locker.acquire() returned: {acquired}")
+        except Exception as e:
+            logger.error(f"Exception during lock acquisition: {type(e).__name__}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            # Re-raise to propagate the error
+            raise
         
         logger.info(f"Lock acquisition result: {acquired}")
         
