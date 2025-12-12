@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import job_utils
 
 from hysds.celery import app
+from hysds.log_utils import log_job_status
 from hysds.utils import get_short_error, parse_iso8601
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
@@ -27,15 +28,18 @@ def tag_timedout_jobs(url, timeout):
     """Tag jobs stuck in job-started or job-offline that have timed out."""
 
     status = ["job-started", "job-offline"]
-    source_data = [
-        "status",
-        "tags",
-        "uuid",
-        "celery_hostname",
-        "job.job_info.time_start",
-        "job.job_info.time_limit",
-    ]
-    query = job_utils.get_timedout_query(timeout, status, source_data)
+    # Retrieve full _source to ensure we have all fields needed for log_job_status()
+    # Build query inline without _source restriction to get all fields
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"terms": {"status": status}},
+                    {"range": {"@timestamp": {"lt": f"now-{timeout}s"}}},
+                ]
+            }
+        }
+    }
     results = job_utils.run_query_with_scroll(query, index="job_status-current")
     logging.info(
         f"Found {len(results)} stuck jobs in job-started or job-offline"
@@ -96,7 +100,7 @@ def tag_timedout_jobs(url, timeout):
             logging.info(f"worker_res: {json.dumps(worker_res)}")
             error = None
             short_error = None
-            traceback = None
+            error_traceback = None
             # determine new status
             new_status = status
             if len(worker_res["hits"]["hits"]) == 0 and duration > time_limit:
@@ -117,7 +121,7 @@ def tag_timedout_jobs(url, timeout):
                         .get("exception", UNDETERMINED_BY_WATCHDOG)
                     )
                     short_error = get_short_error(error)
-                    traceback = (
+                    error_traceback = (
                         task_info.get("_source", {})
                         .get("event", {})
                         .get("traceback", UNDETERMINED_BY_WATCHDOG)
@@ -125,43 +129,39 @@ def tag_timedout_jobs(url, timeout):
 
             # update status
             if status != new_status:
-                logging.info(f"updating status from {status} to {new_status}")
                 if duration > time_limit and "timedout" not in tags:
-                    logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
                     tags.append("timedout")
-                updated_doc = {"status": new_status, "tags": tags}
+
+                # Update job_status_json in memory with new values
+                src["status"] = new_status
+                src["tags"] = tags
                 if error:
-                    updated_doc["error"] = error
-                    updated_doc["short_error"] = short_error
-                    updated_doc["traceback"] = traceback
-                new_doc = {
-                    "doc": updated_doc,
-                    "doc_as_upsert": True,
-                }
-                logging.info(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(_id, new_doc, index=_index)
-                if response["result"].strip() != "updated":
-                    err_str = "Failed to update status for {} : {}".format(
-                        _id, json.dumps(response, indent=2)
-                    )
-                    logging.error(err_str)
-                    raise Exception(err_str)
-                logging.info(f"Set job {_id} to {new_status} and tagged as timedout.")
+                    src["error"] = error
+                    src["short_error"] = short_error
+                    src["traceback"] = error_traceback
+
+                # Use log_job_status() to ensure all required fields are populated
+                # and the update goes through the proper Redis->Logstash pipeline
+                try:
+                    log_job_status(src)
+                    logging.info(f"Set job {_id} to {new_status} via log_job_status().")
+                except Exception as e:
+                    logging.error(f"Failed to log job status for {_id}: {e}")
+                    logging.error(traceback.format_exc())
                 continue
 
-        if "timedout" in tags:
-            logging.info(f"{_id} already tagged as timedout.")
-        else:
+        if "timedout" not in tags:
             if duration > time_limit:
-                logging.info(f"adding 'timedout' to tag, {_index}/{_id}")
                 tags.append("timedout")
-                new_doc = {"doc": {"tags": tags}, "doc_as_upsert": True}
-                logging.info(json.dumps(new_doc, indent=2))
-                response = job_utils.update_es(_id, new_doc, index=_index)
-                if response["result"].strip() != "updated":
-                    err_str = f"Failed to update status for {_id} : {json.dumps(response, indent=2)}"
-                    logging.error(err_str)
-                    raise Exception(err_str)
+                src["tags"] = tags
+
+                # Use log_job_status() to ensure all required fields are populated
+                try:
+                    log_job_status(src)
+                    logging.info(f"Tagged job {_id} as timedout via log_job_status().")
+                except Exception as e:
+                    logging.error(f"Failed to log job status for {_id}: {e}")
+                    logging.error(traceback.format_exc())
 
 
 def daemon(interval, url, timeout):
