@@ -90,6 +90,11 @@ class JobLock:
         if expire_time is None:
             expire_time = app.conf.get("JOB_LOCK_EXPIRE_TIME", 600)
         
+        logger.info(
+            f"Attempting to acquire lock: key={self.lock_key}, "
+            f"task_id={self.task_id}, expire_time={expire_time}s"
+        )
+        
         self.locker = Redlock(
             key=self.lock_key,
             masters={self.redis_client},
@@ -97,6 +102,8 @@ class JobLock:
         )
         
         acquired = self.locker.acquire(timeout=wait_time)
+        
+        logger.info(f"Lock acquisition result: {acquired}")
         
         if acquired:
             # Store metadata about who owns the lock
@@ -389,14 +396,35 @@ class JobLock:
         # Create a temporary instance just for checking
         temp_lock = cls(payload_id, task_id="check", worker_hostname="checker")
         
+        # Check if lock metadata exists
         metadata = temp_lock.get_lock_metadata()
         if not metadata:
-            # No lock exists
+            # No lock metadata exists
+            logger.debug(f"No lock metadata found for payload {payload_id}")
+            
+            # But check if a Redlock key exists without metadata (orphaned lock)
+            lock_key = temp_lock.LOCK_KEY_TMPL.format(payload_id=payload_id)
+            if temp_lock.redis_client.exists(lock_key):
+                logger.warning(
+                    f"Found orphaned lock key without metadata for payload {payload_id}. "
+                    f"Breaking orphaned lock."
+                )
+                return temp_lock.force_release()
+            
             return False
+        
+        logger.info(
+            f"Found existing lock for payload {payload_id}: "
+            f"task_id={metadata.get('task_id')}, worker={metadata.get('worker')}"
+        )
         
         if temp_lock.is_lock_stale():
             # Lock is stale, break it
-            logger.warning(f"Breaking stale lock for payload {payload_id}")
+            logger.warning(
+                f"Lock for payload {payload_id} is stale (task {metadata.get('task_id')}). "
+                f"Breaking stale lock."
+            )
             return temp_lock.force_release()
         
+        logger.info(f"Lock for payload {payload_id} is valid, not breaking")
         return False

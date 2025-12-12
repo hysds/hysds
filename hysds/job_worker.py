@@ -506,8 +506,12 @@ def run_job(job, queue_when_finished=True):
     # JOB LOCKING APPROACH - Prevents duplicate jobs using distributed locks
     # ==================================================================================
     
+    logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}")
+    
     # Check for and break stale locks
-    JobLock.check_and_break_stale_lock(payload_id)
+    stale_lock_broken = JobLock.check_and_break_stale_lock(payload_id)
+    if stale_lock_broken:
+        logger.warning(f"Broke stale lock for payload {payload_id}")
     
     # Try to acquire job lock
     job_lock = JobLock(payload_id, job["task_id"], run_job.request.hostname)
