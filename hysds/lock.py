@@ -167,11 +167,11 @@ class JobLock:
                     self.redis_client.setex(
                         self.metadata_key,
                         additional_time,
-                        json.dumps(metadata)
-                    )
-                
-                logger.debug(f"Extended job lock for payload {self.payload_id}")
-                return True
+                    json.dumps(metadata)
+                )
+            
+            logger.info(f"Extended job lock for payload {self.payload_id}")
+            return True
             except Exception as e:
                 logger.error(f"Failed to extend lock: {e}")
                 return False
@@ -262,7 +262,7 @@ class JobLock:
             task = app.AsyncResult(task_id)
             state = task.state
             
-            logger.debug(f"Task {task_id} state: {state}")
+            logger.info(f"Checking task state: task_id={task_id}, state={state}")
             
             # If task is in terminal state, return immediately
             if state in celery.states.READY_STATES:
@@ -400,17 +400,21 @@ class JobLock:
         metadata = temp_lock.get_lock_metadata()
         if not metadata:
             # No lock metadata exists
-            logger.debug(f"No lock metadata found for payload {payload_id}")
+            logger.info(f"No lock metadata found for payload {payload_id}")
             
             # But check if a Redlock key exists without metadata (orphaned lock)
             lock_key = temp_lock.LOCK_KEY_TMPL.format(payload_id=payload_id)
-            if temp_lock.redis_client.exists(lock_key):
+            lock_exists = temp_lock.redis_client.exists(lock_key)
+            logger.info(f"Checking for orphaned lock key: {lock_key}, exists={lock_exists}")
+            
+            if lock_exists:
                 logger.warning(
                     f"Found orphaned lock key without metadata for payload {payload_id}. "
                     f"Breaking orphaned lock."
                 )
                 return temp_lock.force_release()
             
+            logger.info(f"No lock or metadata found for payload {payload_id}, proceeding")
             return False
         
         logger.info(
