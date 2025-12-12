@@ -532,9 +532,7 @@ def run_job(job, queue_when_finished=True):
                 "traceback": traceback.format_exc(),
                 "celery_hostname": run_job.request.hostname,
             }
-            # log final job status
-            log_job_status(job_status_json)
-            raise WorkerExecutionError(error_msg, job_status_json)
+            fail_job(job_status_json, jd_file)
     
     # Lock acquired successfully, start heartbeat
     lock_acquired = True
