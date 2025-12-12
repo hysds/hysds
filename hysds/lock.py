@@ -105,7 +105,7 @@ class JobLock:
         
         # Convert wait_time=0 to None for Pottery Redlock
         # (timeout=0 might mean "fail immediately" differently than we expect)
-        timeout_param = None if wait_time == 0 else wait_time
+        timeout_param = 0 if wait_time == 0 else wait_time
         
         logger.info(f"Calling locker.acquire(timeout={timeout_param})")
         
