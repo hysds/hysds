@@ -518,8 +518,23 @@ def run_job(job, queue_when_finished=True):
                 f"Job {payload_id} already running "
                 f"({lock_holder_info})"
             )
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            job_status_json = {
+                "uuid": job["task_id"],
+                "job_id": job["job_id"],
+                "payload_id": payload_id,
+                "payload_hash": payload_hash,
+                "dedup": dedup,
+                "status": "job-failed",
+                "job": job,
+                "context": context,
+                "error": error_msg,
+                "short_error": get_short_error(error_msg),
+                "traceback": traceback.format_exc(),
+                "celery_hostname": run_job.request.hostname,
+            }
+            # log final job status
+            log_job_status(job_status_json)
+            raise WorkerExecutionError(error_msg, job_status_json)
     
     # Lock acquired successfully, start heartbeat
     lock_acquired = True
