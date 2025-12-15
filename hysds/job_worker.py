@@ -513,13 +513,15 @@ def run_job(job, queue_when_finished=True):
     stale_lock_broken = JobLock.check_and_break_stale_lock(payload_id, current_task_id=job["task_id"])
     if stale_lock_broken:
         logger.warning(f"Broke stale lock for payload {payload_id}")
+    else:
+        logger.info(f"No stale lock found for payload {payload_id}")
     
     # Try to acquire job lock
     job_lock = JobLock(payload_id, job["task_id"], run_job.request.hostname)
     lock_acquired = False
     redelivered = job.get("delivery_info", {}).get("redelivered", False)
     
-    if not job_lock.acquire(wait_time=10):
+    if not job_lock.acquire(wait_time=30):
         # Lock exists and is held by another job
         lock_metadata = job_lock.get_lock_metadata()
         

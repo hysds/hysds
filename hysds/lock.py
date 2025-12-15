@@ -384,17 +384,30 @@ class JobLock:
         :return: True if released, False otherwise
         """
         try:
+            logger.info(f"Attempting to force-release lock: key={self.lock_key}, metadata_key={self.metadata_key}")
+            
+            # Check if keys exist before deleting
+            lock_exists = self.redis_client.exists(self.lock_key)
+            metadata_exists = self.redis_client.exists(self.metadata_key)
+            logger.info(f"Before deletion - lock_exists={lock_exists}, metadata_exists={metadata_exists}")
+            
             # Delete the Redlock key directly
-            deleted = self.redis_client.delete(self.lock_key)
+            deleted_lock = self.redis_client.delete(self.lock_key)
+            logger.info(f"Deleted lock key: {deleted_lock} key(s) removed")
             
             # Delete metadata
-            self.redis_client.delete(self.metadata_key)
+            deleted_metadata = self.redis_client.delete(self.metadata_key)
+            logger.info(f"Deleted metadata key: {deleted_metadata} key(s) removed")
             
-            if deleted:
+            if deleted_lock > 0:
                 logger.warning(f"Force-released lock for payload {self.payload_id}")
                 return True
+            else:
+                logger.warning(f"Force-release failed: lock key {self.lock_key} did not exist or could not be deleted")
+                return False
         except Exception as e:
             logger.error(f"Failed to force-release lock: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         return False
 
@@ -445,7 +458,14 @@ class JobLock:
                 f"Lock for payload {payload_id} is held by the current task {current_task_id}. "
                 f"This indicates a stale lock from a previous execution attempt. Breaking lock."
             )
-            return temp_lock.force_release()
+            # Check what keys actually exist in Redis for debugging
+            lock_key = temp_lock.LOCK_KEY_TMPL.format(payload_id=payload_id)
+            all_keys = temp_lock.redis_client.keys(f"*{payload_id}*")
+            logger.info(f"All Redis keys matching payload {payload_id}: {all_keys}")
+            
+            result = temp_lock.force_release()
+            logger.info(f"force_release() returned: {result}")
+            return result
         
         if temp_lock.is_lock_stale():
             # Lock is stale, break it
