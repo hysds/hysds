@@ -509,7 +509,8 @@ def run_job(job, queue_when_finished=True):
     logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}")
     
     # Check for and break stale locks
-    stale_lock_broken = JobLock.check_and_break_stale_lock(payload_id)
+    # Pass current task_id so we can detect if we're trying to re-acquire our own stale lock
+    stale_lock_broken = JobLock.check_and_break_stale_lock(payload_id, current_task_id=job["task_id"])
     if stale_lock_broken:
         logger.warning(f"Broke stale lock for payload {payload_id}")
     

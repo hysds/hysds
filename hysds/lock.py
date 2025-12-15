@@ -399,11 +399,12 @@ class JobLock:
         return False
 
     @classmethod
-    def check_and_break_stale_lock(cls, payload_id):
+    def check_and_break_stale_lock(cls, payload_id, current_task_id=None):
         """
         Check if a lock exists for the payload_id, and if it's stale, break it.
         
         :param payload_id: The payload ID to check
+        :param current_task_id: The task_id of the current job attempting to acquire the lock
         :return: True if lock was stale and broken, False otherwise
         """
         # Create a temporary instance just for checking
@@ -430,15 +431,26 @@ class JobLock:
             logger.info(f"No lock or metadata found for payload {payload_id}, proceeding")
             return False
         
+        lock_holder_task_id = metadata.get('task_id')
         logger.info(
             f"Found existing lock for payload {payload_id}: "
-            f"task_id={metadata.get('task_id')}, worker={metadata.get('worker')}"
+            f"task_id={lock_holder_task_id}, worker={metadata.get('worker')}"
         )
+        
+        # Check if the lock holder is the same as the current task
+        # This happens when a job crashed after acquiring the lock but before completing,
+        # and is now being re-executed with the same task_id
+        if current_task_id and lock_holder_task_id == current_task_id:
+            logger.warning(
+                f"Lock for payload {payload_id} is held by the current task {current_task_id}. "
+                f"This indicates a stale lock from a previous execution attempt. Breaking lock."
+            )
+            return temp_lock.force_release()
         
         if temp_lock.is_lock_stale():
             # Lock is stale, break it
             logger.warning(
-                f"Lock for payload {payload_id} is stale (task {metadata.get('task_id')}). "
+                f"Lock for payload {payload_id} is stale (task {lock_holder_task_id}). "
                 f"Breaking stale lock."
             )
             return temp_lock.force_release()
