@@ -535,7 +535,7 @@ def run_job(job, queue_when_finished=True):
                 f"{lock_holder_info}. "
                 f"Deduping this job."
             )
-            return {
+            job_status_json = {
                 "uuid": job["task_id"],
                 "job_id": job["job_id"],
                 "payload_id": payload_id,
@@ -544,6 +544,8 @@ def run_job(job, queue_when_finished=True):
                 "status": "job-deduped",
                 "celery_hostname": run_job.request.hostname,
             }
+            log_job_status(job_status_json)
+            return job_status_json
         else:
             # Non-redelivered job can't acquire lock - shouldn't happen
             error_msg = (
