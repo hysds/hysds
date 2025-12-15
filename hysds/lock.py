@@ -384,15 +384,18 @@ class JobLock:
         :return: True if released, False otherwise
         """
         try:
-            logger.info(f"Attempting to force-release lock: key={self.lock_key}, metadata_key={self.metadata_key}")
+            # Pottery's Redlock adds a "redlock:" prefix to the key
+            redlock_key = f"redlock:{self.lock_key}"
+            
+            logger.info(f"Attempting to force-release lock: key={redlock_key}, metadata_key={self.metadata_key}")
             
             # Check if keys exist before deleting
-            lock_exists = self.redis_client.exists(self.lock_key)
+            lock_exists = self.redis_client.exists(redlock_key)
             metadata_exists = self.redis_client.exists(self.metadata_key)
             logger.info(f"Before deletion - lock_exists={lock_exists}, metadata_exists={metadata_exists}")
             
-            # Delete the Redlock key directly
-            deleted_lock = self.redis_client.delete(self.lock_key)
+            # Delete the Redlock key directly (with the redlock: prefix)
+            deleted_lock = self.redis_client.delete(redlock_key)
             logger.info(f"Deleted lock key: {deleted_lock} key(s) removed")
             
             # Delete metadata
@@ -403,7 +406,7 @@ class JobLock:
                 logger.warning(f"Force-released lock for payload {self.payload_id}")
                 return True
             else:
-                logger.warning(f"Force-release failed: lock key {self.lock_key} did not exist or could not be deleted")
+                logger.warning(f"Force-release failed: lock key {redlock_key} did not exist or could not be deleted")
                 return False
         except Exception as e:
             logger.error(f"Failed to force-release lock: {e}")
@@ -430,9 +433,11 @@ class JobLock:
             logger.info(f"No lock metadata found for payload {payload_id}")
             
             # But check if a Redlock key exists without metadata (orphaned lock)
+            # Pottery's Redlock adds a "redlock:" prefix to the key
             lock_key = temp_lock.LOCK_KEY_TMPL.format(payload_id=payload_id)
-            lock_exists = temp_lock.redis_client.exists(lock_key)
-            logger.info(f"Checking for orphaned lock key: {lock_key}, exists={lock_exists}")
+            redlock_key = f"redlock:{lock_key}"
+            lock_exists = temp_lock.redis_client.exists(redlock_key)
+            logger.info(f"Checking for orphaned lock key: {redlock_key}, exists={lock_exists}")
             
             if lock_exists:
                 logger.warning(
