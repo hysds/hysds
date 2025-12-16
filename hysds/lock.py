@@ -459,15 +459,25 @@ class JobLock:
         # This happens when a job crashed after acquiring the lock but before completing,
         # and is now being re-executed with the same task_id
         if current_task_id and lock_holder_task_id == current_task_id:
+            # Extra safety check: verify the lock is actually stale by checking heartbeat
+            lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+            heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+            
+            # If lock was renewed very recently, the previous execution might still be alive
+            # Give it a buffer of 2x heartbeat interval to account for processing delays
+            if lock_age < (heartbeat_interval * 2):
+                logger.warning(
+                    f"Lock for payload {payload_id} is held by current task {current_task_id}, "
+                    f"but was renewed {lock_age:.0f}s ago (< {heartbeat_interval * 2}s threshold). "
+                    f"Previous execution may still be active. NOT breaking lock."
+                )
+                return False
+            
             logger.warning(
                 f"Lock for payload {payload_id} is held by the current task {current_task_id}. "
+                f"Last renewed {lock_age:.0f}s ago. "
                 f"This indicates a stale lock from a previous execution attempt. Breaking lock."
             )
-            # Check what keys actually exist in Redis for debugging
-            lock_key = temp_lock.LOCK_KEY_TMPL.format(payload_id=payload_id)
-            all_keys = temp_lock.redis_client.keys(f"*{payload_id}*")
-            logger.info(f"All Redis keys matching payload {payload_id}: {all_keys}")
-            
             result = temp_lock.force_release()
             logger.info(f"force_release() returned: {result}")
             return result

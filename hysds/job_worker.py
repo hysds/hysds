@@ -532,18 +532,18 @@ def run_job(job, queue_when_finished=True):
             lock_holder_info = f"task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')}"
         
         if redelivered:
-            logger.info(
-                f"Redelivered job for payload {payload_id} - lock held by "
-                f"{lock_holder_info}. "
-                f"Deduping this job."
-            )
+            message = f"Redelivered job for payload {payload_id} - lock held by {lock_holder_info}. Deduping this job."
+            logger.warning(message)
             job_status_json = {
-                "uuid": job["task_id"],
+                "uuid": job["job_id"],
                 "job_id": job["job_id"],
                 "payload_id": payload_id,
                 "payload_hash": payload_hash,
                 "dedup": dedup,
                 "status": "job-deduped",
+                "job": job,
+                "context": context,
+                "dedup_msg": message,
                 "celery_hostname": run_job.request.hostname,
             }
             log_job_status(job_status_json)
