@@ -506,11 +506,17 @@ def run_job(job, queue_when_finished=True):
     # JOB LOCKING APPROACH - Prevents duplicate jobs using distributed locks
     # ==================================================================================
     
-    logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}")
+    logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}, hostname={run_job.request.hostname}")
     
     # Check for and break stale locks
-    # Pass current task_id so we can detect if we're trying to re-acquire our own stale lock
-    stale_lock_broken = JobLock.check_and_break_stale_lock(payload_id, current_task_id=job["task_id"])
+    # Pass current task_id AND hostname to properly detect:
+    # 1. Stale locks from crashed jobs on the same worker
+    # 2. RabbitMQ redelivered jobs to different workers (same task_id, different hostname)
+    stale_lock_broken = JobLock.check_and_break_stale_lock(
+        payload_id, 
+        current_task_id=job["task_id"],
+        current_hostname=run_job.request.hostname
+    )
     if stale_lock_broken:
         logger.warning(f"Broke stale lock for payload {payload_id}")
     else:

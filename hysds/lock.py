@@ -329,10 +329,15 @@ class JobLock:
             f"Last renewed: {lock_age:.0f}s ago"
         )
         
-        # Fast path: If lock is very old (> 10 min) and not being renewed, it's stale
-        if lock_age > 600:
+        # Get config values
+        expire_time = app.conf.get("JOB_LOCK_EXPIRE_TIME", 600)
+        grace_period = app.conf.get("JOB_LOCK_NEW_GRACE_PERIOD", 120)
+        heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+        
+        # Fast path: If lock is very old and not being renewed, it's stale
+        if lock_age > expire_time:
             logger.warning(
-                f"Lock not renewed for {lock_age:.0f}s (> 10 min), considering stale"
+                f"Lock not renewed for {lock_age:.0f}s (> {expire_time}s), considering stale"
             )
             return True
         
@@ -359,22 +364,36 @@ class JobLock:
                 f"after retries (state: {e.state}). Falling back to lock age heuristics."
             )
             
-            # If lock is very new (< 2 min), give benefit of doubt
-            if lock_total_age < 120:
-                logger.info("Lock is new, assuming valid despite indeterminate task state")
+            # If lock is very new, give benefit of doubt
+            if lock_total_age < grace_period:
+                logger.info(
+                    f"Lock is new ({lock_total_age:.0f}s < {grace_period}s grace period), "
+                    f"assuming valid despite indeterminate task state"
+                )
                 return False
             
             # If lock is old with no renewal, probably stale
-            if lock_age > 600:
-                logger.warning("Old lock with no renewal, considering stale")
+            if lock_age > expire_time:
+                logger.warning(
+                    f"Old lock with no renewal ({lock_age:.0f}s > {expire_time}s), "
+                    f"considering stale"
+                )
                 return True
             
             # Check if heartbeat is working (recent renewal = probably alive)
-            if lock_age < 360:  # < 6 minutes (heartbeat + buffer)
-                logger.info("Recent heartbeat, assuming lock is valid")
+            # Use heartbeat interval + 20% buffer to account for timing variations
+            heartbeat_threshold = heartbeat_interval * 1.2
+            if lock_age < heartbeat_threshold:
+                logger.info(
+                    f"Recent heartbeat ({lock_age:.0f}s < {heartbeat_threshold:.0f}s threshold), "
+                    f"assuming lock is valid"
+                )
                 return False
             else:
-                logger.warning("No recent heartbeat, considering stale")
+                logger.warning(
+                    f"No recent heartbeat ({lock_age:.0f}s >= {heartbeat_threshold:.0f}s threshold), "
+                    f"considering stale"
+                )
                 return True
 
     def force_release(self):
@@ -415,12 +434,13 @@ class JobLock:
         return False
 
     @classmethod
-    def check_and_break_stale_lock(cls, payload_id, current_task_id=None):
+    def check_and_break_stale_lock(cls, payload_id, current_task_id=None, current_hostname=None):
         """
         Check if a lock exists for the payload_id, and if it's stale, break it.
         
         :param payload_id: The payload ID to check
         :param current_task_id: The task_id of the current job attempting to acquire the lock
+        :param current_hostname: The hostname of the current worker attempting to acquire the lock
         :return: True if lock was stale and broken, False otherwise
         """
         # Create a temporary instance just for checking
@@ -450,37 +470,51 @@ class JobLock:
             return False
         
         lock_holder_task_id = metadata.get('task_id')
+        lock_holder_hostname = metadata.get('worker')
         logger.info(
             f"Found existing lock for payload {payload_id}: "
-            f"task_id={lock_holder_task_id}, worker={metadata.get('worker')}"
+            f"task_id={lock_holder_task_id}, worker={lock_holder_hostname}"
         )
         
-        # Check if the lock holder is the same as the current task
-        # This happens when a job crashed after acquiring the lock but before completing,
-        # and is now being re-executed with the same task_id
+        # Check if the lock holder has the same task_id as the current task
+        # This happens in two scenarios:
+        # 1. Job crashed and is restarting on the SAME worker (hostname matches)
+        # 2. RabbitMQ redelivered job to a DIFFERENT worker (hostname differs)
         if current_task_id and lock_holder_task_id == current_task_id:
-            # Extra safety check: verify the lock is actually stale by checking heartbeat
-            lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
-            heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
-            
-            # If lock was renewed very recently, the previous execution might still be alive
-            # Give it a buffer of 2x heartbeat interval to account for processing delays
-            if lock_age < (heartbeat_interval * 2):
+            # CRITICAL: Check if hostnames differ
+            # Different hostname = RabbitMQ requeued to different worker = treat as normal stale check
+            if current_hostname and lock_holder_hostname != current_hostname:
                 logger.warning(
-                    f"Lock for payload {payload_id} is held by current task {current_task_id}, "
-                    f"but was renewed {lock_age:.0f}s ago (< {heartbeat_interval * 2}s threshold). "
-                    f"Previous execution may still be active. NOT breaking lock."
+                    f"Lock for payload {payload_id} held by task {current_task_id} on "
+                    f"DIFFERENT worker (holder: {lock_holder_hostname}, current: {current_hostname}). "
+                    f"This indicates RabbitMQ redelivery to a different worker. Checking if stale."
                 )
-                return False
-            
-            logger.warning(
-                f"Lock for payload {payload_id} is held by the current task {current_task_id}. "
-                f"Last renewed {lock_age:.0f}s ago. "
-                f"This indicates a stale lock from a previous execution attempt. Breaking lock."
-            )
-            result = temp_lock.force_release()
-            logger.info(f"force_release() returned: {result}")
-            return result
+                # Fall through to normal stale lock check below
+            else:
+                # Same hostname OR hostname not provided - extra safety check using heartbeat
+                lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+                heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+                
+                # If lock was renewed very recently, the previous execution might still be alive
+                # Give it a buffer of 2x heartbeat interval to account for processing delays
+                if lock_age < (heartbeat_interval * 2):
+                    logger.warning(
+                        f"Lock for payload {payload_id} is held by current task {current_task_id} "
+                        f"on same worker {lock_holder_hostname}, "
+                        f"and was renewed {lock_age:.0f}s ago (< {heartbeat_interval * 2}s threshold). "
+                        f"Previous execution may still be active. NOT breaking lock."
+                    )
+                    return False
+                
+                logger.warning(
+                    f"Lock for payload {payload_id} is held by the current task {current_task_id} "
+                    f"on same worker {lock_holder_hostname}. "
+                    f"Last renewed {lock_age:.0f}s ago. "
+                    f"This indicates a stale lock from a previous execution attempt. Breaking lock."
+                )
+                result = temp_lock.force_release()
+                logger.info(f"force_release() returned: {result}")
+                return result
         
         if temp_lock.is_lock_stale():
             # Lock is stale, break it
