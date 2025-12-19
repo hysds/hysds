@@ -74,7 +74,6 @@ class JobLock:
                 app.conf.REDIS_JOB_STATUS_URL,
                 ssl_cert_reqs="none",
             )
-            logger.info(f"Created Redis connection pool for JobLock: {app.conf.REDIS_JOB_STATUS_URL}")
         return cls._connection_pool
 
     def __init__(self, payload_id, task_id, worker_hostname):
@@ -346,6 +345,7 @@ class JobLock:
             max_time=max_wait_time,
             max_value=8,  # Cap backoff at 8 seconds
             on_giveup=giveup_lock_renewal_check,
+            logger=None,  # Disable backoff's built-in retry logging to avoid log spam
         )
         def check_renewal():
             """Inner function to check lock renewal with backoff."""
