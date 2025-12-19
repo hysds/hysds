@@ -199,10 +199,21 @@ class JobLock:
         if interval is None:
             interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
         
+        # Check if heartbeat is already running
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
-            logger.warning("Heartbeat already running")
+            logger.warning(
+                f"Heartbeat already running for {self.payload_id}. "
+                f"Not starting a new thread."
+            )
             return
         
+        # Clean up any stopped thread references before starting new one
+        if self.heartbeat_thread and not self.heartbeat_thread.is_alive():
+            logger.info(f"Cleaning up stopped heartbeat thread for {self.payload_id}")
+            self.heartbeat_thread = None
+            self.heartbeat_stop_event = None
+        
+        # Create and start new heartbeat thread
         self.heartbeat_stop_event = threading.Event()
         self.heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
@@ -215,25 +226,72 @@ class JobLock:
 
     def stop_heartbeat(self):
         """Stop the heartbeat renewal thread."""
-        if self.heartbeat_stop_event:
-            self.heartbeat_stop_event.set()
+        if not self.heartbeat_stop_event:
+            # No heartbeat running
+            return
+        
+        # Signal thread to stop
+        self.heartbeat_stop_event.set()
+        
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
+            logger.info(f"Stopping heartbeat for job lock {self.payload_id}")
             self.heartbeat_thread.join(timeout=5)
-            logger.info(f"Stopped heartbeat for job lock {self.payload_id}")
+            
+            # Verify thread actually stopped
+            if self.heartbeat_thread.is_alive():
+                logger.error(
+                    f"Heartbeat thread for {self.payload_id} did not stop within timeout. "
+                    f"Thread will continue as daemon but lock is released."
+                )
+            else:
+                logger.info(f"Stopped heartbeat for job lock {self.payload_id}")
+        
+        # Clean up references to help garbage collection
+        self.heartbeat_thread = None
+        self.heartbeat_stop_event = None
 
     def _heartbeat_loop(self, interval):
         """Internal heartbeat loop that runs in a background thread."""
         expire_time = app.conf.get("JOB_LOCK_EXPIRE_TIME", 600)
+        consecutive_failures = 0
+        max_failures = 3
         
-        while not self.heartbeat_stop_event.wait(interval):
-            try:
-                success = self.extend(additional_time=expire_time)
-                if not success:
-                    logger.error(f"Failed to renew lock for {self.payload_id}, stopping heartbeat")
-                    break
-            except Exception as e:
-                logger.error(f"Error in heartbeat loop: {e}")
-                # Continue trying despite errors
+        logger.info(f"Heartbeat loop started for {self.payload_id}")
+        
+        try:
+            while not self.heartbeat_stop_event.wait(interval):
+                try:
+                    success = self.extend(additional_time=expire_time)
+                    if not success:
+                        consecutive_failures += 1
+                        logger.error(
+                            f"Failed to renew lock for {self.payload_id} "
+                            f"({consecutive_failures}/{max_failures})"
+                        )
+                        if consecutive_failures >= max_failures:
+                            logger.error(
+                                f"Max consecutive failures reached for {self.payload_id}, "
+                                f"stopping heartbeat"
+                            )
+                            break
+                    else:
+                        # Reset failure counter on success
+                        consecutive_failures = 0
+                except Exception as e:
+                    consecutive_failures += 1
+                    logger.error(
+                        f"Error in heartbeat loop for {self.payload_id}: {e} "
+                        f"({consecutive_failures}/{max_failures})"
+                    )
+                    if consecutive_failures >= max_failures:
+                        logger.error(
+                            f"Max consecutive errors reached for {self.payload_id}, "
+                            f"stopping heartbeat"
+                        )
+                        break
+                    # Continue trying despite errors
+        finally:
+            logger.info(f"Heartbeat loop exiting for {self.payload_id}")
 
     def get_lock_metadata(self):
         """
