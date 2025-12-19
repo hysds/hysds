@@ -362,7 +362,7 @@ class WorkerExecutionError(Exception):
     def __init__(self, message, job_status):
         self.message = message
         self.job_status = job_status
-        super().__init__(message, job_status)
+        super().__init__(message)
 
     def job_status(self):
         return self.job_status
