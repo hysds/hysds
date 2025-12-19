@@ -54,10 +54,13 @@ BACKOFF_MAX_VALUE = 64
 BACKOFF_MAX_TRIES = 10
 
 # Job lock settings for distributed locking
-JOB_LOCK_EXPIRE_TIME = 600  # Lock expiration time in seconds (10 minutes)
+JOB_LOCK_EXPIRE_TIME = 1800  # Lock expiration time in seconds (10 minutes)
 JOB_LOCK_HEARTBEAT_INTERVAL = 300  # Lock renewal interval in seconds (5 minutes)
 JOB_LOCK_STALE_CHECK_TIMEOUT = 60  # Max time to retry checking task state (60 seconds)
 JOB_LOCK_NEW_GRACE_PERIOD = 120  # Grace period for new locks in seconds (2 minutes)
+# JOB_LOCK_REDELIVERY_WAIT_MAX = None  # Optional: Max time to wait for lock renewal on redelivery
+                                       # If not set, waits for full heartbeat interval + 10s buffer
+                                       # WARNING: Setting this < JOB_LOCK_HEARTBEAT_INTERVAL may break active locks!
 
 PUBLISH_WAIT_BACKOFF_MAX_TIME = 300
 

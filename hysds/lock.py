@@ -27,11 +27,29 @@ class TaskStateIndeterminateException(Exception):
         super().__init__(message)
 
 
+class LockNotRenewedException(Exception):
+    """Exception raised when lock has not been renewed yet during polling."""
+    def __init__(self, message, payload_id, initial_timestamp, current_timestamp):
+        self.message = message
+        self.payload_id = payload_id
+        self.initial_timestamp = initial_timestamp
+        self.current_timestamp = current_timestamp
+        super().__init__(message)
+
+
 def giveup_task_state_check(details):
     """Called when we give up checking task state."""
     logger.warning(
         f"Gave up checking task state after {details.get('elapsed')}s. "
         f"Args: {details.get('args')}"
+    )
+
+
+def giveup_lock_renewal_check(details):
+    """Called when we give up waiting for lock renewal."""
+    logger.warning(
+        f"Gave up waiting for lock renewal after {details.get('elapsed'):.1f}s. "
+        f"Lock was not renewed - original worker is dead."
     )
 
 
@@ -306,6 +324,67 @@ class JobLock:
         except Exception as e:
             logger.error(f"Failed to get lock metadata: {e}")
         return None
+    
+    def _wait_for_lock_renewal(self, initial_last_renewed, max_wait_time=60):
+        """
+        Wait and poll to see if the lock gets renewed by the original worker.
+        Uses exponential backoff (via decorator) to check if last_renewed_at changes.
+        
+        :param initial_last_renewed: The initial last_renewed_at timestamp
+        :param max_wait_time: Maximum time to wait in seconds
+        :return: True if lock was renewed (worker is alive), False if not renewed (worker is dead)
+        """
+        logger.info(
+            f"Waiting up to {max_wait_time:.0f}s to see if lock for {self.payload_id} gets renewed "
+            f"(initial last_renewed: {initial_last_renewed})"
+        )
+        
+        # Create a decorated check function with the specific max_wait_time
+        @backoff.on_exception(
+            backoff.expo,
+            LockNotRenewedException,
+            max_time=max_wait_time,
+            max_value=8,  # Cap backoff at 8 seconds
+            on_giveup=giveup_lock_renewal_check,
+        )
+        def check_renewal():
+            """Inner function to check lock renewal with backoff."""
+            # Check if lock metadata was renewed
+            metadata = self.get_lock_metadata()
+            if not metadata:
+                # Lock was released, treat as stale (worker is dead)
+                logger.warning(f"Lock metadata disappeared during wait, lock released")
+                return False
+            
+            current_last_renewed = metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+            
+            if current_last_renewed > initial_last_renewed:
+                # Lock was renewed! Worker is alive
+                logger.info(
+                    f"Lock for {self.payload_id} was renewed "
+                    f"(timestamp: {initial_last_renewed} → {current_last_renewed}). "
+                    f"Original worker is alive."
+                )
+                return True
+            
+            # Lock not renewed yet, raise exception to trigger retry with backoff
+            raise LockNotRenewedException(
+                f"Lock for {self.payload_id} not renewed yet",
+                payload_id=self.payload_id,
+                initial_timestamp=initial_last_renewed,
+                current_timestamp=current_last_renewed
+            )
+        
+        try:
+            # This will retry with exponential backoff until max_wait_time
+            return check_renewal()
+        except LockNotRenewedException:
+            # Gave up after max_wait_time - lock was not renewed
+            logger.warning(
+                f"Lock for {self.payload_id} was NOT renewed within {max_wait_time:.0f}s. "
+                f"Original worker is considered dead."
+            )
+            return False
 
     @backoff.on_exception(
         backoff.expo,
@@ -539,20 +618,86 @@ class JobLock:
         # 1. Job crashed and is restarting on the SAME worker (hostname matches)
         # 2. RabbitMQ redelivered job to a DIFFERENT worker (hostname differs)
         if current_task_id and lock_holder_task_id == current_task_id:
+            lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+            heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+            
             # CRITICAL: Check if hostnames differ
-            # Different hostname = RabbitMQ requeued to different worker = treat as normal stale check
+            # Different hostname = RabbitMQ requeued to different worker
             if current_hostname and lock_holder_hostname != current_hostname:
                 logger.warning(
                     f"Lock for payload {payload_id} held by task {current_task_id} on "
                     f"DIFFERENT worker (holder: {lock_holder_hostname}, current: {current_hostname}). "
-                    f"This indicates RabbitMQ redelivery to a different worker. Checking if stale."
+                    f"This indicates RabbitMQ redelivery to a different worker. "
+                    f"Lock age: {lock_age:.0f}s, last renewed {lock_age:.0f}s ago."
                 )
-                # Fall through to normal stale lock check below
+                
+                # IMPORTANT: Cannot rely on task state check here because both workers
+                # share the same task_id, and the current worker's STARTED state will
+                # overwrite the previous worker's state in Celery's result backend.
+                # Use lock age and heartbeat as the sole indicator of staleness.
+                
+                # If lock was renewed very recently (within heartbeat interval), we're in an
+                # ambiguous state: the original worker might be alive (heartbeat pending) or
+                # dead (crashed before heartbeat). Wait and observe if lock gets renewed.
+                if lock_age < heartbeat_interval:
+                    logger.warning(
+                        f"Lock was renewed {lock_age:.0f}s ago (< {heartbeat_interval}s heartbeat interval). "
+                        f"Ambiguous state: original worker may be alive or dead. Waiting to observe..."
+                    )
+                    
+                    # Calculate how long to wait: time until next expected heartbeat + small buffer
+                    time_until_heartbeat = heartbeat_interval - lock_age
+                    buffer = 10  # Grace period after expected heartbeat
+                    
+                    # Wait for the full time until heartbeat is expected, plus buffer
+                    # This is critical: if workers started simultaneously, we need to wait the full interval
+                    wait_time = time_until_heartbeat + buffer
+                    
+                    # Respect absolute maximum from config (safety cap)
+                    max_wait = app.conf.get("JOB_LOCK_REDELIVERY_WAIT_MAX", None)
+                    if max_wait is not None:
+                        wait_time = min(wait_time, max_wait)
+                        if wait_time < time_until_heartbeat:
+                            logger.warning(
+                                f"JOB_LOCK_REDELIVERY_WAIT_MAX ({max_wait}s) is less than time until "
+                                f"expected heartbeat ({time_until_heartbeat:.0f}s). May incorrectly "
+                                f"break lock of active worker!"
+                            )
+                    
+                    logger.info(
+                        f"Waiting {wait_time:.0f}s to see if lock gets renewed "
+                        f"(next heartbeat expected in {time_until_heartbeat:.0f}s, buffer: {buffer}s)"
+                    )
+                    
+                    initial_last_renewed = metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+                    lock_was_renewed = temp_lock._wait_for_lock_renewal(initial_last_renewed, max_wait_time=wait_time)
+                    
+                    if lock_was_renewed:
+                        logger.info(
+                            f"Lock for {payload_id} was renewed by original worker {lock_holder_hostname}. "
+                            f"Original worker is alive. NOT breaking lock."
+                        )
+                        return False  # Worker is alive, don't break lock
+                    else:
+                        logger.warning(
+                            f"Lock for {payload_id} was NOT renewed after waiting {wait_time:.0f}s. "
+                            f"Original worker {lock_holder_hostname} is dead. Breaking stale lock."
+                        )
+                        result = temp_lock.force_release()
+                        logger.info(f"force_release() returned: {result}")
+                        return result
+                
+                # Lock hasn't been renewed for at least one heartbeat interval
+                # Original worker is definitely dead (missed at least one heartbeat)
+                logger.warning(
+                    f"Lock not renewed for {lock_age:.0f}s (>= {heartbeat_interval}s heartbeat interval). "
+                    f"Original worker missed heartbeat and is considered dead. Breaking stale lock immediately."
+                )
+                result = temp_lock.force_release()
+                logger.info(f"force_release() returned: {result}")
+                return result
             else:
                 # Same hostname OR hostname not provided - extra safety check using heartbeat
-                lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
-                heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
-                
                 # If lock was renewed very recently, the previous execution might still be alive
                 # Give it a buffer of 2x heartbeat interval to account for processing delays
                 if lock_age < (heartbeat_interval * 2):
