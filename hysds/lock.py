@@ -114,10 +114,15 @@ class JobLock:
             f"task_id={self.task_id}, expire_time={expire_time}s"
         )
         
+        # Get max_extensions from config
+        # Default: 288 extensions = 1 day with 5-minute heartbeat interval
+        max_extensions = app.conf.get("JOB_LOCK_MAX_EXTENSIONS", 288)
+        
         self.locker = Redlock(
             key=self.lock_key,
             masters={self.redis_client},
-            auto_release_time=expire_time
+            auto_release_time=expire_time,
+            num_extensions=max_extensions
         )
         
         timeout_param = wait_time
@@ -187,10 +192,11 @@ class JobLock:
         
         if self.locker:
             try:
-                # Extend the Redlock
-                self.locker.extend(additional_time=additional_time)
+                # Extend the Redlock (extends by original auto_release_time)
+                self.locker.extend()
                 
                 # Update metadata renewal timestamp
+                # Keep metadata TTL in sync with lock TTL
                 metadata = self.get_lock_metadata()
                 if metadata:
                     metadata["last_renewed_at"] = time.time()
