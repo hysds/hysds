@@ -118,6 +118,9 @@ class JobLock:
             f"task_id={self.task_id}, expire_time={expire_time}s"
         )
         
+        # DEBUG: Inspect Redis state before acquisition
+        self.inspect_redis_locks(context="BEFORE ACQUIRE")
+        
         # Get max_extensions from config
         # Default: 288 extensions = 1 day with 5-minute heartbeat interval
         max_extensions = app.conf.get("JOB_LOCK_MAX_EXTENSIONS", 288)
@@ -158,6 +161,9 @@ class JobLock:
                 json.dumps(metadata)
             )
             logger.info(f"Acquired job lock for payload {self.payload_id} (task {self.task_id})")
+            
+            # DEBUG: Inspect Redis state after successful acquisition
+            self.inspect_redis_locks(context="AFTER ACQUIRE SUCCESS")
         
         return acquired
 
@@ -211,6 +217,10 @@ class JobLock:
                     )
                 
                 thread_logger.info(f"Extended job lock for payload {self.payload_id} (task {self.task_id})")
+                
+                # DEBUG: Inspect Redis state after extension
+                self.inspect_redis_locks(context="AFTER EXTEND")
+                
                 return True
             except Exception as e:
                 thread_logger.error(f"Failed to extend lock for payload {self.payload_id} (task {self.task_id}): {e}")
@@ -333,6 +343,59 @@ class JobLock:
         except Exception as e:
             logger.error(f"Failed to get lock metadata: {e}")
         return None
+    
+    def inspect_redis_locks(self, context=""):
+        """
+        Diagnostic method to inspect Redis lock state and log details.
+        
+        :param context: String describing when this inspection is happening (for logging)
+        """
+        try:
+            # The actual Redis key that pottery creates (with "redlock:" prefix)
+            redlock_key = f"redlock:{self.lock_key}"
+            
+            # Check if redlock key exists
+            redlock_exists = self.redis_client.exists(redlock_key)
+            redlock_ttl = self.redis_client.ttl(redlock_key) if redlock_exists else None
+            redlock_value = self.redis_client.get(redlock_key) if redlock_exists else None
+            
+            # Check if metadata key exists
+            metadata_exists = self.redis_client.exists(self.metadata_key)
+            metadata_ttl = self.redis_client.ttl(self.metadata_key) if metadata_exists else None
+            metadata_value = self.redis_client.get(self.metadata_key) if metadata_exists else None
+            
+            # Parse metadata if it exists
+            metadata_parsed = None
+            if metadata_value:
+                try:
+                    metadata_parsed = json.loads(metadata_value)
+                except:
+                    metadata_parsed = {"error": "failed to parse"}
+            
+            # Log detailed information
+            logger.info(
+                f"[LOCK INSPECT - {context}] payload_id={self.payload_id}\n"
+                f"  Redlock key: {redlock_key}\n"
+                f"    exists: {redlock_exists}\n"
+                f"    TTL: {redlock_ttl}s\n"
+                f"    value (UUID): {redlock_value.decode() if redlock_value and hasattr(redlock_value, 'decode') else redlock_value}\n"
+                f"  Metadata key: {self.metadata_key}\n"
+                f"    exists: {metadata_exists}\n"
+                f"    TTL: {metadata_ttl}s\n"
+                f"    value: {metadata_parsed}"
+            )
+            
+            # Also scan for any related keys (useful for debugging)
+            # Note: KEYS command is slow, use only for debugging
+            pattern = f"*{self.payload_id}*"
+            all_keys = self.redis_client.keys(pattern)
+            if all_keys:
+                logger.info(f"[LOCK INSPECT - {context}] All keys matching pattern '{pattern}': {[k.decode() if hasattr(k, 'decode') else k for k in all_keys]}")
+            else:
+                logger.info(f"[LOCK INSPECT - {context}] No keys found matching pattern '{pattern}'")
+                
+        except Exception as e:
+            logger.error(f"[LOCK INSPECT - {context}] Failed to inspect Redis: {e}", exc_info=True)
     
     def _wait_for_lock_renewal(self, initial_last_renewed, max_wait_time=60):
         """
@@ -592,6 +655,9 @@ class JobLock:
         """
         # Create a temporary instance just for checking
         temp_lock = cls(payload_id, task_id="check", worker_hostname="checker")
+        
+        # DEBUG: Inspect Redis state when checking for stale lock
+        temp_lock.inspect_redis_locks(context=f"CHECK STALE LOCK (current_task={current_task_id}, current_host={current_hostname})")
         
         # Check if lock metadata exists
         metadata = temp_lock.get_lock_metadata()
