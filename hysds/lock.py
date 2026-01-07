@@ -2,6 +2,7 @@ from redis import BlockingConnectionPool, StrictRedis
 import threading
 import time
 import json
+import logging
 import traceback
 import backoff
 import celery.states
@@ -9,6 +10,9 @@ from pottery import Redlock
 
 from hysds.celery import app
 from hysds.log_utils import logger
+
+# Standard logger for thread-safe logging (doesn't require Celery task context)
+thread_logger = logging.getLogger(__name__)
 
 
 class LockNotAcquiredException(Exception):
@@ -206,10 +210,10 @@ class JobLock:
                         json.dumps(metadata)
                     )
                 
-                logger.info(f"Extended job lock for payload {self.payload_id}")
+                thread_logger.info(f"Extended job lock for payload {self.payload_id} (task {self.task_id})")
                 return True
             except Exception as e:
-                logger.error(f"Failed to extend lock: {e}")
+                thread_logger.error(f"Failed to extend lock for payload {self.payload_id} (task {self.task_id}): {e}")
                 return False
         return False
 
@@ -279,7 +283,7 @@ class JobLock:
         consecutive_failures = 0
         max_failures = 3
         
-        logger.info(f"Heartbeat loop started for {self.payload_id}")
+        thread_logger.info(f"Heartbeat loop started for payload {self.payload_id} (task {self.task_id})")
         
         try:
             while not self.heartbeat_stop_event.wait(interval):
@@ -287,13 +291,13 @@ class JobLock:
                     success = self.extend(additional_time=expire_time)
                     if not success:
                         consecutive_failures += 1
-                        logger.error(
-                            f"Failed to renew lock for {self.payload_id} "
+                        thread_logger.error(
+                            f"Failed to renew lock for payload {self.payload_id} (task {self.task_id}) "
                             f"({consecutive_failures}/{max_failures})"
                         )
                         if consecutive_failures >= max_failures:
-                            logger.error(
-                                f"Max consecutive failures reached for {self.payload_id}, "
+                            thread_logger.error(
+                                f"Max consecutive failures reached for payload {self.payload_id} (task {self.task_id}), "
                                 f"stopping heartbeat"
                             )
                             break
@@ -302,19 +306,19 @@ class JobLock:
                         consecutive_failures = 0
                 except Exception as e:
                     consecutive_failures += 1
-                    logger.error(
-                        f"Error in heartbeat loop for {self.payload_id}: {e} "
+                    thread_logger.error(
+                        f"Error in heartbeat loop for payload {self.payload_id} (task {self.task_id}): {e} "
                         f"({consecutive_failures}/{max_failures})"
                     )
                     if consecutive_failures >= max_failures:
-                        logger.error(
-                            f"Max consecutive errors reached for {self.payload_id}, "
+                        thread_logger.error(
+                            f"Max consecutive errors reached for payload {self.payload_id} (task {self.task_id}), "
                             f"stopping heartbeat"
                         )
                         break
                     # Continue trying despite errors
         finally:
-            logger.info(f"Heartbeat loop exiting for {self.payload_id}")
+            thread_logger.info(f"Heartbeat loop exiting for payload {self.payload_id} (task {self.task_id})")
 
     def get_lock_metadata(self):
         """
