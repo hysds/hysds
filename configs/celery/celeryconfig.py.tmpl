@@ -80,8 +80,8 @@ JOB_LOCK_NEW_GRACE_PERIOD = 120
 JOB_LOCK_REDELIVERY_BUFFER_TIME = 10
 
 # Optional: Max time to wait for lock renewal on redelivery
-# If not set, waits for (heartbeat_interval × retries) + buffer
-# WARNING: Setting this < expected wait time may break active locks!
+# If not set, waits for (heartbeat_interval x retries) + buffer
+# WARNING: Setting this less than expected wait time may break active locks!
 # JOB_LOCK_REDELIVERY_WAIT_MAX = None
 
 PUBLISH_WAIT_BACKOFF_MAX_TIME = 300
