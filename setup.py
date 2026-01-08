@@ -39,11 +39,17 @@ setup(
         "greenlet>=0.4.15",
         "fab-classic>=1.19.2",
         "pytz",
-        "pytest",
         "tabulate>=0.8.6",
         "pyyaml",
         "pottery",
     ],
-    setup_requires=["pytest-runner"],
-    tests_require=["pytest"],
+    extras_require={
+        'test': [
+            'pytest>=7.2.0',
+            'fakeredis>=2.20.0',
+            'freezegun>=1.4.0',
+            'pytest-mock>=3.11.1',
+            'pytest-cov>=4.1.0',
+        ],
+    },
 )

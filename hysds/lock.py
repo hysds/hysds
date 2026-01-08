@@ -281,7 +281,7 @@ class JobLock:
         """Internal heartbeat loop that runs in a background thread."""
         expire_time = app.conf.get("JOB_LOCK_EXPIRE_TIME", 600)
         consecutive_failures = 0
-        max_failures = 3
+        max_failures = app.conf.get("JOB_LOCK_HEARTBEAT_MAX_FAILURES", 3)
         
         thread_logger.info(f"Heartbeat loop started for payload {self.payload_id} (task {self.task_id})")
         
@@ -655,13 +655,17 @@ class JobLock:
                         f"Ambiguous state: original worker may be alive or dead. Waiting to observe..."
                     )
                     
-                    # Calculate how long to wait: time until next expected heartbeat + small buffer
+                    # Calculate how long to wait: wait for N missed heartbeats before declaring stale
+                    # This is more conservative and handles transient issues (GC pauses, network hiccups, etc.)
+                    retry_count = app.conf.get("JOB_LOCK_STALE_CHECK_RETRIES", 3)
                     time_until_heartbeat = heartbeat_interval - lock_age
-                    buffer = 10  # Grace period after expected heartbeat
+                    buffer = app.conf.get("JOB_LOCK_REDELIVERY_BUFFER_TIME", 10)
                     
-                    # Wait for the full time until heartbeat is expected, plus buffer
-                    # This is critical: if workers started simultaneously, we need to wait the full interval
-                    wait_time = time_until_heartbeat + buffer
+                    # Wait for multiple heartbeat cycles to be conservative
+                    # Formula: time_until_next + (retry_count - 1) * heartbeat_interval + buffer
+                    # Example: if lock renewed 10s ago, heartbeat=30s, retries=3:
+                    #   wait = (30-10) + (30 * 2) + 10 = 20 + 60 + 10 = 90s (wait for 3 heartbeat opportunities)
+                    wait_time = time_until_heartbeat + (heartbeat_interval * (retry_count - 1)) + buffer
                     
                     # Respect absolute maximum from config (safety cap)
                     max_wait = app.conf.get("JOB_LOCK_REDELIVERY_WAIT_MAX", None)
@@ -676,7 +680,8 @@ class JobLock:
                     
                     logger.info(
                         f"Waiting {wait_time:.0f}s to see if lock gets renewed "
-                        f"(next heartbeat expected in {time_until_heartbeat:.0f}s, buffer: {buffer}s)"
+                        f"(checking for {retry_count} missed heartbeats: next in {time_until_heartbeat:.0f}s, "
+                        f"then {retry_count - 1} more cycles of {heartbeat_interval}s, buffer: {buffer}s)"
                     )
                     
                     initial_last_renewed = metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
@@ -698,36 +703,123 @@ class JobLock:
                         return result
                 
                 # Lock hasn't been renewed for at least one heartbeat interval
-                # Original worker is definitely dead (missed at least one heartbeat)
-                logger.warning(
-                    f"Lock not renewed for {lock_age:.0f}s (>= {heartbeat_interval}s heartbeat interval). "
-                    f"Original worker missed heartbeat and is considered dead. Breaking stale lock immediately."
-                )
-                result = temp_lock.force_release()
-                logger.info(f"force_release() returned: {result}")
-                return result
+                # Check if it's been long enough to declare stale without waiting
+                retry_count = app.conf.get("JOB_LOCK_STALE_CHECK_RETRIES", 3)
+                stale_threshold = heartbeat_interval * retry_count
+                
+                if lock_age >= stale_threshold:
+                    # Definitely stale - missed multiple heartbeats already
+                    logger.warning(
+                        f"Lock not renewed for {lock_age:.0f}s (>= {stale_threshold:.0f}s = "
+                        f"{retry_count} × {heartbeat_interval}s heartbeat interval). "
+                        f"Original worker missed {retry_count}+ heartbeats and is dead. Breaking stale lock immediately."
+                    )
+                    result = temp_lock.force_release()
+                    logger.info(f"force_release() returned: {result}")
+                    return result
+                else:
+                    # Between 1x and Nx heartbeat interval - wait for remaining cycles
+                    logger.warning(
+                        f"Lock not renewed for {lock_age:.0f}s (>= {heartbeat_interval}s but < {stale_threshold:.0f}s). "
+                        f"Waiting to observe if worker is truly dead..."
+                    )
+                    
+                    buffer = app.conf.get("JOB_LOCK_REDELIVERY_BUFFER_TIME", 10)
+                    # Calculate remaining wait time to reach stale_threshold
+                    wait_time = (stale_threshold - lock_age) + buffer
+                    
+                    # Respect absolute maximum from config (safety cap)
+                    max_wait = app.conf.get("JOB_LOCK_REDELIVERY_WAIT_MAX", None)
+                    if max_wait is not None:
+                        wait_time = min(wait_time, max_wait)
+                    
+                    logger.info(
+                        f"Waiting {wait_time:.0f}s for remaining heartbeat cycles "
+                        f"(need {retry_count} total missed heartbeats)"
+                    )
+                    
+                    initial_last_renewed = metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+                    lock_was_renewed = temp_lock._wait_for_lock_renewal(initial_last_renewed, max_wait_time=wait_time)
+                    
+                    if lock_was_renewed:
+                        logger.info(
+                            f"Lock for {payload_id} was renewed by original worker {lock_holder_hostname}. "
+                            f"Original worker is alive. NOT breaking lock."
+                        )
+                        return False
+                    else:
+                        logger.warning(
+                            f"Lock for {payload_id} was NOT renewed after waiting {wait_time:.0f}s. "
+                            f"Original worker {lock_holder_hostname} is dead. Breaking stale lock."
+                        )
+                        result = temp_lock.force_release()
+                        logger.info(f"force_release() returned: {result}")
+                        return result
             else:
                 # Same hostname OR hostname not provided - extra safety check using heartbeat
-                # If lock was renewed very recently, the previous execution might still be alive
-                # Give it a buffer of 2x heartbeat interval to account for processing delays
-                if lock_age < (heartbeat_interval * 2):
+                # This is MORE dangerous than different worker case: previous execution might be
+                # running as an orphan on the same machine. Use same wait-and-observe logic.
+                retry_count = app.conf.get("JOB_LOCK_STALE_CHECK_RETRIES", 3)
+                stale_threshold = heartbeat_interval * retry_count
+                
+                if lock_age >= stale_threshold:
+                    # Definitely stale - missed multiple heartbeats already
                     logger.warning(
                         f"Lock for payload {payload_id} is held by current task {current_task_id} "
-                        f"on same worker {lock_holder_hostname}, "
-                        f"and was renewed {lock_age:.0f}s ago (< {heartbeat_interval * 2}s threshold). "
-                        f"Previous execution may still be active. NOT breaking lock."
+                        f"on same worker {lock_holder_hostname}. "
+                        f"Lock not renewed for {lock_age:.0f}s (>= {stale_threshold:.0f}s = "
+                        f"{retry_count} × {heartbeat_interval}s). "
+                        f"Previous execution is dead. Breaking stale lock immediately."
+                    )
+                    result = temp_lock.force_release()
+                    logger.info(f"force_release() returned: {result}")
+                    return result
+                
+                # Lock age < stale_threshold - need to wait and observe
+                logger.warning(
+                    f"Lock for payload {payload_id} is held by current task {current_task_id} "
+                    f"on same worker {lock_holder_hostname}. "
+                    f"Lock age: {lock_age:.0f}s (< {stale_threshold:.0f}s). "
+                    f"Waiting to observe if previous execution is still alive..."
+                )
+                
+                buffer = app.conf.get("JOB_LOCK_REDELIVERY_BUFFER_TIME", 10)
+                
+                if lock_age < heartbeat_interval:
+                    # Recent renewal - wait for multiple cycles
+                    time_until_heartbeat = heartbeat_interval - lock_age
+                    wait_time = time_until_heartbeat + (heartbeat_interval * (retry_count - 1)) + buffer
+                else:
+                    # Between 1x and Nx heartbeat interval - wait for remaining cycles
+                    wait_time = (stale_threshold - lock_age) + buffer
+                
+                # Respect absolute maximum from config (safety cap)
+                max_wait = app.conf.get("JOB_LOCK_REDELIVERY_WAIT_MAX", None)
+                if max_wait is not None:
+                    wait_time = min(wait_time, max_wait)
+                
+                logger.info(
+                    f"Waiting {wait_time:.0f}s to see if lock gets renewed "
+                    f"(checking for {retry_count} missed heartbeats on same worker)"
+                )
+                
+                initial_last_renewed = metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
+                lock_was_renewed = temp_lock._wait_for_lock_renewal(initial_last_renewed, max_wait_time=wait_time)
+                
+                if lock_was_renewed:
+                    logger.info(
+                        f"Lock for {payload_id} was renewed by previous execution on same worker {lock_holder_hostname}. "
+                        f"Previous execution is still alive. NOT breaking lock."
                     )
                     return False
-                
-                logger.warning(
-                    f"Lock for payload {payload_id} is held by the current task {current_task_id} "
-                    f"on same worker {lock_holder_hostname}. "
-                    f"Last renewed {lock_age:.0f}s ago. "
-                    f"This indicates a stale lock from a previous execution attempt. Breaking lock."
-                )
-                result = temp_lock.force_release()
-                logger.info(f"force_release() returned: {result}")
-                return result
+                else:
+                    logger.warning(
+                        f"Lock for {payload_id} was NOT renewed after waiting {wait_time:.0f}s. "
+                        f"Previous execution on same worker {lock_holder_hostname} is dead. Breaking stale lock."
+                    )
+                    result = temp_lock.force_release()
+                    logger.info(f"force_release() returned: {result}")
+                    return result
         
         if temp_lock.is_lock_stale():
             # Lock is stale, break it

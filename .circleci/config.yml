@@ -34,7 +34,7 @@ jobs:
           name: Test
           command: |
             source $HOME/.bash_profile
-            pip install -e .
+            pip install -e .[test]
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
             pytest -s --junit-xml=test-results/pytest/results.xml test
       - store_test_results:
@@ -50,8 +50,7 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            pip install pytest==7.2.0
-            pip install .
+            pip install -e .[test]
       - run:
           name: pytest
           command: |
