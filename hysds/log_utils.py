@@ -234,16 +234,23 @@ def log_job_status(job):
 
     set_redis_job_status_pool()
     global JOB_STATUS_POOL
-    job["resource"] = "job"
-    job["type"] = job.get("job", {}).get("type", "unknown")
-    job["@version"] = "1"
-    job["@timestamp"] = f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z"
-    if "tag" in job.get("job", {}):
-        tags = job.setdefault("tags", [])
+
+    # Remove duplicate top-level 'context' (identical to 'job.context') before indexing.
+    # Original job dict is preserved for Redis key/status operations.
+    job_for_indexing = copy.deepcopy(job)
+    if "context" in job_for_indexing:
+        del job_for_indexing["context"]
+
+    job_for_indexing["resource"] = "job"
+    job_for_indexing["type"] = job_for_indexing.get("job", {}).get("type", "unknown")
+    job_for_indexing["@version"] = "1"
+    job_for_indexing["@timestamp"] = f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z"
+    if "tag" in job_for_indexing.get("job", {}):
+        tags = job_for_indexing.setdefault("tags", [])
         if isinstance(tags, str):
             tags = [tags]
-        tags.append(job["job"]["tag"])
-        job["tags"] = tags
+        tags.append(job_for_indexing["job"]["tag"])
+        job_for_indexing["tags"] = tags
 
     # send update to redis
     r = StrictRedis(connection_pool=JOB_STATUS_POOL,
@@ -253,8 +260,8 @@ def log_job_status(job):
         app.conf.HYSDS_JOB_STATUS_EXPIRES,
         job["status"],
     )
-    r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job))  # for ES
-    logger.info(f"job_status_json:{json.dumps(job)}")
+    r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job_for_indexing))  # for ES
+    logger.info(f"job_status_json:{json.dumps(job_for_indexing)}")
 
 
 @backoff.on_exception(

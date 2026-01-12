@@ -83,7 +83,8 @@ def update_query(_id, system_version, rule):
 @backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
 def search_es(index, body):
     grq_es = get_grq_es()
-    return grq_es.es.search(index=index, body=body, request_timeout=30)
+    # Use wrapper method instead of direct ES call for closed index handling (HC-600)
+    return grq_es.search(index=index, body=body, request_timeout=30)
 
 
 def evaluate_user_rules_dataset(

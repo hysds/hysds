@@ -10,6 +10,18 @@ class Docker(Base):
     def __init__(self):
         super().__init__()
 
+    @staticmethod
+    def get_docker_socket_path():
+        """Get Docker socket path, supporting both rootless and rootful Docker."""
+        xdg_runtime_dir = os.environ.get('XDG_RUNTIME_DIR')
+        if xdg_runtime_dir:
+            # Rootless Docker
+            rootless_socket = os.path.join(xdg_runtime_dir, 'docker.sock')
+            if os.path.exists(rootless_socket):
+                return rootless_socket
+        # Fallback to rootful Docker
+        return '/var/run/docker.sock'
+    
     def inspect_image(self, image):
         """
         inspect the container image; ex. docker inspect <image>
@@ -116,10 +128,11 @@ class Docker(Base):
             host_verdi_home,
         )
         docker_sock = "/var/run/docker.sock"
+        host_docker_sock = Docker.get_docker_socket_path()
         params["volumes"].insert(
             0,
             (
-                docker_sock,
+                host_docker_sock,
                 docker_sock,
             ),
         )
