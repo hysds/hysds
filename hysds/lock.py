@@ -119,8 +119,8 @@ class JobLock:
         )
         
         # Get max_extensions from config
-        # Default: 288 extensions = 1 day with 5-minute heartbeat interval
-        max_extensions = app.conf.get("JOB_LOCK_MAX_EXTENSIONS", 288)
+        # Default: 4328 extensions = 1 day with 30-second heartbeat interval
+        max_extensions = app.conf.get("JOB_LOCK_MAX_EXTENSIONS", 4320)
         
         self.locker = Redlock(
             key=self.lock_key,
@@ -224,7 +224,7 @@ class JobLock:
         :param interval: Renewal interval in seconds (default from config)
         """
         if interval is None:
-            interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+            interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 30)
         
         # Check if heartbeat is already running
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
@@ -483,7 +483,7 @@ class JobLock:
         # Get config values
         expire_time = app.conf.get("JOB_LOCK_EXPIRE_TIME", 600)
         grace_period = app.conf.get("JOB_LOCK_NEW_GRACE_PERIOD", 120)
-        heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+        heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 30)
         
         # Fast path: If lock is very old and not being renewed, it's stale
         if lock_age > expire_time:
@@ -633,7 +633,7 @@ class JobLock:
         # 2. RabbitMQ redelivered job to a DIFFERENT worker (hostname differs)
         if current_task_id and lock_holder_task_id == current_task_id:
             lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
-            heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+            heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 30)
             
             # CRITICAL: Check if hostnames differ
             # Different hostname = RabbitMQ requeued to different worker
@@ -835,7 +835,7 @@ class JobLock:
         
         # Calculate lock age and get config values
         lock_age = time.time() - metadata.get('last_renewed_at', metadata.get('acquired_at', 0))
-        heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 300)
+        heartbeat_interval = app.conf.get("JOB_LOCK_HEARTBEAT_INTERVAL", 30)
         retry_count = app.conf.get("JOB_LOCK_STALE_CHECK_RETRIES", 3)
         stale_threshold = heartbeat_interval * retry_count
         
