@@ -441,16 +441,15 @@ class TestJobLockWaitForRenewal(TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.fake_redis = fakeredis.FakeStrictRedis()
+        self.fake_redis_server = fakeredis.FakeServer()
+        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
         
-        self.redis_patcher = umock.patch.object(
-            JobLock,
-            '_get_connection_pool',
-            return_value=self.fake_redis
-        )
+        # Patch StrictRedis to return our fake redis instance
+        self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
         
         from hysds import celery
+        celery.app.conf.REDIS_JOB_STATUS_URL = "redis://localhost:6379/0"
         celery.app.conf.JOB_LOCK_EXPIRE_TIME = 600
         celery.app.conf.JOB_LOCK_HEARTBEAT_INTERVAL = 30
         celery.app.conf.JOB_LOCK_MAX_EXTENSIONS = 4320
