@@ -33,17 +33,14 @@ class TestJobLockBasicOperations(TestCase):
     
     def setUp(self):
         """Set up test fixtures with fake Redis."""
-        self.fake_redis = fakeredis.FakeStrictRedis()
+        self.fake_redis_server = fakeredis.FakeServer()
+        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
         self.payload_id = "test-payload-123"
         self.task_id = "test-task-456"
         self.hostname = "test-worker-1"
         
-        # Patch Redis connection pool to use fake Redis
-        self.redis_patcher = umock.patch.object(
-            JobLock,
-            '_get_connection_pool',
-            return_value=self.fake_redis
-        )
+        # Patch StrictRedis to return our fake redis instance
+        self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
         
         # Mock app.conf with production defaults
@@ -189,16 +186,14 @@ class TestJobLockHeartbeat(TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.fake_redis = fakeredis.FakeStrictRedis()
+        self.fake_redis_server = fakeredis.FakeServer()
+        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
         self.payload_id = "test-payload-heartbeat"
         self.task_id = "test-task-heartbeat"
         self.hostname = "test-worker-heartbeat"
         
-        self.redis_patcher = umock.patch.object(
-            JobLock,
-            '_get_connection_pool',
-            return_value=self.fake_redis
-        )
+        # Patch StrictRedis to return our fake redis instance
+        self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
         
         from hysds import celery
@@ -320,13 +315,11 @@ class TestJobLockStaleLockDetection(TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.fake_redis = fakeredis.FakeStrictRedis()
+        self.fake_redis_server = fakeredis.FakeServer()
+        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
         
-        self.redis_patcher = umock.patch.object(
-            JobLock,
-            '_get_connection_pool',
-            return_value=self.fake_redis
-        )
+        # Patch StrictRedis to return our fake redis instance
+        self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
         
         from hysds import celery
