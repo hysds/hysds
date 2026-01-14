@@ -34,13 +34,17 @@ def reset_lock_state():
     # Reset class-level connection pool
     JobLock._connection_pool = None
     
-    # Stop all existing patches to ensure clean state
-    umock.patch.stopall()
+    # Reinitialize the hysds.celery mock to ensure clean state
+    # This prevents pollution from other tests that might have modified it
+    import sys
+    celery_mock = umock.MagicMock()
+    celery_mock.app.conf.get = umock.MagicMock(return_value=None)
+    sys.modules["hysds.celery"] = celery_mock
     
     yield
     
     # Cleanup after test
-    umock.patch.stopall()
+    JobLock._connection_pool = None
 
 
 class TestJobLockBasicOperations(TestCase):
