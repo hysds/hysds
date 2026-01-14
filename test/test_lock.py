@@ -28,6 +28,21 @@ from pottery.exceptions import ExtendUnlockedLock, TooManyExtensions
 from hysds.lock import JobLock, LockNotAcquiredException, TaskStateIndeterminateException
 
 
+@pytest.fixture(autouse=True)
+def reset_lock_state():
+    """Reset JobLock state before each test to avoid cross-test pollution."""
+    # Reset class-level connection pool
+    JobLock._connection_pool = None
+    
+    # Stop all existing patches to ensure clean state
+    umock.patch.stopall()
+    
+    yield
+    
+    # Cleanup after test
+    umock.patch.stopall()
+
+
 class TestJobLockBasicOperations(TestCase):
     """Test basic lock acquire/release/extend operations."""
     
