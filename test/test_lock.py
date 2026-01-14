@@ -34,7 +34,7 @@ class TestJobLockBasicOperations(TestCase):
     def setUp(self):
         """Set up test fixtures with fake Redis."""
         self.fake_redis_server = fakeredis.FakeServer()
-        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
+        self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         self.payload_id = "test-payload-123"
         self.task_id = "test-task-456"
         self.hostname = "test-worker-1"
@@ -195,7 +195,7 @@ class TestJobLockHeartbeat(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.fake_redis_server = fakeredis.FakeServer()
-        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
+        self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         self.payload_id = "test-payload-heartbeat"
         self.task_id = "test-task-heartbeat"
         self.hostname = "test-worker-heartbeat"
@@ -324,7 +324,7 @@ class TestJobLockStaleLockDetection(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.fake_redis_server = fakeredis.FakeServer()
-        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
+        self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         
         # Patch StrictRedis to return our fake redis instance
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
@@ -450,7 +450,7 @@ class TestJobLockWaitForRenewal(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.fake_redis_server = fakeredis.FakeServer()
-        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
+        self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         
         # Patch StrictRedis to return our fake redis instance
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
@@ -536,7 +536,7 @@ class TestJobLockConcurrency(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.fake_redis_server = fakeredis.FakeServer()
-        self.fake_redis = fakeredis.FakeStrictRedis(server=self.fake_redis_server)
+        self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         
         # Patch StrictRedis to return our fake redis instance
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
