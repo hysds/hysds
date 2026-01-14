@@ -66,6 +66,25 @@ class TestJobLockBasicOperations(TestCase):
     
     def test_acquire_lock_success(self):
         """Test successfully acquiring a lock when no lock exists."""
+        
+        # First, test if Redlock works with fakeredis at all
+        print(f"\n=== DEBUG: Testing Redlock directly with fakeredis ===")
+        try:
+            test_redlock = Redlock(
+                key="test-key",
+                masters={self.fake_redis},
+                auto_release_time=10
+            )
+            direct_result = test_redlock.acquire(timeout=0)
+            print(f"Direct Redlock.acquire() result: {direct_result}")
+            print(f"Keys after direct acquire: {self.fake_redis.keys('*')}")
+            if direct_result:
+                test_redlock.release()
+        except Exception as e:
+            print(f"ERROR with direct Redlock: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+        
         lock = JobLock(self.payload_id, self.task_id, self.hostname)
         
         print(f"\n=== DEBUG: Created lock object ===")
