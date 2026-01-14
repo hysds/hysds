@@ -618,9 +618,15 @@ class TestJobLockWaitForRenewal(TestCase):
         self.fake_redis_server = fakeredis.FakeServer()
         self.fake_redis = fakeredis.FakeRedis(server=self.fake_redis_server)
         
-        # Patch StrictRedis to return our fake redis instance
+        JobLock._connection_pool = None
+        mock_pool = umock.Mock()
+        mock_pool.connection_kwargs = {"protocol": 2}
+        self.pool_patcher = umock.patch('hysds.lock.BlockingConnectionPool.from_url', return_value=mock_pool)
+        self.pool_patcher.start()
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
+        self.redlock_patcher = umock.patch('hysds.lock.Redlock', side_effect=self._create_mock_redlock)
+        self.redlock_patcher.start()
         
         from hysds import celery
         celery.app.conf.REDIS_JOB_STATUS_URL = "redis://localhost:6379/0"
@@ -630,9 +636,40 @@ class TestJobLockWaitForRenewal(TestCase):
         celery.app.conf.JOB_LOCK_HEARTBEAT_MAX_FAILURES = 3
         celery.app.conf.JOB_LOCK_STALE_CHECK_RETRIES = 3
         
+        def mock_conf_get(key, default=None):
+            config_values = {"JOB_LOCK_EXPIRE_TIME": 600, "JOB_LOCK_HEARTBEAT_INTERVAL": 30, "JOB_LOCK_MAX_EXTENSIONS": 4320, "JOB_LOCK_HEARTBEAT_MAX_FAILURES": 3, "JOB_LOCK_STALE_CHECK_RETRIES": 3, "JOB_LOCK_STALE_CHECK_TIMEOUT": 60, "JOB_LOCK_REDELIVERY_BUFFER_TIME": 10, "broker_use_ssl": {}}
+            return config_values.get(key, default)
+        celery.app.conf.get = mock_conf_get
+    
+    def _create_mock_redlock(self, key, masters, auto_release_time, num_extensions=0):
+        mock_redlock = umock.MagicMock()
+        mock_redlock.key = key
+        mock_redlock.masters = masters
+        redis_client = list(masters)[0] if masters else self.fake_redis
+        expire_time = int(auto_release_time) if not isinstance(auto_release_time, umock.MagicMock) else 600
+        def mock_acquire(timeout=10):
+            return redis_client.set(f"redlock:{key}", "locked", nx=True, ex=expire_time) is not None
+        def mock_release():
+            redis_client.delete(f"redlock:{key}")
+        def mock_extend():
+            if redis_client.exists(f"redlock:{key}"):
+                redis_client.expire(f"redlock:{key}", expire_time)
+                return True
+            return False
+        def mock_locked():
+            ttl = redis_client.ttl(f"redlock:{key}")
+            return float(ttl) if ttl > 0 else 0.0
+        mock_redlock.acquire = mock_acquire
+        mock_redlock.release = mock_release
+        mock_redlock.extend = mock_extend
+        mock_redlock.locked = mock_locked
+        return mock_redlock
+        
     def tearDown(self):
         """Clean up."""
+        self.pool_patcher.stop()
         self.redis_patcher.stop()
+        self.redlock_patcher.stop()
         umock.patch.stopall()
     
     def test_wait_for_renewal_lock_renewed(self):
