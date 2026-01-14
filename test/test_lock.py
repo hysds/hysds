@@ -50,6 +50,11 @@ class TestJobLockBasicOperations(TestCase):
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
         
+        # Mock pottery.Redlock since it doesn't work with fakeredis
+        # We'll create a mock that simulates lock behavior using fakeredis directly
+        self.redlock_patcher = umock.patch('hysds.lock.Redlock', side_effect=self._create_mock_redlock)
+        self.redlock_patcher.start()
+        
         # Mock app.conf with production defaults
         from hysds import celery
         celery.app.conf.JOB_LOCK_EXPIRE_TIME = 600
@@ -57,11 +62,48 @@ class TestJobLockBasicOperations(TestCase):
         celery.app.conf.JOB_LOCK_MAX_EXTENSIONS = 4320
         celery.app.conf.JOB_LOCK_HEARTBEAT_MAX_FAILURES = 3
         celery.app.conf.JOB_LOCK_STALE_CHECK_RETRIES = 3
+    
+    def _create_mock_redlock(self, key, masters, auto_release_time, num_extensions=0):
+        """Create a mock Redlock that works with fakeredis."""
+        mock_redlock = umock.MagicMock()
+        mock_redlock.key = key
+        mock_redlock.masters = masters
+        
+        # Get the redis client from masters
+        redis_client = list(masters)[0] if masters else self.fake_redis
+        
+        def mock_acquire(timeout=10):
+            """Simulate lock acquisition using SET NX."""
+            redlock_key = f"redlock:{key}"
+            # Use SET with NX (only set if not exists) and EX (expiration)
+            result = redis_client.set(redlock_key, "locked", nx=True, ex=auto_release_time)
+            return result is not None and result
+        
+        def mock_release():
+            """Simulate lock release."""
+            redlock_key = f"redlock:{key}"
+            redis_client.delete(redlock_key)
+        
+        def mock_extend():
+            """Simulate lock extension."""
+            redlock_key = f"redlock:{key}"
+            # Check if lock exists
+            if redis_client.exists(redlock_key):
+                redis_client.expire(redlock_key, auto_release_time)
+                return True
+            return False
+        
+        mock_redlock.acquire = mock_acquire
+        mock_redlock.release = mock_release
+        mock_redlock.extend = mock_extend
+        
+        return mock_redlock
         
     def tearDown(self):
         """Clean up patches."""
         self.pool_patcher.stop()
         self.redis_patcher.stop()
+        self.redlock_patcher.stop()
         umock.patch.stopall()
     
     def test_acquire_lock_success(self):
