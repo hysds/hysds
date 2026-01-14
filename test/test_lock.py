@@ -62,6 +62,22 @@ class TestJobLockBasicOperations(TestCase):
         celery.app.conf.JOB_LOCK_MAX_EXTENSIONS = 4320
         celery.app.conf.JOB_LOCK_HEARTBEAT_MAX_FAILURES = 3
         celery.app.conf.JOB_LOCK_STALE_CHECK_RETRIES = 3
+        
+        # Configure app.conf.get() to return proper values
+        def mock_conf_get(key, default=None):
+            config_values = {
+                "JOB_LOCK_EXPIRE_TIME": 600,
+                "JOB_LOCK_HEARTBEAT_INTERVAL": 30,
+                "JOB_LOCK_MAX_EXTENSIONS": 4320,
+                "JOB_LOCK_HEARTBEAT_MAX_FAILURES": 3,
+                "JOB_LOCK_STALE_CHECK_RETRIES": 3,
+                "JOB_LOCK_STALE_CHECK_TIMEOUT": 60,
+                "JOB_LOCK_REDELIVERY_BUFFER_TIME": 10,
+                "broker_use_ssl": {},
+            }
+            return config_values.get(key, default)
+        
+        celery.app.conf.get = mock_conf_get
     
     def _create_mock_redlock(self, key, masters, auto_release_time, num_extensions=0):
         """Create a mock Redlock that works with fakeredis."""
