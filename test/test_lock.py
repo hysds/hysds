@@ -68,8 +68,19 @@ class TestJobLockBasicOperations(TestCase):
         """Test successfully acquiring a lock when no lock exists."""
         lock = JobLock(self.payload_id, self.task_id, self.hostname)
         
+        print(f"\n=== DEBUG: Created lock object ===")
+        print(f"lock.redis_client type: {type(lock.redis_client)}")
+        print(f"lock.redis_client: {lock.redis_client}")
+        print(f"lock.lock_key: {lock.lock_key}")
+        
         # Should acquire successfully
+        print(f"\n=== DEBUG: Calling lock.acquire(wait_time=0) ===")
         result = lock.acquire(wait_time=0)
+        print(f"\n=== DEBUG: lock.acquire() returned: {result} ===")
+        print(f"lock.locker: {lock.locker}")
+        if lock.locker:
+            print(f"lock.locker type: {type(lock.locker)}")
+        
         self.assertTrue(result)
         
         # Verify Redis keys exist
