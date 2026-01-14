@@ -794,6 +794,10 @@ class TestJobLockConfiguration(TestCase):
         
         from hysds import celery
         def mock_conf_get(key, default=None):
+            # Check if the attribute exists on celery.app.conf first (for test overrides)
+            if hasattr(celery.app.conf, key):
+                return getattr(celery.app.conf, key)
+            # Fall back to default config values
             config_values = {"JOB_LOCK_EXPIRE_TIME": 600, "JOB_LOCK_HEARTBEAT_INTERVAL": 30, "JOB_LOCK_MAX_EXTENSIONS": 4320, "JOB_LOCK_HEARTBEAT_MAX_FAILURES": 3, "JOB_LOCK_STALE_CHECK_RETRIES": 3, "JOB_LOCK_STALE_CHECK_TIMEOUT": 60, "JOB_LOCK_REDELIVERY_BUFFER_TIME": 10, "broker_use_ssl": {}}
             return config_values.get(key, default)
         celery.app.conf.get = mock_conf_get
