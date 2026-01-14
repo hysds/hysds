@@ -72,11 +72,14 @@ class TestJobLockBasicOperations(TestCase):
         # Get the redis client from masters
         redis_client = list(masters)[0] if masters else self.fake_redis
         
+        # Ensure auto_release_time is an integer (not a MagicMock)
+        expire_time = int(auto_release_time) if not isinstance(auto_release_time, umock.MagicMock) else 600
+        
         def mock_acquire(timeout=10):
             """Simulate lock acquisition using SET NX."""
             redlock_key = f"redlock:{key}"
             # Use SET with NX (only set if not exists) and EX (expiration)
-            result = redis_client.set(redlock_key, "locked", nx=True, ex=auto_release_time)
+            result = redis_client.set(redlock_key, "locked", nx=True, ex=expire_time)
             return result is not None and result
         
         def mock_release():
@@ -89,7 +92,7 @@ class TestJobLockBasicOperations(TestCase):
             redlock_key = f"redlock:{key}"
             # Check if lock exists
             if redis_client.exists(redlock_key):
-                redis_client.expire(redlock_key, auto_release_time)
+                redis_client.expire(redlock_key, expire_time)
                 return True
             return False
         
