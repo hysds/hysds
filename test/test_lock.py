@@ -314,7 +314,9 @@ class TestJobLockHeartbeat(TestCase):
         self.hostname = "test-worker-heartbeat"
         
         JobLock._connection_pool = None
-        self.pool_patcher = umock.patch('hysds.lock.BlockingConnectionPool.from_url', return_value=umock.Mock())
+        mock_pool = umock.Mock()
+        mock_pool.connection_kwargs = {"protocol": 2}
+        self.pool_patcher = umock.patch('hysds.lock.BlockingConnectionPool.from_url', return_value=mock_pool)
         self.pool_patcher.start()
         
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
