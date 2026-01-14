@@ -28,25 +28,6 @@ from pottery.exceptions import ExtendUnlockedLock, TooManyExtensions
 from hysds.lock import JobLock, LockNotAcquiredException, TaskStateIndeterminateException
 
 
-@pytest.fixture(autouse=True)
-def reset_lock_state():
-    """Reset JobLock state before each test to avoid cross-test pollution."""
-    # Reset class-level connection pool
-    JobLock._connection_pool = None
-    
-    # Reinitialize the hysds.celery mock to ensure clean state
-    # This prevents pollution from other tests that might have modified it
-    import sys
-    celery_mock = umock.MagicMock()
-    celery_mock.app.conf.get = umock.MagicMock(return_value=None)
-    sys.modules["hysds.celery"] = celery_mock
-    
-    yield
-    
-    # Cleanup after test
-    JobLock._connection_pool = None
-
-
 class TestJobLockBasicOperations(TestCase):
     """Test basic lock acquire/release/extend operations."""
     
