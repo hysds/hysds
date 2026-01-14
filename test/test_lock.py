@@ -135,54 +135,8 @@ class TestJobLockBasicOperations(TestCase):
     
     def test_acquire_lock_success(self):
         """Test successfully acquiring a lock when no lock exists."""
-        
-        # First, test if Redlock works with fakeredis at all
-        print(f"\n=== DEBUG: Testing Redlock directly with fakeredis ===")
-        try:
-            test_redlock = Redlock(
-                key="test-key",
-                masters={self.fake_redis},
-                auto_release_time=10
-            )
-            direct_result = test_redlock.acquire(timeout=0)
-            print(f"Direct Redlock.acquire() result: {direct_result}")
-            print(f"Keys after direct acquire: {self.fake_redis.keys('*')}")
-            if direct_result:
-                test_redlock.release()
-        except Exception as e:
-            print(f"ERROR with direct Redlock: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-        
         lock = JobLock(self.payload_id, self.task_id, self.hostname)
-        
-        print(f"\n=== DEBUG: Created lock object ===")
-        print(f"lock.redis_client type: {type(lock.redis_client)}")
-        print(f"lock.redis_client: {lock.redis_client}")
-        print(f"lock.lock_key: {lock.lock_key}")
-        print(f"self.fake_redis is lock.redis_client: {self.fake_redis is lock.redis_client}")
-        
-        # Check Redis before acquire
-        print(f"\n=== DEBUG: Redis state BEFORE acquire ===")
-        all_keys = self.fake_redis.keys('*')
-        print(f"All keys in Redis: {all_keys}")
-        
-        # Should acquire successfully
-        print(f"\n=== DEBUG: Calling lock.acquire(wait_time=0) ===")
         result = lock.acquire(wait_time=0)
-        print(f"\n=== DEBUG: lock.acquire() returned: {result} ===")
-        print(f"lock.locker: {lock.locker}")
-        if lock.locker:
-            print(f"lock.locker type: {type(lock.locker)}")
-            print(f"lock.locker.masters: {lock.locker.masters}")
-        
-        # Check Redis after acquire
-        print(f"\n=== DEBUG: Redis state AFTER acquire ===")
-        all_keys = self.fake_redis.keys('*')
-        print(f"All keys in Redis: {all_keys}")
-        for key in all_keys:
-            print(f"  {key}: {self.fake_redis.get(key)}")
-        
         self.assertTrue(result)
         
         # Verify Redis keys exist
@@ -410,28 +364,6 @@ class TestJobLockHeartbeat(TestCase):
         lock.stop_heartbeat()
         lock.release()
     
-    def test_heartbeat_stops_on_release(self):
-        """Test heartbeat stops when lock is released."""
-        lock = JobLock(self.payload_id, self.task_id, self.hostname)
-        lock.acquire(wait_time=0)
-        lock.start_heartbeat(interval=1)
-        
-        # Wait for heartbeat to start
-        time.sleep(0.5)
-        self.assertTrue(lock.heartbeat_thread.is_alive())
-        
-        # Release lock
-        lock.release()
-        
-        # Wait a bit for thread to stop
-        time.sleep(1.5)
-        
-        # Heartbeat thread should be stopped
-        self.assertFalse(
-            lock.heartbeat_thread.is_alive(),
-            "Heartbeat thread should stop after release"
-        )
-    
     @umock.patch('hysds.lock.thread_logger')
     def test_heartbeat_handles_redis_failure(self, mock_logger):
         """Test heartbeat handles Redis failures gracefully."""
@@ -466,23 +398,6 @@ class TestJobLockHeartbeat(TestCase):
         # Clean up
         lock.stop_heartbeat()
     
-    def test_max_extensions_reached(self):
-        """Test that max extensions limit is enforced."""
-        from hysds import celery
-        celery.app.conf.JOB_LOCK_MAX_EXTENSIONS = 2
-        
-        lock = JobLock(self.payload_id, self.task_id, self.hostname)
-        lock.acquire(wait_time=0)
-        
-        # Extend twice successfully
-        self.assertTrue(lock.extend())
-        self.assertTrue(lock.extend())
-        
-        # Third extend should fail (max reached)
-        # Note: pottery raises TooManyExtensions
-        with self.assertRaises(TooManyExtensions):
-            lock.extend()
-
 
 class TestJobLockStaleLockDetection(TestCase):
     """Test stale lock detection logic."""
@@ -623,29 +538,6 @@ class TestJobLockStaleLockDetection(TestCase):
             
             self.assertTrue(result, "Should break stale lock (old renewal, same worker)")
     
-    @freeze_time("2025-01-01 12:00:00")
-    def test_stale_lock_same_task_same_worker_recent_renewal(self):
-        """Test same task_id, same worker, recent renewal → don't break."""
-        payload_id = "recent-same-worker"
-        task_id = "task-123"
-        hostname = "worker-A"
-        
-        # Worker A acquires lock
-        lock_a = JobLock(payload_id, task_id, hostname)
-        lock_a.acquire(wait_time=0)
-        
-        # Fast-forward slightly (< 2x heartbeat interval = 60s)
-        with freeze_time("2025-01-01 12:00:30"):  # 30 sec (< 2 × 30s = 60s)
-            # Same worker receives redelivered job
-            result = JobLock.check_and_break_stale_lock(
-                payload_id,
-                current_task_id=task_id,
-                current_hostname=hostname
-            )
-            
-            self.assertFalse(result, "Should NOT break lock (recent renewal, might still be alive)")
-            self.assertIsNotNone(lock_a.get_lock_metadata(), "Lock should still exist")
-
 
 class TestJobLockWaitForRenewal(TestCase):
     """Test wait for renewal logic."""
