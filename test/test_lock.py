@@ -639,9 +639,13 @@ class TestJobLockWaitForRenewal(TestCase):
         """Test waiting detects when lock is renewed (worker alive)."""
         payload_id = "renewal-test"
         lock = JobLock(payload_id, "task-1", "worker-1")
-        lock.acquire(wait_time=0)
+        acquired = lock.acquire(wait_time=0)
+        print(f"DEBUG: acquire() returned: {acquired}")
         
         initial_metadata = lock.get_lock_metadata()
+        print(f"DEBUG: get_lock_metadata() returned: {initial_metadata}")
+        print(f"DEBUG: metadata_key: {lock.metadata_key}")
+        print(f"DEBUG: redis keys: {list(self.fake_redis.keys())}")
         initial_renewed = initial_metadata['last_renewed_at']
         
         # Start a thread that will renew the lock after 1 second
