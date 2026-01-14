@@ -699,6 +699,7 @@ class TestJobLockConcurrency(TestCase):
         def try_acquire(worker_id):
             lock = JobLock(payload_id, f"task-{worker_id}", f"worker-{worker_id}")
             result = lock.acquire(wait_time=0)
+            print(f"Worker {worker_id}: acquire returned {result}")
             results.append((worker_id, result))
         
         # Spawn 5 threads trying to acquire same lock
@@ -711,6 +712,9 @@ class TestJobLockConcurrency(TestCase):
         # Wait for all threads
         for t in threads:
             t.join(timeout=2)
+        
+        print(f"Results: {results}")
+        print(f"Redis keys: {list(self.fake_redis.keys())}")
         
         # Only one should succeed
         successes = [r for r in results if r[1] is True]
