@@ -112,9 +112,17 @@ class TestJobLockBasicOperations(TestCase):
                 return True
             return False
         
+        def mock_locked():
+            """Check if lock is held and return TTL."""
+            redlock_key = f"redlock:{key}"
+            ttl = redis_client.ttl(redlock_key)
+            # Return TTL if lock exists (positive number), otherwise 0
+            return float(ttl) if ttl > 0 else 0.0
+        
         mock_redlock.acquire = mock_acquire
         mock_redlock.release = mock_release
         mock_redlock.extend = mock_extend
+        mock_redlock.locked = mock_locked
         
         return mock_redlock
         
