@@ -72,6 +72,12 @@ class TestJobLockBasicOperations(TestCase):
         print(f"lock.redis_client type: {type(lock.redis_client)}")
         print(f"lock.redis_client: {lock.redis_client}")
         print(f"lock.lock_key: {lock.lock_key}")
+        print(f"self.fake_redis is lock.redis_client: {self.fake_redis is lock.redis_client}")
+        
+        # Check Redis before acquire
+        print(f"\n=== DEBUG: Redis state BEFORE acquire ===")
+        all_keys = self.fake_redis.keys('*')
+        print(f"All keys in Redis: {all_keys}")
         
         # Should acquire successfully
         print(f"\n=== DEBUG: Calling lock.acquire(wait_time=0) ===")
@@ -80,6 +86,14 @@ class TestJobLockBasicOperations(TestCase):
         print(f"lock.locker: {lock.locker}")
         if lock.locker:
             print(f"lock.locker type: {type(lock.locker)}")
+            print(f"lock.locker.masters: {lock.locker.masters}")
+        
+        # Check Redis after acquire
+        print(f"\n=== DEBUG: Redis state AFTER acquire ===")
+        all_keys = self.fake_redis.keys('*')
+        print(f"All keys in Redis: {all_keys}")
+        for key in all_keys:
+            print(f"  {key}: {self.fake_redis.get(key)}")
         
         self.assertTrue(result)
         
