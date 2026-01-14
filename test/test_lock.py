@@ -39,6 +39,14 @@ class TestJobLockBasicOperations(TestCase):
         self.task_id = "test-task-456"
         self.hostname = "test-worker-1"
         
+        # Patch _get_connection_pool to return a mock that won't be used
+        self.pool_patcher = umock.patch.object(
+            JobLock,
+            '_get_connection_pool',
+            return_value=umock.Mock()
+        )
+        self.pool_patcher.start()
+        
         # Patch StrictRedis to return our fake redis instance
         self.redis_patcher = umock.patch('hysds.lock.StrictRedis', return_value=self.fake_redis)
         self.redis_patcher.start()
@@ -53,6 +61,7 @@ class TestJobLockBasicOperations(TestCase):
         
     def tearDown(self):
         """Clean up patches."""
+        self.pool_patcher.stop()
         self.redis_patcher.stop()
         umock.patch.stopall()
     
