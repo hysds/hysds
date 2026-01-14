@@ -39,12 +39,11 @@ class TestJobLockBasicOperations(TestCase):
         self.task_id = "test-task-456"
         self.hostname = "test-worker-1"
         
-        # Patch _get_connection_pool to return a mock that won't be used
-        self.pool_patcher = umock.patch.object(
-            JobLock,
-            '_get_connection_pool',
-            return_value=umock.Mock()
-        )
+        # Reset the class-level connection pool
+        JobLock._connection_pool = None
+        
+        # Patch BlockingConnectionPool.from_url to return a mock
+        self.pool_patcher = umock.patch('hysds.lock.BlockingConnectionPool.from_url', return_value=umock.Mock())
         self.pool_patcher.start()
         
         # Patch StrictRedis to return our fake redis instance
