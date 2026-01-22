@@ -505,81 +505,98 @@ def run_job(job, queue_when_finished=True):
     # ==================================================================================
     # JOB LOCKING APPROACH - Prevents duplicate jobs using distributed locks
     # ==================================================================================
-    
-    logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}, hostname={run_job.request.hostname}")
-    
-    # Check for and break stale locks
-    # Pass current task_id AND hostname to properly detect:
-    # 1. Stale locks from crashed jobs on the same worker
-    # 2. RabbitMQ redelivered jobs to different workers (same task_id, different hostname)
-    stale_lock_broken = JobLock.check_and_break_stale_lock(
-        payload_id, 
-        current_task_id=job["task_id"],
-        current_hostname=run_job.request.hostname
-    )
-    if stale_lock_broken:
-        logger.warning(f"Broke stale lock for payload {payload_id}")
-    else:
-        logger.info(f"No stale lock found for payload {payload_id}")
-    
-    # Try to acquire job lock
-    job_lock = JobLock(payload_id, job["task_id"], run_job.request.hostname)
+    # Check if job locking is enabled (default: False for backward compatibility)
+    enable_job_locking = app.conf.get("ENABLE_JOB_LOCKING", False)
+    job_lock = None
     lock_acquired = False
-    redelivered = job.get("delivery_info", {}).get("redelivered", False)
     
-    if not job_lock.acquire(wait_time=30):
-        # Lock exists and is held by another job
-        lock_metadata = job_lock.get_lock_metadata()
+    if enable_job_locking:
+        logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}, hostname={run_job.request.hostname}")
         
-        # Handle case where lock was released between acquire check and metadata retrieval
-        if lock_metadata is None:
-            lock_holder_info = "unknown (lock released)"
+        # Check for and break stale locks
+        # Pass current task_id AND hostname to properly detect:
+        # 1. Stale locks from crashed jobs on the same worker
+        # 2. RabbitMQ redelivered jobs to different workers (same task_id, different hostname)
+        stale_lock_broken = JobLock.check_and_break_stale_lock(
+            payload_id, 
+            current_task_id=job["task_id"],
+            current_hostname=run_job.request.hostname
+        )
+        if stale_lock_broken:
+            logger.warning(f"Broke stale lock for payload {payload_id}")
         else:
-            lock_holder_info = f"task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')}"
+            logger.info(f"No stale lock found for payload {payload_id}")
         
-        if redelivered:
-            message = f"Redelivered job for payload {payload_id} - lock held by {lock_holder_info}. Deduping this job."
-            logger.warning(message)
-            job_status_json = {
-                "uuid": job["job_id"],
-                "job_id": job["job_id"],
-                "payload_id": payload_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-deduped",
-                "job": job,
-                "context": context,
-                "dedup_msg": message,
-                "celery_hostname": run_job.request.hostname,
-            }
-            log_job_status(job_status_json)
-            return job_status_json
-        else:
-            # Non-redelivered job can't acquire lock - shouldn't happen
-            error_msg = (
-                f"Job {payload_id} already running "
-                f"({lock_holder_info})"
-            )
-            job_status_json = {
+        # Try to acquire job lock
+        job_lock = JobLock(payload_id, job["task_id"], run_job.request.hostname)
+        redelivered = job.get("delivery_info", {}).get("redelivered", False)
+        
+        if not job_lock.acquire(wait_time=30):
+            # Lock exists and is held by another job
+            lock_metadata = job_lock.get_lock_metadata()
+            
+            # Handle case where lock was released between acquire check and metadata retrieval
+            if lock_metadata is None:
+                lock_holder_info = "unknown (lock released)"
+            else:
+                lock_holder_info = f"task {lock_metadata.get('task_id')} on worker {lock_metadata.get('worker')}"
+            
+            if redelivered:
+                message = f"Redelivered job for payload {payload_id} - lock held by {lock_holder_info}. Deduping this job."
+                logger.warning(message)
+                job_status_json = {
+                    "uuid": job["job_id"],
+                    "job_id": job["job_id"],
+                    "payload_id": payload_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-deduped",
+                    "job": job,
+                    "context": context,
+                    "dedup_msg": message,
+                    "celery_hostname": run_job.request.hostname,
+                }
+                log_job_status(job_status_json)
+                return job_status_json
+            else:
+                # Non-redelivered job can't acquire lock - shouldn't happen
+                error_msg = (
+                    f"Job {payload_id} already running "
+                    f"({lock_holder_info})"
+                )
+                job_status_json = {
+                    "uuid": job["task_id"],
+                    "job_id": job["job_id"],
+                    "payload_id": payload_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-failed",
+                    "job": job,
+                    "context": context,
+                    "error": error_msg,
+                    "short_error": get_short_error(error_msg),
+                    "traceback": error_msg,
+                    "celery_hostname": run_job.request.hostname,
+                }
+                fail_job(job_status_json, jd_file)
+        
+        # Lock acquired successfully, start heartbeat
+        lock_acquired = True
+        job_lock.start_heartbeat()
+        logger.info(f"Acquired lock and started heartbeat for job {payload_id} (task {job['task_id']})")
+    else:
+        # redelivered job dedup
+        if redelivered_job_dup(job):
+            logger.info(f"Encountered duplicate redelivered job:{json.dumps(job)}")
+            return {
                 "uuid": job["task_id"],
                 "job_id": job["job_id"],
                 "payload_id": payload_id,
                 "payload_hash": payload_hash,
                 "dedup": dedup,
-                "status": "job-failed",
-                "job": job,
-                "context": context,
-                "error": error_msg,
-                "short_error": get_short_error(error_msg),
-                "traceback": error_msg,
+                "status": "job-deduped",
                 "celery_hostname": run_job.request.hostname,
             }
-            fail_job(job_status_json, jd_file)
-    
-    # Lock acquired successfully, start heartbeat
-    lock_acquired = True
-    job_lock.start_heartbeat()
-    logger.info(f"Acquired lock and started heartbeat for job {payload_id} (task {job['task_id']})")
 
     # set task worker
     log_task_worker(job["task_id"], run_job.request.hostname)
@@ -1054,7 +1071,7 @@ def run_job(job, queue_when_finished=True):
                     error = f"verdi worker found duplicate job {dj['_id']} with status {dj['status']}"
                     dedupJob = dj["_id"]
                     raise JobDedupedError(error)
-
+            
             # set status to job-started
             job["job_info"][
                 "time_start"
@@ -1579,7 +1596,7 @@ def run_job(job, queue_when_finished=True):
         }
     finally:
         # Release the job lock only if we acquired it
-        if lock_acquired and job_lock:
+        if enable_job_locking and lock_acquired and job_lock:
             job_lock.release()
             logger.info(f"Released job lock for payload {payload_id}")
 

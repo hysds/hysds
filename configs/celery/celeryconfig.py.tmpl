@@ -55,6 +55,9 @@ BACKOFF_MAX_TRIES = 10
 
 # Job lock settings for distributed locking
 
+# set to true to enable the job locking feature
+ENABLE_JOB_LOCKING = {{ ENABLE_JOB_LOCKING | default(true, boolean=False) }}
+
 # Lock expiration time in seconds (10 minutes, safety buffer)
 JOB_LOCK_EXPIRE_TIME = 600
 
