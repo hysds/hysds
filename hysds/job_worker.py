@@ -326,6 +326,39 @@ def evict_localize_cache(work_path, cache_path, percent_free, threshold=10.0):
     return percent_free
 
 
+def redelivered_job_dup(job):
+    """Return True if job is a duplicate redelivered job. False otherwise."""
+
+    task_id = job["task_id"]
+    redelivered = job.get("delivery_info", {}).get("redelivered", False)
+    status = get_job_status(task_id)
+    logger.info(f"redelivered_job_dup: redelivered:{redelivered} status:{status}")
+    if redelivered:
+        # if job-started, give process_events time to process
+        if status == "job-started":
+            logger.info("Allowing process_events time to process")
+            time.sleep(60)
+            status = get_job_status(task_id)
+            logger.info(
+                f"redelivered_job_dup: redelivered:{redelivered} status:{status}"
+            )
+
+        # perform dedup
+        if status == "job-started":
+            prev_worker = get_task_worker(task_id)
+            prev_worker_status = get_worker_status(prev_worker)
+            if prev_worker_status is None:
+                return False
+            else:
+                return True
+        elif status == "job-completed":
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
 class WorkerExecutionError(Exception):
     def __init__(self, message, job_status):
         self.message = message
