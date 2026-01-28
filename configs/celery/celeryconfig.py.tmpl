@@ -56,7 +56,7 @@ BACKOFF_MAX_TRIES = 10
 # Job lock settings for distributed locking
 
 # set to true to enable the job locking feature
-ENABLE_JOB_LOCKING = {{ ENABLE_JOB_LOCKING | default(true, boolean=False) }}
+ENABLE_JOB_LOCKING = {{ ENABLE_JOB_LOCKING | default(false) }}
 
 # Lock expiration time in seconds (10 minutes, safety buffer)
 JOB_LOCK_EXPIRE_TIME = 600
@@ -250,6 +250,6 @@ VERDI_HOME = "{{ VERDI_HOME or '/root' }}"
 
 VERDI_SHELL = "{{ VERDI_SHELL or '/bin/bash' }}"
 
-CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(true, boolean=False) }}
+CACHE_READ_ONLY = {{ CACHE_READ_ONLY | default(false) }}
 
-EVICT_CACHE = {{ EVICT_CACHE | default(true, boolean=False) }}
+EVICT_CACHE = {{ EVICT_CACHE | default(false) }}
