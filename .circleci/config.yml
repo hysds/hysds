@@ -33,10 +33,19 @@ jobs:
       - run:
           name: Test
           command: |
-            source $HOME/.bash_profile
-            pip install -e .
+            source $HOME/verdi/bin/activate
+            pip install -e .[test]
+            pip install junitparser
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py
-            pytest -s --junit-xml=test-results/pytest/results.xml test
+            mkdir -p test-results/pytest
+            # Run lock tests separately to avoid cross-test pollution
+            pytest -s --junit-xml=test-results/pytest/lock-results.xml test/test_lock.py
+            # Run all other tests
+            pytest -s --junit-xml=test-results/pytest/other-results.xml test --ignore=test/test_lock.py
+            # Merge results into single file
+            junitparser merge test-results/pytest/lock-results.xml test-results/pytest/other-results.xml test-results/pytest/results.xml
+            # Clean up temporary files
+            rm test-results/pytest/lock-results.xml test-results/pytest/other-results.xml
       - store_test_results:
           path: test-results
   build:
@@ -50,8 +59,7 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            pip install pytest==7.2.0
-            pip install .
+            pip install -e .[test]
       - run:
           name: pytest
           command: |
