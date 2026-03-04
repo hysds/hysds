@@ -5,6 +5,7 @@ standard_library.install_aliases()
 import getpass
 import json
 import os
+import platform
 import shutil
 import sys
 from abc import ABC, abstractmethod
@@ -273,7 +274,44 @@ class Base(ABC):
             params["runtime_options"][k] = v
         return params
 
-    def ensure_image_loaded(self, image_name, image_url, cache_dir):
+    def get_architecture_url(self, image_url, metadata_urls=None):
+        """
+        Get architecture-specific URL for container image.
+        
+        :param image_url: Legacy single URL (backwards compatible)
+        :param metadata_urls: Dict of architecture-specific URLs or JSON string
+        :return: Appropriate URL for current architecture
+        """
+        arch_mappings = app.conf.get("CONTAINER_ARCHITECTURE_MAPPINGS", {
+            "x86_64": "",
+            "amd64": "",
+            "arm64": "-arm64",
+            "aarch64": "-arm64",
+        })
+        
+        current_arch = platform.machine().lower()
+        
+        if metadata_urls:
+            if isinstance(metadata_urls, str):
+                try:
+                    metadata_urls = json.loads(metadata_urls)
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Failed to parse metadata_urls JSON: {e}")
+                    return image_url
+            
+            if isinstance(metadata_urls, dict):
+                if current_arch in metadata_urls:
+                    logger.info(f"Found architecture-specific URL for {current_arch}")
+                    return metadata_urls[current_arch]
+                
+                for arch, suffix in arch_mappings.items():
+                    if current_arch == arch and arch in metadata_urls:
+                        logger.info(f"Found architecture-specific URL for {current_arch} via mapping")
+                        return metadata_urls[arch]
+        
+        return image_url
+
+    def ensure_image_loaded(self, image_name, image_url, cache_dir, metadata_urls=None):
         """Pull docker image into local repo."""
 
         # check if image is in local docker repo
@@ -302,21 +340,24 @@ class Base(ABC):
         except Exception as e:
             logger.info(f"Failed to inspect image {image_name}: {str(e)}")
 
+            # Get architecture-specific URL if available
+            arch_specific_url = self.get_architecture_url(image_url, metadata_urls)
+            
             # pull image from url
-            if image_url is not None:
-                image_file = os.path.join(cache_dir, os.path.basename(image_url))
+            if arch_specific_url is not None:
+                image_file = os.path.join(cache_dir, os.path.basename(arch_specific_url))
                 if not os.path.exists(image_file):
                     logger.info(
-                        f"Downloading image {image_file} ({image_name}) from {image_url}"
+                        f"Downloading image {image_file} ({image_name}) from {arch_specific_url}"
                     )
                     try:
-                        osaka.main.get(image_url, image_file)
+                        osaka.main.get(arch_specific_url, image_file)
                     except Exception as e:
                         raise RuntimeError(
-                            f"Failed to download image {image_url}:\n{str(e)}"
+                            f"Failed to download image {arch_specific_url}:\n{str(e)}"
                         )
                     logger.info(
-                        f"Downloaded image {image_file} ({image_name}) from {image_url}"
+                        f"Downloaded image {image_file} ({image_name}) from {arch_specific_url}"
                     )
                 load_lock = f"{image_file}.load.lock"
                 try:

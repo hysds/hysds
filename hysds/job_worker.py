@@ -1129,6 +1129,7 @@ def run_job(job, queue_when_finished=True):
             # check if containers need to be loaded
             image_name = job.get("container_image_name", None)
             image_url = job.get("container_image_url", None)
+            image_urls = job.get("container_image_urls", None)
             image_mappings = job.get("container_mappings", {})
             runtime_options = job.get("runtime_options", {})
 
@@ -1139,7 +1140,7 @@ def run_job(job, queue_when_finished=True):
 
             if image_name is not None:
                 image_info = container_engine.ensure_image_loaded(
-                    image_name, image_url, cache_dir_abs
+                    image_name, image_url, cache_dir_abs, image_urls
                 )
                 job["container_image_id"] = image_info["Id"]
                 context["container_image_id"] = job["container_image_id"]
@@ -1148,6 +1149,7 @@ def run_job(job, queue_when_finished=True):
                     dep_img["container_image_name"],
                     dep_img["container_image_url"],
                     cache_dir_abs,
+                    dep_img.get("container_image_urls", None),
                 )
                 dep_img["container_image_id"] = dep_image_info["Id"]
                 ctx_dep_img = context["job_specification"]["dependency_images"][i]
