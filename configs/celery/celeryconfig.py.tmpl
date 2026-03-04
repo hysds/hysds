@@ -240,6 +240,13 @@ WORKER_MOUNT_BLACKLIST = [
 
 CONTAINER_REGISTRY = "{{ CONTAINER_REGISTRY }}"
 
+CONTAINER_ARCHITECTURE_MAPPINGS = {
+    "x86_64": "",
+    "amd64": "",
+    "arm64": "-arm64",
+    "aarch64": "-arm64",
+}
+
 AWS_REGION = "{{ AWS_REGION }}"
 
 ES_CLUSTER_MODE = {{ ES_CLUSTER_MODE or False }}
