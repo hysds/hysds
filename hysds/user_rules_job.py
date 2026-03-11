@@ -122,8 +122,23 @@ def evaluate_user_rules_job(job_id, index=None):
         doc_res = result["hits"]["hits"][0]
         logger.info(f"Rule '{rule_name}' successfully matched for {job_id}")
 
+        # Create a more specific job name based on persist_job_name flag
+        job_type = rule.get("job_type", "")
+        if job_type.startswith("hysds-io-"):
+            job_type = job_type.replace("hysds-io-", "", 1)
+        
+        # Check if we should persist the original job's name
+        persist_job_name = rule.get("persist_job_name", False)
+        if persist_job_name:
+            # Extract the original job's name from the matched document
+            original_job_name = doc_res.get("_source", {}).get("job", {}).get("name", job_id)
+            job_name = f"{job_type}-{original_job_name}"
+        else:
+            # Use the generic job_id (default behavior)
+            job_name = f"{job_type}-{job_id}"
+
         # submit trigger task
-        queue_job_trigger(doc_res, rule)
+        queue_job_trigger(doc_res, rule, job_name)
         logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
     return True
 
@@ -147,13 +162,13 @@ def queue_finished_job(_id, index=None):
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_job_trigger(doc_res, rule):
+def queue_job_trigger(doc_res, rule, job_name):
     """Trigger job rule execution."""
     payload = {
         "type": "user_rules_trigger",
         "function": "hysds_commons.job_utils.submit_mozart_job",
         "args": [doc_res, rule],
-        "kwargs": {"component": "mozart"},
+        "kwargs": {"job_name": job_name, "component": "mozart"},
     }
     hysds.task_worker.run_task.apply_async(
         (payload,), queue=USER_RULES_TRIGGER_QUEUE
