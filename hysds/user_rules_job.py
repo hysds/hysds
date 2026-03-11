@@ -14,6 +14,8 @@ import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.es_util import get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
+from hysds_commons.job_utils import process_xpath
+
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -128,11 +130,15 @@ def evaluate_user_rules_job(job_id, index=None):
             job_type = job_type.replace("hysds-io-", "", 1)
         
         # Check if we should persist the original job's name
-        persist_job_name = rule.get("persist_job_name", False)
-        if persist_job_name:
+        job_name_path = rule.get("job_name_path", "")
+        if job_name_path:
             # Extract the original job's name from the matched document
-            original_job_name = doc_res.get("_source", {}).get("job", {}).get("name", job_id)
-            job_name = f"{job_type}-{original_job_name}"
+            job_name_value = process_xpath(job_name_path, doc_res.get("_source", {}))
+        else:
+            job_name_value = ""
+
+        if job_name_value:
+            job_name = f"{job_type}-{job_name_value}"
         else:
             # Use the generic job_id (default behavior)
             job_name = f"{job_type}-{job_id}"
