@@ -24,6 +24,32 @@ USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
 JOB_STATUS_ALIAS = "job_status-current"
 
 
+def process_xpath(xpath, trigger):
+    """
+    Process the xpath to extract data from a trigger
+    NOTE: This is a copy of hysds_commons.job_utils.process_xpath to avoid circular dependency
+    @param xpath - xpath location in trigger
+    @param trigger - trigger metadata to extract XPath
+    """
+    ret = trigger
+    parts = xpath.replace("xpath.", "").split(".")
+    for part in parts:
+        if ret is None or part == "":
+            return ret
+        # Try to convert to integer, if possible, for list indicies
+        try:
+            part = int(part)
+            if len(ret) <= part:
+                ret = None
+            else:
+                ret = ret[part]
+            continue
+        except:
+            pass
+        ret = ret.get(part, None)
+    return ret
+
+
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
@@ -122,8 +148,27 @@ def evaluate_user_rules_job(job_id, index=None):
         doc_res = result["hits"]["hits"][0]
         logger.info(f"Rule '{rule_name}' successfully matched for {job_id}")
 
+        # Create a more specific job name based on persist_job_name flag
+        job_type = rule.get("job_type", "")
+        if job_type.startswith("hysds-io-"):
+            job_type = job_type.replace("hysds-io-", "", 1)
+        
+        # Check if we should persist the original job's name
+        job_name_path = rule.get("job_name_path", "")
+        if job_name_path:
+            # Extract the original job's name from the matched document
+            job_name_value = process_xpath(job_name_path, doc_res)
+        else:
+            job_name_value = ""
+
+        if job_name_value:
+            job_name = f"{job_type}-{job_name_value}"
+        else:
+            # Use the generic job_id (default behavior)
+            job_name = f"{job_type}-{job_id}"
+
         # submit trigger task
-        queue_job_trigger(doc_res, rule)
+        queue_job_trigger(doc_res, rule, job_name)
         logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
     return True
 
@@ -147,13 +192,13 @@ def queue_finished_job(_id, index=None):
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_job_trigger(doc_res, rule):
+def queue_job_trigger(doc_res, rule, job_name):
     """Trigger job rule execution."""
     payload = {
         "type": "user_rules_trigger",
         "function": "hysds_commons.job_utils.submit_mozart_job",
         "args": [doc_res, rule],
-        "kwargs": {"component": "mozart"},
+        "kwargs": {"job_name": job_name, "component": "mozart"},
     }
     hysds.task_worker.run_task.apply_async(
         (payload,), queue=USER_RULES_TRIGGER_QUEUE

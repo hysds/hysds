@@ -291,6 +291,7 @@ def submit_job(j):
                 "dedup_msg": dedup_msg,
             }
             log_job_status(job_status_json)
+            queue_finished_job(_id=task_id, index=job.get("job_info", {}).get("index", None))
             return [task_id]
 
     # if no explicit job or data type defined in orchestrator, add catch-all
