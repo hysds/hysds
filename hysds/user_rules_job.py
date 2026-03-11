@@ -14,8 +14,6 @@ import hysds  # avoids cyclical import
 from hysds.celery import app
 from hysds.es_util import get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
-from hysds_commons.job_utils import process_xpath
-
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -24,6 +22,32 @@ JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
 USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
 USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
 JOB_STATUS_ALIAS = "job_status-current"
+
+
+def process_xpath(xpath, trigger):
+    """
+    Process the xpath to extract data from a trigger
+    NOTE: This is a copy of hysds_commons.job_utils.process_xpath to avoid circular dependency
+    @param xpath - xpath location in trigger
+    @param trigger - trigger metadata to extract XPath
+    """
+    ret = trigger
+    parts = xpath.replace("xpath.", "").split(".")
+    for part in parts:
+        if ret is None or part == "":
+            return ret
+        # Try to convert to integer, if possible, for list indicies
+        try:
+            part = int(part)
+            if len(ret) <= part:
+                ret = None
+            else:
+                ret = ret[part]
+            continue
+        except:
+            pass
+        ret = ret.get(part, None)
+    return ret
 
 
 @backoff.on_exception(
