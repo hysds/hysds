@@ -157,7 +157,7 @@ def evaluate_user_rules_job(job_id, index=None):
         job_name_path = rule.get("job_name_path", "")
         if job_name_path:
             # Extract the original job's name from the matched document
-            job_name_value = process_xpath(job_name_path, doc_res.get("_source", {}))
+            job_name_value = process_xpath(job_name_path, doc_res)
         else:
             job_name_value = ""
 
