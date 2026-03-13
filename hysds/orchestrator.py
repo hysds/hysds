@@ -116,6 +116,7 @@ def submit_job(j):
     # get container image name and url
     image_name = j.get("container_image_name", None)
     image_url = j.get("container_image_url", None)
+    image_urls = j.get("container_image_urls", None)
     image_mapping = j.get("container_mappings", None)
 
     # get container runtime options
@@ -370,6 +371,8 @@ def submit_job(j):
                 job_json["container_image_name"] = image_name
             if image_url is not None:
                 job_json["container_image_url"] = image_url
+            if image_urls is not None:
+                job_json["container_image_urls"] = image_urls
             if image_mapping is not None:
                 job_json["container_mappings"] = image_mapping
             if runtime_options is not None:

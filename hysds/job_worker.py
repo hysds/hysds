@@ -997,11 +997,14 @@ def run_job(job, queue_when_finished=True):
         # set or overwrite container image name, url and mappings if defined in work config
         container_image_name = work_cfgs[job["type"]].get("container_image_name", None)
         container_image_url = work_cfgs[job["type"]].get("container_image_url", None)
+        container_image_urls = work_cfgs[job["type"]].get("container_image_urls", None)
         container_mappings = work_cfgs[job["type"]].get("container_mappings", {})
         runtime_options = work_cfgs[job["type"]].get("runtime_options", {})
         if container_image_name is not None and container_image_url is not None:
             job["container_image_name"] = container_image_name
             job["container_image_url"] = container_image_url
+            if container_image_urls is not None:
+                job["container_image_urls"] = container_image_urls
             job["container_mappings"] = container_mappings
             job["runtime_options"] = runtime_options
             logger.info(
@@ -1032,6 +1035,7 @@ def run_job(job, queue_when_finished=True):
             context["job_priority"] = job.get("priority", None)
             context["container_image_name"] = job.get("container_image_name", None)
             context["container_image_url"] = job.get("container_image_url", None)
+            context["container_image_urls"] = job.get("container_image_urls", None)
             context["container_mappings"] = job.get("container_mappings", {})
             context["runtime_options"] = job.get("runtime_options", {})
             context["_prov"] = {"wasGeneratedBy": f"task_id:{job['task_id']}"}
@@ -1125,6 +1129,7 @@ def run_job(job, queue_when_finished=True):
             # check if containers need to be loaded
             image_name = job.get("container_image_name", None)
             image_url = job.get("container_image_url", None)
+            image_urls = job.get("container_image_urls", None)
             image_mappings = job.get("container_mappings", {})
             runtime_options = job.get("runtime_options", {})
 
@@ -1135,7 +1140,7 @@ def run_job(job, queue_when_finished=True):
 
             if image_name is not None:
                 image_info = container_engine.ensure_image_loaded(
-                    image_name, image_url, cache_dir_abs
+                    image_name, image_url, cache_dir_abs, image_urls
                 )
                 job["container_image_id"] = image_info["Id"]
                 context["container_image_id"] = job["container_image_id"]
@@ -1144,6 +1149,7 @@ def run_job(job, queue_when_finished=True):
                     dep_img["container_image_name"],
                     dep_img["container_image_url"],
                     cache_dir_abs,
+                    dep_img.get("container_image_urls", None),
                 )
                 dep_img["container_image_id"] = dep_image_info["Id"]
                 ctx_dep_img = context["job_specification"]["dependency_images"][i]

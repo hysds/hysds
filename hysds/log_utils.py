@@ -282,6 +282,7 @@ def log_job_info(job):
         "priority",
         "container_image_name",
         "container_image_url",
+        "container_image_urls",
         "name",
     ):
         if info in job:
