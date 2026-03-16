@@ -303,11 +303,6 @@ class Base(ABC):
                 if current_arch in metadata_urls:
                     logger.info(f"Found architecture-specific URL for {current_arch}")
                     return metadata_urls[current_arch]
-                
-                for arch, suffix in arch_mappings.items():
-                    if current_arch == arch and arch in metadata_urls:
-                        logger.info(f"Found architecture-specific URL for {current_arch} via mapping")
-                        return metadata_urls[arch]
         
         return image_url
 
