@@ -1,3 +1,5 @@
-__version__ = "3.2.0"
+from importlib.metadata import version
+
+__version__ = version("hysds-core")
 __url__ = "https://github.com/hysds/hysds"
 __description__ = "HySDS (Hybrid Cloud Science Data System)"
