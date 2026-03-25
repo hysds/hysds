@@ -1,0 +1,798 @@
+{
+  "_command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh 'triaged_job-log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z-232ac16b-4229-42d2-a15e-9b079a3b7c88'",
+  "_disk_usage": "10GB",
+  "_prov": {
+    "wasGeneratedBy": "task_id:b8488c22-a39f-4495-ad79-1305bc68c164"
+  },
+  "container_image_id": "sha256:02f6c5c1caf9987bd22fd7baa99131500a63224b94f4c5f86acf730246b9f9e5",
+  "container_image_name": "container-iems-sds_swot-pcm:ssds-1482",
+  "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1482.tar.gz",
+  "container_mappings": {
+    "$HOME/.aws": "/home/ops/.aws",
+    "$HOME/.netrc": "/home/ops/.netrc",
+    "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+  },
+  "container_specification": {
+    "digest": "sha256:02f6c5c1caf9987bd22fd7baa99131500a63224b94f4c5f86acf730246b9f9e5",
+    "id": "container-iems-sds_swot-pcm:ssds-1482",
+    "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1482.tar.gz",
+    "version": "SSDS-1482"
+  },
+  "dataset_id": "triaged_job-log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z-232ac16b-4229-42d2-a15e-9b079a3b7c88",
+  "job_priority": 1,
+  "job_specification": {
+    "command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh",
+    "container": "container-iems-sds_swot-pcm:ssds-1482",
+    "disk_usage": "10GB",
+    "id": "job-log_PGE_stats:SSDS-1482",
+    "imported_worker_files": {
+      "$HOME/.aws": "/home/ops/.aws",
+      "$HOME/.netrc": "/home/ops/.netrc",
+      "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+    },
+    "job-version": "SSDS-1482",
+    "params": [
+      {
+        "destination": "localize",
+        "name": "product_paths",
+        "value": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-triage-fwd-int/triaged_job-log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z-232ac16b-4229-42d2-a15e-9b079a3b7c88"
+      },
+      {
+        "destination": "positional",
+        "name": "dataset_id",
+        "value": "triaged_job-log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z-232ac16b-4229-42d2-a15e-9b079a3b7c88"
+      },
+      {
+        "destination": "context",
+        "name": "product_metadata",
+        "value": {
+          "metadata": {
+            "cmd_duration": 2.032221,
+            "cmd_end": "2020-09-02T22:59:13.912339Z",
+            "cmd_start": "2020-09-02T22:59:11.880118Z",
+            "context": {
+              "_command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959'",
+              "_disk_usage": "10GB",
+              "_prov": {
+                "wasGeneratedBy": "task_id:232ac16b-4229-42d2-a15e-9b079a3b7c88"
+              },
+              "container_image_id": "sha256:3ca289637a88f529e3ce6f6f6524d19f4701d8930deb6f9d509b89debd3e53b5",
+              "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+              "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+              "container_mappings": {
+                "$HOME/.aws": "/home/ops/.aws",
+                "$HOME/.netrc": "/home/ops/.netrc",
+                "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+              },
+              "container_specification": {
+                "digest": "sha256:f3ddbd447f52862ba2a3e871ebb2cfd4deee28d3fe907d9d9f7bcb55204edae5",
+                "id": "container-iems-sds_swot-pcm:ssds-1599",
+                "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                "version": "SSDS-1599"
+              },
+              "dataset_id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+              "job_priority": 1,
+              "job_specification": {
+                "command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh",
+                "container": "container-iems-sds_swot-pcm:ssds-1599",
+                "disk_usage": "10GB",
+                "id": "job-log_PGE_stats:SSDS-1599",
+                "imported_worker_files": {
+                  "$HOME/.aws": "/home/ops/.aws",
+                  "$HOME/.netrc": "/home/ops/.netrc",
+                  "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                },
+                "job-version": "SSDS-1599",
+                "params": [
+                  {
+                    "destination": "localize",
+                    "name": "product_paths",
+                    "value": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                  },
+                  {
+                    "destination": "positional",
+                    "name": "dataset_id",
+                    "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                  },
+                  {
+                    "destination": "context",
+                    "name": "product_metadata",
+                    "value": {
+                      "metadata": {
+                        "FileCreationDateTime": "2021-06-12T06:00:00.000000Z",
+                        "FileLocation": "/data/work/jobs/2020/09/02/16/09/ingest-staged-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc-20200902T160904.815322Z/output/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+                        "FileName": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                        "FileSize": 62,
+                        "GranuleName": "SWOT_VOR_AXVCNE_20210612_060000_20210612_235959",
+                        "ProductReceivedDay": "02",
+                        "ProductReceivedMonth": "09",
+                        "ProductReceivedTime": "2020-09-02T16:09:08.127446Z",
+                        "ProductReceivedYear": 2020,
+                        "ProductType": "POE",
+                        "ValidityBeginningDateTime": "2021-06-12T06:00:00.000000Z",
+                        "ValidityEndingDateTime": "2021-06-12T23:59:59.000000Z",
+                        "context": {
+                          "_command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc' 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc'",
+                          "_disk_usage": "10GB",
+                          "_prov": {
+                            "wasDerivedFrom": [
+                              "url:s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                            ],
+                            "wasGeneratedBy": "task_id:f43611f9-fc2b-496f-8821-bdb62e56d2f0"
+                          },
+                          "container_image_id": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                          "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+                          "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                          "container_mappings": {
+                            "$HOME/.aws": "/home/ops/.aws",
+                            "$HOME/.netrc": "/home/ops/.netrc",
+                            "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                          },
+                          "container_specification": {
+                            "digest": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                            "id": "container-iems-sds_swot-pcm:ssds-1599",
+                            "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                            "version": "SSDS-1599"
+                          },
+                          "data_file": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                          "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                          "job_priority": 0,
+                          "job_specification": {
+                            "command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh",
+                            "container": "container-iems-sds_swot-pcm:ssds-1599",
+                            "dependency_images": [
+                              {
+                                "container_image_id": "sha256:e4994dda1ef54a72f3016309c5ee91245835b73966a7adfeb0bb49e022c79ab8",
+                                "container_image_name": "level0:1.9.1",
+                                "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/level0-1.9.1.tar.gz",
+                                "container_mappings": {
+                                  "$HOME/.aws": [
+                                    "/root/.aws",
+                                    "ro"
+                                  ],
+                                  "$HOME/.netrc": [
+                                    "/root/.netrc"
+                                  ]
+                                }
+                              }
+                            ],
+                            "disk_usage": "10GB",
+                            "id": "job-INGEST_STAGED:SSDS-1599",
+                            "imported_worker_files": {
+                              "$HOME/.aws": "/home/ops/.aws",
+                              "$HOME/.netrc": "/home/ops/.netrc",
+                              "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                            },
+                            "job-version": "SSDS-1599",
+                            "params": [
+                              {
+                                "destination": "positional",
+                                "name": "id",
+                                "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                              },
+                              {
+                                "destination": "localize",
+                                "name": "data_url",
+                                "value": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                              },
+                              {
+                                "destination": "positional",
+                                "name": "data_file",
+                                "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                              },
+                              {
+                                "destination": "context",
+                                "name": "prod_met",
+                                "value": {}
+                              }
+                            ],
+                            "post": [
+                              "hysds.utils.triage",
+                              "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+                            ],
+                            "recommended-queues": [
+                              "swot-job_worker-small"
+                            ],
+                            "resource": "jobspec",
+                            "soft_time_limit": 1800,
+                            "time_limit": 1860
+                          },
+                          "localize_urls": [
+                            {
+                              "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                            }
+                          ],
+                          "prod_met": {},
+                          "runtime_options": {},
+                          "tag": "data-staged"
+                        },
+                        "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                      }
+                    }
+                  }
+                ],
+                "post": [
+                  "hysds.utils.triage",
+                  "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+                ],
+                "recommended-queues": [
+                  "swot-job_worker-small"
+                ],
+                "resource": "jobspec",
+                "soft_time_limit": 900,
+                "time_limit": 960
+              },
+              "localize_urls": [
+                {
+                  "url": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                }
+              ],
+              "product_metadata": {
+                "metadata": {
+                  "FileCreationDateTime": "2021-06-12T06:00:00.000000Z",
+                  "FileLocation": "/data/work/jobs/2020/09/02/16/09/ingest-staged-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc-20200902T160904.815322Z/output/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+                  "FileName": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                  "FileSize": 62,
+                  "GranuleName": "SWOT_VOR_AXVCNE_20210612_060000_20210612_235959",
+                  "ProductReceivedDay": "02",
+                  "ProductReceivedMonth": "09",
+                  "ProductReceivedTime": "2020-09-02T16:09:08.127446Z",
+                  "ProductReceivedYear": 2020,
+                  "ProductType": "POE",
+                  "ValidityBeginningDateTime": "2021-06-12T06:00:00.000000Z",
+                  "ValidityEndingDateTime": "2021-06-12T23:59:59.000000Z",
+                  "context": {
+                    "_command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc' 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc'",
+                    "_disk_usage": "10GB",
+                    "_prov": {
+                      "wasDerivedFrom": [
+                        "url:s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                      ],
+                      "wasGeneratedBy": "task_id:f43611f9-fc2b-496f-8821-bdb62e56d2f0"
+                    },
+                    "container_image_id": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                    "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+                    "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                    "container_mappings": {
+                      "$HOME/.aws": "/home/ops/.aws",
+                      "$HOME/.netrc": "/home/ops/.netrc",
+                      "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                    },
+                    "container_specification": {
+                      "digest": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                      "id": "container-iems-sds_swot-pcm:ssds-1599",
+                      "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                      "version": "SSDS-1599"
+                    },
+                    "data_file": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                    "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                    "job_priority": 0,
+                    "job_specification": {
+                      "command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh",
+                      "container": "container-iems-sds_swot-pcm:ssds-1599",
+                      "dependency_images": [
+                        {
+                          "container_image_id": "sha256:e4994dda1ef54a72f3016309c5ee91245835b73966a7adfeb0bb49e022c79ab8",
+                          "container_image_name": "level0:1.9.1",
+                          "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/level0-1.9.1.tar.gz",
+                          "container_mappings": {
+                            "$HOME/.aws": [
+                              "/root/.aws",
+                              "ro"
+                            ],
+                            "$HOME/.netrc": [
+                              "/root/.netrc"
+                            ]
+                          }
+                        }
+                      ],
+                      "disk_usage": "10GB",
+                      "id": "job-INGEST_STAGED:SSDS-1599",
+                      "imported_worker_files": {
+                        "$HOME/.aws": "/home/ops/.aws",
+                        "$HOME/.netrc": "/home/ops/.netrc",
+                        "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                      },
+                      "job-version": "SSDS-1599",
+                      "params": [
+                        {
+                          "destination": "positional",
+                          "name": "id",
+                          "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "localize",
+                          "name": "data_url",
+                          "value": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "positional",
+                          "name": "data_file",
+                          "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "context",
+                          "name": "prod_met",
+                          "value": {}
+                        }
+                      ],
+                      "post": [
+                        "hysds.utils.triage",
+                        "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+                      ],
+                      "recommended-queues": [
+                        "swot-job_worker-small"
+                      ],
+                      "resource": "jobspec",
+                      "soft_time_limit": 1800,
+                      "time_limit": 1860
+                    },
+                    "localize_urls": [
+                      {
+                        "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                      }
+                    ],
+                    "prod_met": {},
+                    "runtime_options": {},
+                    "tag": "data-staged"
+                  },
+                  "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                }
+              },
+              "runtime_options": {},
+              "tag": "force-triage"
+            },
+            "context_file": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z/_context.json",
+            "datasets_cfg_file": "/home/ops/verdi/etc/datasets.json",
+            "dedup": true,
+            "duration": 3.85747,
+            "execute_node": "100.64.106.240",
+            "facts": {
+              "architecture": "x86_64",
+              "domain": "jpl.nasa.gov",
+              "ec2_instance_id": "i-0b1931a8579c580bb",
+              "ec2_instance_type": "t3a.2xlarge",
+              "ec2_placement_availability_zone": "us-west-2a",
+              "fqdn": "100.64.106.240",
+              "hardwaremodel": "x86_64",
+              "hostname": "verdi",
+              "hysds_execute_node": "100.64.106.240",
+              "hysds_public_ip": "100.64.106.240",
+              "ipaddress": "172.18.0.2",
+              "ipaddress_eth0": "100.64.106.240",
+              "is_virtual": true,
+              "memoryfree": "30.18 GB",
+              "memorysize": "31.00 GB",
+              "operatingsystem": "CentOS",
+              "operatingsystemrelease": "7.8.2003",
+              "osfamily": "RedHat",
+              "physicalprocessorcount": 1,
+              "processorcount": 8,
+              "swapfree": "0.00 MB",
+              "swapsize": "0.00 MB",
+              "uptime": "0:01 hours",
+              "virtual": "docker"
+            },
+            "id": "log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+            "job_dir": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+            "job_payload": {
+              "job_type": "job:job-log_PGE_stats:SSDS-1599",
+              "payload_task_id": "1d0bd921-e5e9-433b-99ee-364c5615303f"
+            },
+            "job_queue": "swot-job_worker-small",
+            "job_url": "http://100.64.106.240:8085/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+            "metrics": {
+              "inputs_localized": [
+                {
+                  "disk_usage": 0,
+                  "duration": 1.556726,
+                  "path": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+                  "time_end": "2020-09-02T22:59:11.866561Z",
+                  "time_start": "2020-09-02T22:59:10.309835Z",
+                  "transfer_rate": 0.0,
+                  "url": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                }
+              ],
+              "job_dir_size": 98304,
+              "products_staged": [],
+              "usage_stats": []
+            },
+            "payload_hash": "ee3cd58cca6f0dbdab33769ab2989771",
+            "pid": 460,
+            "public_ip": "100.64.106.240",
+            "soft_time_limit": 900,
+            "status": 1,
+            "stderr": "",
+            "stdout": "",
+            "time_end": "2020-09-02T22:59:13.930939Z",
+            "time_limit": 1200,
+            "time_queued": "2020-09-02T22:59:09.989055Z",
+            "time_start": "2020-09-02T22:59:10.073469Z"
+          }
+        }
+      }
+    ],
+    "post": [
+      "hysds.utils.triage",
+      "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+    ],
+    "recommended-queues": [
+      "swot-job_worker-small"
+    ],
+    "resource": "jobspec",
+    "soft_time_limit": 900,
+    "time_limit": 960
+  },
+  "localize_urls": [
+    {
+      "url": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-triage-fwd-int/triaged_job-log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z-232ac16b-4229-42d2-a15e-9b079a3b7c88"
+    }
+  ],
+  "product_metadata": {
+    "metadata": {
+      "cmd_duration": 2.032221,
+      "cmd_end": "2020-09-02T22:59:13.912339Z",
+      "cmd_start": "2020-09-02T22:59:11.880118Z",
+      "context": {
+        "_command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959'",
+        "_disk_usage": "10GB",
+        "_prov": {
+          "wasGeneratedBy": "task_id:232ac16b-4229-42d2-a15e-9b079a3b7c88"
+        },
+        "container_image_id": "sha256:3ca289637a88f529e3ce6f6f6524d19f4701d8930deb6f9d509b89debd3e53b5",
+        "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+        "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+        "container_mappings": {
+          "$HOME/.aws": "/home/ops/.aws",
+          "$HOME/.netrc": "/home/ops/.netrc",
+          "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+        },
+        "container_specification": {
+          "digest": "sha256:f3ddbd447f52862ba2a3e871ebb2cfd4deee28d3fe907d9d9f7bcb55204edae5",
+          "id": "container-iems-sds_swot-pcm:ssds-1599",
+          "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+          "version": "SSDS-1599"
+        },
+        "dataset_id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+        "job_priority": 1,
+        "job_specification": {
+          "command": "/home/ops/verdi/ops/swot-pcm/metrics/log_pge_stats.sh",
+          "container": "container-iems-sds_swot-pcm:ssds-1599",
+          "disk_usage": "10GB",
+          "id": "job-log_PGE_stats:SSDS-1599",
+          "imported_worker_files": {
+            "$HOME/.aws": "/home/ops/.aws",
+            "$HOME/.netrc": "/home/ops/.netrc",
+            "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+          },
+          "job-version": "SSDS-1599",
+          "params": [
+            {
+              "destination": "localize",
+              "name": "product_paths",
+              "value": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+            },
+            {
+              "destination": "positional",
+              "name": "dataset_id",
+              "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+            },
+            {
+              "destination": "context",
+              "name": "product_metadata",
+              "value": {
+                "metadata": {
+                  "FileCreationDateTime": "2021-06-12T06:00:00.000000Z",
+                  "FileLocation": "/data/work/jobs/2020/09/02/16/09/ingest-staged-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc-20200902T160904.815322Z/output/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+                  "FileName": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                  "FileSize": 62,
+                  "GranuleName": "SWOT_VOR_AXVCNE_20210612_060000_20210612_235959",
+                  "ProductReceivedDay": "02",
+                  "ProductReceivedMonth": "09",
+                  "ProductReceivedTime": "2020-09-02T16:09:08.127446Z",
+                  "ProductReceivedYear": 2020,
+                  "ProductType": "POE",
+                  "ValidityBeginningDateTime": "2021-06-12T06:00:00.000000Z",
+                  "ValidityEndingDateTime": "2021-06-12T23:59:59.000000Z",
+                  "context": {
+                    "_command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc' 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc'",
+                    "_disk_usage": "10GB",
+                    "_prov": {
+                      "wasDerivedFrom": [
+                        "url:s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                      ],
+                      "wasGeneratedBy": "task_id:f43611f9-fc2b-496f-8821-bdb62e56d2f0"
+                    },
+                    "container_image_id": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                    "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+                    "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                    "container_mappings": {
+                      "$HOME/.aws": "/home/ops/.aws",
+                      "$HOME/.netrc": "/home/ops/.netrc",
+                      "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                    },
+                    "container_specification": {
+                      "digest": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                      "id": "container-iems-sds_swot-pcm:ssds-1599",
+                      "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                      "version": "SSDS-1599"
+                    },
+                    "data_file": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                    "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+                    "job_priority": 0,
+                    "job_specification": {
+                      "command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh",
+                      "container": "container-iems-sds_swot-pcm:ssds-1599",
+                      "dependency_images": [
+                        {
+                          "container_image_id": "sha256:e4994dda1ef54a72f3016309c5ee91245835b73966a7adfeb0bb49e022c79ab8",
+                          "container_image_name": "level0:1.9.1",
+                          "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/level0-1.9.1.tar.gz",
+                          "container_mappings": {
+                            "$HOME/.aws": [
+                              "/root/.aws",
+                              "ro"
+                            ],
+                            "$HOME/.netrc": [
+                              "/root/.netrc"
+                            ]
+                          }
+                        }
+                      ],
+                      "disk_usage": "10GB",
+                      "id": "job-INGEST_STAGED:SSDS-1599",
+                      "imported_worker_files": {
+                        "$HOME/.aws": "/home/ops/.aws",
+                        "$HOME/.netrc": "/home/ops/.netrc",
+                        "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                      },
+                      "job-version": "SSDS-1599",
+                      "params": [
+                        {
+                          "destination": "positional",
+                          "name": "id",
+                          "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "localize",
+                          "name": "data_url",
+                          "value": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "positional",
+                          "name": "data_file",
+                          "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                        },
+                        {
+                          "destination": "context",
+                          "name": "prod_met",
+                          "value": {}
+                        }
+                      ],
+                      "post": [
+                        "hysds.utils.triage",
+                        "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+                      ],
+                      "recommended-queues": [
+                        "swot-job_worker-small"
+                      ],
+                      "resource": "jobspec",
+                      "soft_time_limit": 1800,
+                      "time_limit": 1860
+                    },
+                    "localize_urls": [
+                      {
+                        "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                      }
+                    ],
+                    "prod_met": {},
+                    "runtime_options": {},
+                    "tag": "data-staged"
+                  },
+                  "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+                }
+              }
+            }
+          ],
+          "post": [
+            "hysds.utils.triage",
+            "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+          ],
+          "recommended-queues": [
+            "swot-job_worker-small"
+          ],
+          "resource": "jobspec",
+          "soft_time_limit": 900,
+          "time_limit": 960
+        },
+        "localize_urls": [
+          {
+            "url": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+          }
+        ],
+        "product_metadata": {
+          "metadata": {
+            "FileCreationDateTime": "2021-06-12T06:00:00.000000Z",
+            "FileLocation": "/data/work/jobs/2020/09/02/16/09/ingest-staged-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc-20200902T160904.815322Z/output/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+            "FileName": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+            "FileSize": 62,
+            "GranuleName": "SWOT_VOR_AXVCNE_20210612_060000_20210612_235959",
+            "ProductReceivedDay": "02",
+            "ProductReceivedMonth": "09",
+            "ProductReceivedTime": "2020-09-02T16:09:08.127446Z",
+            "ProductReceivedYear": 2020,
+            "ProductType": "POE",
+            "ValidityBeginningDateTime": "2021-06-12T06:00:00.000000Z",
+            "ValidityEndingDateTime": "2021-06-12T23:59:59.000000Z",
+            "context": {
+              "_command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc' 'SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc'",
+              "_disk_usage": "10GB",
+              "_prov": {
+                "wasDerivedFrom": [
+                  "url:s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                ],
+                "wasGeneratedBy": "task_id:f43611f9-fc2b-496f-8821-bdb62e56d2f0"
+              },
+              "container_image_id": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+              "container_image_name": "container-iems-sds_swot-pcm:ssds-1599",
+              "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+              "container_mappings": {
+                "$HOME/.aws": "/home/ops/.aws",
+                "$HOME/.netrc": "/home/ops/.netrc",
+                "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+              },
+              "container_specification": {
+                "digest": "sha256:9db79810a9a6be7b6b8fdf19153ae713313ec9109b6189016e62c073f61ece0c",
+                "id": "container-iems-sds_swot-pcm:ssds-1599",
+                "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/container-iems-sds_swot-pcm:ssds-1599.tar.gz",
+                "version": "SSDS-1599"
+              },
+              "data_file": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+              "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc",
+              "job_priority": 0,
+              "job_specification": {
+                "command": "/home/ops/verdi/ops/swot-pcm/ingest/INGEST_STAGED/run_pcm_int.sh",
+                "container": "container-iems-sds_swot-pcm:ssds-1599",
+                "dependency_images": [
+                  {
+                    "container_image_id": "sha256:e4994dda1ef54a72f3016309c5ee91245835b73966a7adfeb0bb49e022c79ab8",
+                    "container_image_name": "level0:1.9.1",
+                    "container_image_url": "s3://s3-us-west-2.amazonaws.com/swot-dev-cc-fwd-int/level0-1.9.1.tar.gz",
+                    "container_mappings": {
+                      "$HOME/.aws": [
+                        "/root/.aws",
+                        "ro"
+                      ],
+                      "$HOME/.netrc": [
+                        "/root/.netrc"
+                      ]
+                    }
+                  }
+                ],
+                "disk_usage": "10GB",
+                "id": "job-INGEST_STAGED:SSDS-1599",
+                "imported_worker_files": {
+                  "$HOME/.aws": "/home/ops/.aws",
+                  "$HOME/.netrc": "/home/ops/.netrc",
+                  "$HOME/verdi/etc/settings.yaml": "/home/ops/verdi/ops/swot-pcm/conf/settings.yaml"
+                },
+                "job-version": "SSDS-1599",
+                "params": [
+                  {
+                    "destination": "positional",
+                    "name": "id",
+                    "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                  },
+                  {
+                    "destination": "localize",
+                    "name": "data_url",
+                    "value": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                  },
+                  {
+                    "destination": "positional",
+                    "name": "data_file",
+                    "value": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                  },
+                  {
+                    "destination": "context",
+                    "name": "prod_met",
+                    "value": {}
+                  }
+                ],
+                "post": [
+                  "hysds.utils.triage",
+                  "swot_pcm.commons.common_util.stream_verdi_logs_to_cloudwatch"
+                ],
+                "recommended-queues": [
+                  "swot-job_worker-small"
+                ],
+                "resource": "jobspec",
+                "soft_time_limit": 1800,
+                "time_limit": 1860
+              },
+              "localize_urls": [
+                {
+                  "url": "s3://s3-us-west-2.amazonaws.com/swot-dev-isl-fwd-int/staging_area/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959.nc"
+                }
+              ],
+              "prod_met": {},
+              "runtime_options": {},
+              "tag": "data-staged"
+            },
+            "id": "SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+          }
+        },
+        "runtime_options": {},
+        "tag": "force-triage"
+      },
+      "context_file": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z/_context.json",
+      "datasets_cfg_file": "/home/ops/verdi/etc/datasets.json",
+      "dedup": true,
+      "duration": 3.85747,
+      "execute_node": "100.64.106.240",
+      "facts": {
+        "architecture": "x86_64",
+        "domain": "jpl.nasa.gov",
+        "ec2_instance_id": "i-0b1931a8579c580bb",
+        "ec2_instance_type": "t3a.2xlarge",
+        "ec2_placement_availability_zone": "us-west-2a",
+        "fqdn": "100.64.106.240",
+        "hardwaremodel": "x86_64",
+        "hostname": "verdi",
+        "hysds_execute_node": "100.64.106.240",
+        "hysds_public_ip": "100.64.106.240",
+        "ipaddress": "172.18.0.2",
+        "ipaddress_eth0": "100.64.106.240",
+        "is_virtual": true,
+        "memoryfree": "30.18 GB",
+        "memorysize": "31.00 GB",
+        "operatingsystem": "CentOS",
+        "operatingsystemrelease": "7.8.2003",
+        "osfamily": "RedHat",
+        "physicalprocessorcount": 1,
+        "processorcount": 8,
+        "swapfree": "0.00 MB",
+        "swapsize": "0.00 MB",
+        "uptime": "0:01 hours",
+        "virtual": "docker"
+      },
+      "id": "log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+      "job_dir": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+      "job_payload": {
+        "job_type": "job:job-log_PGE_stats:SSDS-1599",
+        "payload_task_id": "1d0bd921-e5e9-433b-99ee-364c5615303f"
+      },
+      "job_queue": "swot-job_worker-small",
+      "job_url": "http://100.64.106.240:8085/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z",
+      "metrics": {
+        "inputs_localized": [
+          {
+            "disk_usage": 0,
+            "duration": 1.556726,
+            "path": "/data/work/jobs/2020/09/02/22/59/log_PGE_stats__SSDS-1599-SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959-20200902T225909.989046Z/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959",
+            "time_end": "2020-09-02T22:59:11.866561Z",
+            "time_start": "2020-09-02T22:59:10.309835Z",
+            "transfer_rate": 0.0,
+            "url": "s3://s3-us-west-2.amazonaws.com:80/swot-dev-rs-fwd-int/products/POE/2021/06/12/SWOT_VOR_AXVCNE20210612_060000_20210612_060000_20210612_235959"
+          }
+        ],
+        "job_dir_size": 98304,
+        "products_staged": [],
+        "usage_stats": []
+      },
+      "payload_hash": "ee3cd58cca6f0dbdab33769ab2989771",
+      "pid": 460,
+      "public_ip": "100.64.106.240",
+      "soft_time_limit": 900,
+      "status": 1,
+      "stderr": "",
+      "stdout": "",
+      "time_end": "2020-09-02T22:59:13.930939Z",
+      "time_limit": 1200,
+      "time_queued": "2020-09-02T22:59:09.989055Z",
+      "time_start": "2020-09-02T22:59:10.073469Z"
+    }
+  },
+  "runtime_options": {},
+  "tag": "log"
+}

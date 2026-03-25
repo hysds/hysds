@@ -1,8 +1,6 @@
 # from builtins import int
 # from builtins import open
-from future import standard_library
 
-standard_library.install_aliases()
 
 import logging
 import os

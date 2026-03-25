@@ -1,0 +1,95 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../hysds_commons"
+		},
+		{
+			"path": "../hysds_ui"
+		},
+		{
+			"path": "../hysds-chimera"
+		},
+		{
+			"path": "../hysds-cloud-functions"
+		},
+		{
+			"path": "../hysds-dockerfiles"
+		},
+		{
+			"path": "../hysds-framework"
+		},
+		{
+			"path": "../lightweight-jobs"
+		},
+		{
+			"path": "../mozart"
+		},
+		{
+			"path": "../otello"
+		},
+		{
+			"path": "../osaka"
+		},
+		{
+			"path": "../pele"
+		},
+		{
+			"path": "../puppet-autoscale"
+		},
+		{
+			"path": "../puppet-cont_int"
+		},
+		{
+			"path": "../puppet-grq"
+		},
+		{
+			"path": "../puppet-hysds_base"
+		},
+		{
+			"path": "../puppet-hysds_dev"
+		},
+		{
+			"path": "../puppet-metrics"
+		},
+		{
+			"path": "../puppet-mozart"
+		},
+		{
+			"path": "../puppet-mysql"
+		},
+		{
+			"path": "../puppet-verdi"
+		},
+		{
+			"path": "../grq2"
+		},
+		{
+			"path": "../opensearch-monitoring"
+		},
+		{
+			"path": "../hysds-releaser"
+		},
+		{
+			"path": "../sdscli"
+		},
+		{
+			"path": "../sciflo"
+		},
+		{
+			"path": "../container-builder"
+		},
+		{
+			"path": "../art2s3"
+		},
+		{
+			"path": "../docker-stats-on-exit-shim"
+		},
+		{
+			"path": "../prov_es"
+		}
+	],
+	"settings": {}
+}
