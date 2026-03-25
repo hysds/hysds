@@ -110,11 +110,12 @@ RFC_1918_RE = re.compile(r"^(?:10|127|172\.(?:1[6-9]|2[0-9]|3[01])|192\.168)\..*
 # HC-280: Updated to support 100.64.x.x-100.127.x.x block
 RFC_6598_RE = re.compile(r"^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\..*")
 
-# job failure rate for job drain detection
-FAILURE_RATE = (
-    app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD
-    / app.conf.WORKER_CONTIGUOUS_FAILURE_TIME
-)
+# job failure rate for job drain detection - lazy getter to avoid import-time config access
+def get_failure_rate():
+    return (
+        app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD
+        / app.conf.WORKER_CONTIGUOUS_FAILURE_TIME
+    )
 
 
 def get_facts():
@@ -415,11 +416,12 @@ def job_drain_detected(job_status_json, jd_file):
                 f"Consecutive failure threshold: {app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD}"
             )
             logger.info(f"Consecutive failure count: {jd['count']}")
-            logger.info(f"Failure rate threshold (failures/sec): {FAILURE_RATE}")
+            failure_rate = get_failure_rate()
+            logger.info(f"Failure rate threshold (failures/sec): {failure_rate}")
             logger.info(f"Failure rate (failures/sec): {rate}")
             if (
                 jd["count"] > app.conf.WORKER_CONTIGUOUS_FAILURE_THRESHOLD
-                and rate >= FAILURE_RATE
+                and rate >= failure_rate
             ):
                 logger.info("Job drain detected.")
                 return True
