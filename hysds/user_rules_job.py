@@ -13,12 +13,22 @@ from hysds.celery import app
 from hysds.es_util import get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 
-JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
-USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
+# Lazy getters to avoid import-time Celery config access
+def get_jobs_es_url():
+    return app.conf.JOBS_ES_URL
 
-JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
-USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
-USER_RULES_JOB_QUEUE = app.conf.USER_RULES_JOB_QUEUE
+def get_user_rules_job_index():
+    return app.conf.USER_RULES_JOB_INDEX
+
+def get_jobs_processed_queue():
+    return app.conf.JOBS_PROCESSED_QUEUE
+
+def get_user_rules_trigger_queue():
+    return app.conf.USER_RULES_TRIGGER_QUEUE
+
+def get_user_rules_job_queue():
+    return app.conf.USER_RULES_JOB_QUEUE
+
 JOB_STATUS_ALIAS = "job_status-current"
 
 
@@ -105,7 +115,7 @@ def evaluate_user_rules_job(job_id, index=None):
     # get all enabled user rules
     query = {"query": {"term": {"enabled": True}}}
     mozart_es = get_mozart_es()
-    rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
+    rules = mozart_es.query(index=get_user_rules_job_index(), body=query)
     logger.info(f"Total {len(rules)} enabled rules to check.")
 
     for rule in rules:
@@ -183,7 +193,7 @@ def queue_finished_job(_id, index=None):
         "kwargs": {"index": index},
     }
     hysds.task_worker.run_task.apply_async(
-        (payload,), queue=USER_RULES_JOB_QUEUE
+        (payload,), queue=get_user_rules_job_queue()
     )  # noqa
 
 
@@ -199,5 +209,5 @@ def queue_job_trigger(doc_res, rule, job_name):
         "kwargs": {"job_name": job_name, "component": "mozart"},
     }
     hysds.task_worker.run_task.apply_async(
-        (payload,), queue=USER_RULES_TRIGGER_QUEUE
+        (payload,), queue=get_user_rules_trigger_queue()
     )  # noqa

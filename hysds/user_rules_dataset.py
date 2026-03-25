@@ -14,13 +14,24 @@ from hysds.es_util import get_grq_es, get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 from hysds.utils import validate_index_pattern
 
-GRQ_ES_URL = app.conf.GRQ_ES_URL  # ES
-DATASET_ALIAS = app.conf.DATASET_ALIAS
-USER_RULES_DATASET_INDEX = app.conf.USER_RULES_DATASET_INDEX
+# Lazy getters to avoid import-time Celery config access
+def get_grq_es_url():
+    return app.conf.GRQ_ES_URL
 
-JOBS_PROCESSED_QUEUE = app.conf.JOBS_PROCESSED_QUEUE  # queue names
-USER_RULES_TRIGGER_QUEUE = app.conf.USER_RULES_TRIGGER_QUEUE
-USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
+def get_dataset_alias():
+    return app.conf.DATASET_ALIAS
+
+def get_user_rules_dataset_index():
+    return app.conf.USER_RULES_DATASET_INDEX
+
+def get_jobs_processed_queue():
+    return app.conf.JOBS_PROCESSED_QUEUE
+
+def get_user_rules_trigger_queue():
+    return app.conf.USER_RULES_TRIGGER_QUEUE
+
+def get_user_rules_dataset_queue():
+    return app.conf.USER_RULES_DATASET_QUEUE
 
 
 @backoff.on_exception(
@@ -86,20 +97,25 @@ def search_es(index, body):
 
 
 def evaluate_user_rules_dataset(
-    objectid, system_version, alias=DATASET_ALIAS, job_queue=JOBS_PROCESSED_QUEUE
+    objectid, system_version, alias=None, job_queue=None
 ):
     """
     Process all user rules in ES database and check if this objectid matches.
     If so, submit jobs. Otherwise do nothing.
     """
 
+    if alias is None:
+        alias = get_dataset_alias()
+    if job_queue is None:
+        job_queue = get_jobs_processed_queue()
+    
     time.sleep(6)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
     query = {"query": {"term": {"enabled": True}}}
     mozart_es = get_mozart_es()
-    rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
+    rules = mozart_es.query(index=get_user_rules_dataset_index(), body=query)
     logger.info(f"Total {len(rules)} enabled rules to check.")
 
     for document in rules:
@@ -127,9 +143,9 @@ def evaluate_user_rules_dataset(
         index_pattern = index_pattern.strip()
         if not index_pattern or not validate_index_pattern(index_pattern):
             logger.warning(
-                f"index_pattern {index_pattern} not valid, defaulting to {DATASET_ALIAS}"
+                f"index_pattern {index_pattern} not valid, defaulting to {get_dataset_alias()}"
             )
-            index_pattern = DATASET_ALIAS
+            index_pattern = get_dataset_alias()
         logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
         # check for matching rules
@@ -174,7 +190,7 @@ def queue_dataset_evaluation(info):
         "args": [info["id"], info["system_version"]],
     }
     hysds.task_worker.run_task.apply_async(
-        (payload,), queue=app.conf.USER_RULES_DATASET_QUEUE
+        (payload,), queue=get_user_rules_dataset_queue()
     )  # noqa
 
 
@@ -190,5 +206,5 @@ def queue_dataset_trigger(doc_res, rule, job_name):
         "kwargs": {"job_name": job_name, "component": "grq"},
     }
     hysds.task_worker.run_task.apply_async(
-        (payload,), queue=USER_RULES_TRIGGER_QUEUE
+        (payload,), queue=get_user_rules_trigger_queue()
     )  # noqa
