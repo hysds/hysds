@@ -101,13 +101,15 @@ class Base(ABC):
         return docker_cmd
 
     @classmethod
-    def verify_container_mount(cls, mount, blacklist=app.conf.WORKER_MOUNT_BLACKLIST):
+    def verify_container_mount(cls, mount, blacklist=None):
         """
         Verify host mount directory, ex. /data/work/...
         :param mount:
         :param blacklist:
         :return:
         """
+        if blacklist is None:
+            blacklist = app.conf.WORKER_MOUNT_BLACKLIST
         if mount == "/":
             raise RuntimeError("Cannot mount host root directory")
         for k in blacklist:
