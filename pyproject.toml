@@ -29,9 +29,9 @@ classifiers = [
 
 dependencies = [
     # HySDS sibling packages
-    "hysds-osaka~=7.0",
-    "hysds-prov-es~=7.0",
-    "hysds-commons~=7.0",
+    "hysds-osaka>=7.0,<8.0",
+    "hysds-prov-es>=7.0,<8.0",
+    "hysds-commons>=7.0,<8.0",
     
     # Core dependencies - matching original setup.py order and pins
     "redis~=5.2",  # Relaxed from ==5.2.1 per migration spec
