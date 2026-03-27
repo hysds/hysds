@@ -100,6 +100,10 @@ raw-options = {version_scheme = "no-guess-dev"}
 [tool.hatch.build.targets.wheel]
 packages = ["hysds"]
 
+[tool.hatch.build.targets.wheel.shared-data]
+"configs" = "share/hysds/configs"
+"scripts" = "share/hysds/scripts"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "/hysds",
