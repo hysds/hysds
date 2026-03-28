@@ -1,5 +1,14 @@
-
+import os
+import sys
 from celery import Celery
+
+# Add etc/ directories to Python path for celeryconfig in PyPI installs
+# Check common HySDS component directories
+home = os.environ.get('HOME', os.path.expanduser('~'))
+for component in ['mozart', 'sciflo', 'metrics', 'verdi']:
+    etc_dir = os.path.join(home, component, 'etc')
+    if os.path.exists(etc_dir) and etc_dir not in sys.path:
+        sys.path.insert(0, etc_dir)
 
 app = Celery("hysds")
 
