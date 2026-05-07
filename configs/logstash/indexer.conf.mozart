@@ -121,6 +121,7 @@ filter {
       "
     }
   }
+}
 
 output {
   #stdout { codec => rubydebug }
