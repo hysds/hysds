@@ -83,6 +83,44 @@ filter {
   #   "
   #  }
   #}
+
+  # Sanitize ARM64/cgroups v2 memory stats that exceed ES long range
+  # ARM64 reports UINT64_MAX-based sentinel values for unlimited/disabled limits
+  if [resource] == "job" {
+    ruby {
+      code => "
+        max_long = 9223372036854775807
+
+        # Helper to recursively sanitize numeric fields
+        def sanitize_value(obj, max_val)
+          case obj
+          when Hash
+            obj.each do |key, value|
+              obj[key] = sanitize_value(value, max_val)
+            end
+          when Array
+            obj.map! { |item| sanitize_value(item, max_val) }
+          when Numeric
+            # If value exceeds max long, set to -1 (convention for unlimited)
+            obj > max_val ? -1 : obj
+          else
+            obj
+          end
+        end
+
+        # Sanitize usage_stats if present
+        usage_stats = event.get('[job][job_info][metrics][usage_stats]')
+        if usage_stats.is_a?(Array)
+          usage_stats.each do |stat|
+            if stat.is_a?(Hash) && stat['cgroups'].is_a?(Hash)
+              stat['cgroups'] = sanitize_value(stat['cgroups'], max_long)
+            end
+          end
+          event.set('[job][job_info][metrics][usage_stats]', usage_stats)
+        end
+      "
+    }
+  }
 }
 
 output {
