@@ -94,19 +94,20 @@ def update_query(job_id, rule):
     return final_query
 
 
-def _giveup_on_request_error(e):
-    """Query parse 400s are deterministic; retrying cannot change the outcome."""
-    return isinstance(
-        e,
-        (
-            elasticsearch.exceptions.RequestError,
-            opensearchpy.exceptions.RequestError,
-        ),
-    )
+def _is_request_error(e):
+    """True if e is an elasticsearch/opensearchpy RequestError (HTTP 400).
+    Query parse 400s are deterministic; retrying cannot change the outcome.
+    Resolved via isinstance per module so a stubbed-out client library (as in
+    unit test environments) degrades to False instead of breaking matching."""
+    for exceptions_module in (elasticsearch.exceptions, opensearchpy.exceptions):
+        cls = getattr(exceptions_module, "RequestError", None)
+        if isinstance(cls, type) and issubclass(cls, BaseException) and isinstance(e, cls):
+            return True
+    return False
 
 
 @backoff.on_exception(
-    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_giveup_on_request_error
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
 )
 def _msearch(searches):
     mozart_es = get_mozart_es()
@@ -115,7 +116,7 @@ def _msearch(searches):
 
 
 @backoff.on_exception(
-    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_giveup_on_request_error
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
 )
 def search_es(index, body):
     mozart_es = get_mozart_es()
@@ -133,10 +134,9 @@ def msearch_es(searches):
     """
     try:
         return _msearch(searches)
-    except (
-        elasticsearch.exceptions.RequestError,
-        opensearchpy.exceptions.RequestError,
-    ) as e:
+    except Exception as e:
+        if not _is_request_error(e):
+            raise
         logger.error(
             f"msearch rejected at request parse time ({e}); "
             "falling back to per-rule searches"
@@ -145,10 +145,7 @@ def msearch_es(searches):
         for header, body in searches:
             try:
                 responses.append(search_es(index=header["index"], body=body))
-            except (
-                elasticsearch.exceptions.ElasticsearchException,
-                opensearchpy.exceptions.OpenSearchException,
-            ) as per_rule_error:
+            except Exception as per_rule_error:
                 responses.append({"error": {"reason": str(per_rule_error)}})
         return responses
 
