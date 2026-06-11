@@ -6,6 +6,8 @@ import json
 import socket
 
 import backoff
+import elasticsearch.exceptions
+import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
@@ -92,11 +94,63 @@ def update_query(job_id, rule):
     return final_query
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
-def msearch_es(searches):
+def _giveup_on_request_error(e):
+    """Query parse 400s are deterministic; retrying cannot change the outcome."""
+    return isinstance(
+        e,
+        (
+            elasticsearch.exceptions.RequestError,
+            opensearchpy.exceptions.RequestError,
+        ),
+    )
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_giveup_on_request_error
+)
+def _msearch(searches):
     mozart_es = get_mozart_es()
     # Use wrapper method instead of direct ES call for closed index handling (HC-600)
     return mozart_es.msearch(searches, request_timeout=30)
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_giveup_on_request_error
+)
+def search_es(index, body):
+    mozart_es = get_mozart_es()
+    # Use wrapper method instead of direct ES call for closed index handling (HC-600)
+    return mozart_es.search(index=index, body=body, request_timeout=30)
+
+
+def msearch_es(searches):
+    """
+    Run all rule queries in one multi search request. A rule whose query is
+    valid JSON but unparseable query DSL fails the WHOLE msearch request with
+    a 400 at request parse time rather than as a per-item error, so fall back
+    to issuing the searches individually in that case -- one bad rule must not
+    block evaluation of the remaining rules.
+    """
+    try:
+        return _msearch(searches)
+    except (
+        elasticsearch.exceptions.RequestError,
+        opensearchpy.exceptions.RequestError,
+    ) as e:
+        logger.error(
+            f"msearch rejected at request parse time ({e}); "
+            "falling back to per-rule searches"
+        )
+        responses = []
+        for header, body in searches:
+            try:
+                responses.append(search_es(index=header["index"], body=body))
+            except (
+                elasticsearch.exceptions.ElasticsearchException,
+                opensearchpy.exceptions.OpenSearchException,
+            ) as per_rule_error:
+                responses.append({"error": {"reason": str(per_rule_error)}})
+        return responses
 
 
 def evaluate_user_rules_job(job_id, index=None):
