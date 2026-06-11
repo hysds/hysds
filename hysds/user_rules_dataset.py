@@ -4,7 +4,6 @@ standard_library.install_aliases()
 
 import json
 import socket
-import time
 
 import backoff
 import elasticsearch.exceptions
@@ -81,10 +80,10 @@ def update_query(_id, system_version, rule):
 
 
 @backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
-def search_es(index, body):
+def msearch_es(searches):
     grq_es = get_grq_es()
     # Use wrapper method instead of direct ES call for closed index handling (HC-600)
-    return grq_es.search(index=index, body=body, request_timeout=30)
+    return grq_es.msearch(searches, request_timeout=30)
 
 
 def evaluate_user_rules_dataset(
@@ -95,7 +94,6 @@ def evaluate_user_rules_dataset(
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(6)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
@@ -104,9 +102,10 @@ def evaluate_user_rules_dataset(
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info(f"Total {len(rules)} enabled rules to check.")
 
+    # build a single multi search request with one search per rule
+    candidates = []
+    searches = []
     for document in rules:
-        time.sleep(1)  # sleep between queries
-
         rule = document["_source"]
         logger.info(f"rule: {json.dumps(rule, indent=2)}")
 
@@ -119,8 +118,6 @@ def evaluate_user_rules_dataset(
             logger.error(e)
             continue
 
-        rule_name = rule["rule_name"]
-        job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
 
         index_pattern = rule.get("index_pattern", "")
@@ -134,26 +131,39 @@ def evaluate_user_rules_dataset(
             index_pattern = DATASET_ALIAS
         logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
-        # check for matching rules
-        try:
-            result = search_es(index=index_pattern, body=final_qs)
-            if result["hits"]["total"]["value"] == 0:
-                logger.info(
-                    f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
-                )
-                continue
-            doc_res = result["hits"]["hits"][0]
-            logger.info(
-                f"Rule '{rule_name}' successfully matched for {objectid} ({system_version})"
+        searches.append(({"index": index_pattern}, {**updated_query, "size": 1}))
+        candidates.append(rule)
+
+    if not searches:
+        return True
+
+    # check all rules for matches in a single round trip
+    responses = msearch_es(searches)
+
+    matched = []
+    errored = []
+    for rule, result in zip(candidates, responses):
+        rule_name = rule["rule_name"]
+
+        if result.get("error"):
+            logger.error(
+                f"Rule '{rule_name}' query failed for {objectid} ({system_version}): "
+                f"{json.dumps(result['error'])}"
             )
-        except (
-            elasticsearch.exceptions.ElasticsearchException,
-            opensearchpy.exceptions.OpenSearchException,
-        ) as e:
-            logger.error("Failed to query ES")
-            logger.error(e)
+            errored.append(rule_name)
             continue
 
+        if result["hits"]["total"]["value"] == 0:
+            logger.info(
+                f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
+            )
+            continue
+        doc_res = result["hits"]["hits"][0]
+        logger.info(
+            f"Rule '{rule_name}' successfully matched for {objectid} ({system_version})"
+        )
+
+        job_type = rule["job_type"]  # set clean descriptive job name
         if job_type.startswith("hysds-io-"):
             job_type = job_type.replace("hysds-io-", "", 1)
         job_name = f"{job_type}-{objectid}"
@@ -162,6 +172,12 @@ def evaluate_user_rules_dataset(
         logger.info(
             f"Trigger task submitted for {objectid} ({system_version}): {job_type}"
         )
+        matched.append(rule_name)
+
+    logger.info(
+        f"Evaluated {len(candidates)} rules for {objectid} ({system_version}): "
+        f"matched={matched} errored={errored}"
+    )
     return True
 
 

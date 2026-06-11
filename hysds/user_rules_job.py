@@ -4,11 +4,8 @@ standard_library.install_aliases()
 
 import json
 import socket
-import time
 
 import backoff
-import elasticsearch.exceptions
-import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
@@ -95,13 +92,19 @@ def update_query(job_id, rule):
     return final_query
 
 
+@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
+def msearch_es(searches):
+    mozart_es = get_mozart_es()
+    # Use wrapper method instead of direct ES call for closed index handling (HC-600)
+    return mozart_es.msearch(searches, request_timeout=30)
+
+
 def evaluate_user_rules_job(job_id, index=None):
     """
     Process all user rules in ES database and check if this job ID matches.
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(7)  # sleep 7 seconds to allow ES documents to be indexed
     ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS)  # ensure job is indexed
 
     # get all enabled user rules
@@ -110,9 +113,10 @@ def evaluate_user_rules_job(job_id, index=None):
     rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
     logger.info(f"Total {len(rules)} enabled rules to check.")
 
+    # build a single multi search request with one search per rule
+    candidates = []
+    searches = []
     for rule in rules:
-        time.sleep(1)  # sleep between queries
-
         rule = rule["_source"]  # extracting _source from the rule itself
         logger.info(f"rule: {json.dumps(rule, indent=2)}")
 
@@ -125,24 +129,35 @@ def evaluate_user_rules_job(job_id, index=None):
             logger.error(e)
             continue
 
-        rule_name = rule["rule_name"]
         final_qs = rule["query_string"]
         logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
-        # check for matching rules
-        try:
-            mozart_es = get_mozart_es()
-            # Use wrapper method instead of direct ES call for closed index handling (HC-600)
-            result = mozart_es.search(index=index or JOB_STATUS_ALIAS, body=final_qs)
-            if result["hits"]["total"]["value"] == 0:
-                logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
-                continue
-        except (
-            elasticsearch.exceptions.ElasticsearchException,
-            opensearchpy.exceptions.OpenSearchException,
-        ) as e:
-            logger.error("Failed to query ES")
-            logger.error(e)
+        searches.append(
+            ({"index": index or JOB_STATUS_ALIAS}, {**updated_query, "size": 1})
+        )
+        candidates.append(rule)
+
+    if not searches:
+        return True
+
+    # check all rules for matches in a single round trip
+    responses = msearch_es(searches)
+
+    matched = []
+    errored = []
+    for rule, result in zip(candidates, responses):
+        rule_name = rule["rule_name"]
+
+        if result.get("error"):
+            logger.error(
+                f"Rule '{rule_name}' query failed for {job_id}: "
+                f"{json.dumps(result['error'])}"
+            )
+            errored.append(rule_name)
+            continue
+
+        if result["hits"]["total"]["value"] == 0:
+            logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
             continue
 
         doc_res = result["hits"]["hits"][0]
@@ -152,7 +167,7 @@ def evaluate_user_rules_job(job_id, index=None):
         job_type = rule.get("job_type", "")
         if job_type.startswith("hysds-io-"):
             job_type = job_type.replace("hysds-io-", "", 1)
-        
+
         # Check if we should persist the original job's name
         job_name_path = rule.get("job_name_path", "")
         if job_name_path:
@@ -170,6 +185,12 @@ def evaluate_user_rules_job(job_id, index=None):
         # submit trigger task
         queue_job_trigger(doc_res, rule, job_name)
         logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
+        matched.append(rule_name)
+
+    logger.info(
+        f"Evaluated {len(candidates)} rules for {job_id}: "
+        f"matched={matched} errored={errored}"
+    )
     return True
 
 
