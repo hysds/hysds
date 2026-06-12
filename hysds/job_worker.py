@@ -72,6 +72,7 @@ SIG_NAMES = {
 AZ_INFO = "http://169.254.169.254/latest/meta-data/placement/availability-zone"
 INS_TYPE_INFO = "http://169.254.169.254/latest/meta-data/instance-type"
 INS_ID_INFO = "http://169.254.169.254/latest/meta-data/instance-id"
+IMDS_TOKEN_URL = "http://169.254.169.254/latest/api/token"
 
 # store facts
 FACTS = None
@@ -962,14 +963,27 @@ def run_job(job, queue_when_finished=True):
             fail_job(job_status_json, jd_file)
 
         # get availability zone, instance id and type
-        #   TODO: is this needed? (the urls are hard coded and ignored when errors) maybe this can be generalized soe
+        # fetch IMDSv2 token first so this works on instances with HttpTokens=required
+        imds_token = None
+        try:
+            token_resp = requests.put(
+                IMDS_TOKEN_URL,
+                headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+                timeout=1,
+            )
+            if token_resp.status_code == 200:
+                imds_token = token_resp.text
+        except:
+            pass
+        imds_headers = {"X-aws-ec2-metadata-token": imds_token} if imds_token else {}
+
         for md_url, md_name in (
             (AZ_INFO, "ec2_placement_availability_zone"),
             (INS_ID_INFO, "ec2_instance_id"),
             (INS_TYPE_INFO, "ec2_instance_type"),
         ):
             try:
-                r = requests.get(md_url, timeout=1)
+                r = requests.get(md_url, headers=imds_headers, timeout=1)
                 if r.status_code == 200:
                     facts[md_name] = r.content.decode()
             except:
