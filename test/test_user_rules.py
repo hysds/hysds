@@ -52,6 +52,38 @@ def request_error():
     )
 
 
+def wrapped_request_error():
+    """The exception production actually raises: the hysds_commons jittered-backoff
+    connection wrapper catches the RequestError and re-raises it as a generic
+    exception chained via __cause__ (raise JitteredBackoffException(...) from e).
+    The propagating exception is therefore NOT a RequestError instance."""
+    try:
+        raise request_error()
+    except Exception as orig:
+        try:
+            raise RuntimeError("Exception occurred: RequestError(400, ...)") from orig
+        except Exception as wrapped:
+            return wrapped
+
+
+class TestIsRequestError(unittest.TestCase):
+    """The fallback hinges on detecting a 400 even when the client library has
+    wrapped it -- this is the case the unit suite previously missed and the live
+    cluster surfaced (JitteredBackoffException wrapping the real RequestError)."""
+
+    def test_bare_request_error_detected(self):
+        self.assertTrue(urd._is_request_error(request_error()))
+        self.assertTrue(urj._is_request_error(request_error()))
+
+    def test_wrapped_request_error_detected(self):
+        self.assertTrue(urd._is_request_error(wrapped_request_error()))
+        self.assertTrue(urj._is_request_error(wrapped_request_error()))
+
+    def test_unrelated_exception_not_detected(self):
+        self.assertFalse(urd._is_request_error(ValueError("nope")))
+        self.assertFalse(urd._is_request_error(RuntimeError("plain")))
+
+
 class TestEvaluateUserRulesDataset(unittest.TestCase):
     def setUp(self):
         self.grq_es = umock.MagicMock()
@@ -113,10 +145,11 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
     def test_request_parse_400_falls_back_to_per_rule_searches(self):
         """A rule with unparseable query DSL 400s the whole msearch request;
         evaluation must fall back to per-rule searches so the bad rule cannot
-        block the rest."""
+        block the rest. Production wraps the RequestError (JitteredBackoffException
+        chained via __cause__), so the fallback must trigger on the wrapped form."""
         self.mozart_es.query.return_value = [make_rule("good"), make_rule("bad")]
-        self.grq_es.msearch.side_effect = request_error()
-        self.grq_es.search.side_effect = [hit("ds1"), request_error()]
+        self.grq_es.msearch.side_effect = wrapped_request_error()
+        self.grq_es.search.side_effect = [hit("ds1"), wrapped_request_error()]
 
         self.assertTrue(self.evaluate())
 
@@ -201,9 +234,10 @@ class TestEvaluateUserRulesJob(unittest.TestCase):
         self.assertEqual(self.trigger.call_args.args[2], "retry-cool_product")
 
     def test_request_parse_400_falls_back_to_per_rule_searches(self):
+        # production wraps the RequestError (JitteredBackoffException via __cause__)
         self.mozart_es.query.return_value = [make_rule("good"), make_rule("bad")]
-        self.mozart_es.msearch.side_effect = request_error()
-        self.mozart_es.search.side_effect = [hit("job1"), request_error()]
+        self.mozart_es.msearch.side_effect = wrapped_request_error()
+        self.mozart_es.search.side_effect = [hit("job1"), wrapped_request_error()]
 
         self.assertTrue(urj.evaluate_user_rules_job("job1"))
 
