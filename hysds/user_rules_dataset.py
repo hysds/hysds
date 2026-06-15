@@ -80,14 +80,22 @@ def update_query(_id, system_version, rule):
 
 
 def _is_request_error(e):
-    """True if e is an elasticsearch/opensearchpy RequestError (HTTP 400).
+    """True if e is (or wraps) an elasticsearch/opensearchpy RequestError (HTTP 400).
     Query parse 400s are deterministic; retrying cannot change the outcome.
-    Resolved via isinstance per module so a stubbed-out client library (as in
-    unit test environments) degrades to False instead of breaking matching."""
-    for exceptions_module in (elasticsearch.exceptions, opensearchpy.exceptions):
-        cls = getattr(exceptions_module, "RequestError", None)
-        if isinstance(cls, type) and issubclass(cls, BaseException) and isinstance(e, cls):
-            return True
+
+    The hysds_commons jittered-backoff connection wrapper re-raises the original
+    client error as JitteredBackoffException chained via __cause__ (raise ... from e),
+    so the propagating exception is NOT the RequestError itself -- walk the cause
+    chain to find it. Resolved via isinstance per module so a stubbed-out client
+    library (as in unit test environments) degrades to False rather than breaking."""
+    seen = set()
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        for exceptions_module in (elasticsearch.exceptions, opensearchpy.exceptions):
+            cls = getattr(exceptions_module, "RequestError", None)
+            if isinstance(cls, type) and issubclass(cls, BaseException) and isinstance(e, cls):
+                return True
+        e = getattr(e, "__cause__", None) or getattr(e, "__context__", None)
     return False
 
 
