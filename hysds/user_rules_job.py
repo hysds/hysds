@@ -11,7 +11,7 @@ import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.es_util import get_mozart_es
+from hysds.es_util import assert_doc_settled, get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
@@ -53,13 +53,17 @@ def process_xpath(xpath, trigger):
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def ensure_job_indexed(job_id, alias):
-    """Ensure job is indexed."""
-    query = {"query": {"term": {"_id": job_id}}}
-    logger.info(f"ensure_job_indexed: {json.dumps(query)}")
+    """Ensure the job is indexed AND its latest write is search-visible.
+
+    Job rules commonly filter on a status field that transitions post-creation
+    (job-started -> job-completed/job-failed); search is refresh-bound, so the
+    updated status can lag the trigger and an _id existence check alone would pass
+    on the stale version. assert_doc_settled confirms the searchable copy has
+    caught up to the latest write, bounded by the existing exponential backoff.
+    """
+    logger.info(f"ensure_job_indexed: {job_id}")
     mozart_es = get_mozart_es()
-    count = mozart_es.get_count(index=alias, body=query)
-    if count == 0:
-        raise RuntimeError(f"Failed to find indexed job: {job_id}")
+    assert_doc_settled(mozart_es, alias, job_id)
 
 
 def get_job(job_id, rule, result):
