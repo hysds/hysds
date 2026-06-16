@@ -11,7 +11,7 @@ import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.es_util import get_grq_es, get_mozart_es
+from hysds.es_util import assert_doc_settled, get_grq_es, get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 from hysds.utils import validate_index_pattern
 
@@ -28,29 +28,26 @@ USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def ensure_dataset_indexed(objectid, system_version, alias):
-    """Ensure dataset is indexed."""
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"term": {"_id": objectid}},
-                    {"term": {"system_version.keyword": system_version}},
-                ]
-            }
-        }
-    }
+    """Ensure the dataset is indexed AND its latest write is search-visible.
 
-    logger.info(f"ensure_dataset_indexed query: {json.dumps(query)}")
+    A rule can be triggered by a field UPDATE on a pre-existing doc (e.g. a
+    cycle-state-config's is_complete flipping false->true). Search is refresh-bound,
+    so the updated value can lag the trigger; an _id existence check alone passes on
+    the stale version and the rule's filtered query then misses, dropping the
+    trigger. assert_doc_settled confirms the searchable copy has caught up to the
+    latest write (realtime GET for the authoritative _seq_no), bounded by the
+    existing exponential backoff -- no fixed sleep, no per-eval _refresh.
+    """
+    logger.info(f"ensure_dataset_indexed: {objectid} ({system_version})")
     try:
         grq_es = get_grq_es()
-        count = grq_es.get_count(index=alias, body=query)
-        if count == 0:
-            error_message = (
-                f"Failed to find indexed dataset: {objectid} ({system_version})"
-            )
-            logger.error(error_message)
-            raise RuntimeError(error_message)
-        logger.info(f"Found indexed dataset: {objectid} ({system_version})")
+        assert_doc_settled(
+            grq_es,
+            alias,
+            objectid,
+            extra_must=[{"term": {"system_version.keyword": system_version}}],
+        )
+        logger.info(f"Found settled indexed dataset: {objectid} ({system_version})")
     except (
         elasticsearch.exceptions.ElasticsearchException,
         opensearchpy.exceptions.OpenSearchException,

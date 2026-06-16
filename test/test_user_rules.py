@@ -94,6 +94,8 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
             umock.patch.object(urd, "get_mozart_es", return_value=self.mozart_es),
             umock.patch.object(urd, "queue_dataset_trigger", self.trigger),
             umock.patch.object(urd, "validate_index_pattern", lambda p: True),
+            # ensure_dataset_indexed is covered by TestAssertDocSettled; no-op here
+            umock.patch.object(urd, "ensure_dataset_indexed"),
         ]
         for p in patches:
             p.start()
@@ -203,6 +205,8 @@ class TestEvaluateUserRulesJob(unittest.TestCase):
         patches = [
             umock.patch.object(urj, "get_mozart_es", return_value=self.mozart_es),
             umock.patch.object(urj, "queue_job_trigger", self.trigger),
+            # ensure_job_indexed is covered by TestAssertDocSettled; no-op here
+            umock.patch.object(urj, "ensure_job_indexed"),
         ]
         for p in patches:
             p.start()
@@ -244,6 +248,54 @@ class TestEvaluateUserRulesJob(unittest.TestCase):
         self.assertEqual(self.mozart_es.search.call_count, 2)
         self.assertEqual(self.trigger.call_count, 1)
         self.assertEqual(self.trigger.call_args.args[1]["rule_name"], "good")
+
+
+class TestAssertDocSettled(unittest.TestCase):
+    """Refresh-visibility guard for the field-UPDATE race that dropped forward
+    DISP-S1 products once the head sleep was removed: a complete cycle-state-config
+    (is_complete flipped false->true) whose searchable copy lagged the trigger, so
+    the rule query saw stale state and missed. An _id existence check passes on the
+    stale version; assert_doc_settled requires the searchable _seq_no to catch up to
+    the realtime (translog) _seq_no."""
+
+    @staticmethod
+    def _es(search_seq_no, get_seq_no, hits=True):
+        es = umock.MagicMock()
+        es.search.return_value = {
+            "hits": {"hits": [{"_index": "grq_1_x", "_seq_no": search_seq_no}] if hits else []}
+        }
+        es.es.get.return_value = {"_seq_no": get_seq_no}
+        return es
+
+    def _settled(self):
+        from hysds.es_util import assert_doc_settled
+        return assert_doc_settled
+
+    def test_settled_when_searchable_caught_up(self):
+        # searchable _seq_no == latest -> the update is visible -> no raise
+        self._settled()(self._es(7, 7), "grq", "csc-20180326")
+
+    def test_raises_when_searchable_stale(self):
+        # searchable copy still on the pre-update version -> backoff retries
+        with self.assertRaises(Exception):
+            self._settled()(self._es(5, 7), "grq", "csc-20180302")
+
+    def test_raises_when_not_search_visible(self):
+        # new-doc ingest race: not in search yet -> backoff retries
+        with self.assertRaises(Exception):
+            self._settled()(self._es(None, None, hits=False), "grq", "brand-new")
+
+    def test_settled_when_seq_no_unavailable(self):
+        # older ES without seq_no -> degrade to existence-only (legacy behavior)
+        self._settled()(self._es(None, None), "grq", "legacy")
+
+    def test_passes_extra_must_into_query(self):
+        es = self._es(7, 7)
+        self._settled()(es, "grq", "d1", extra_must=[{"term": {"system_version.keyword": "v1.0"}}])
+        body = es.search.call_args.kwargs["body"]
+        self.assertTrue(body.get("seq_no_primary_term"))
+        musts = body["query"]["bool"]["must"]
+        self.assertIn({"term": {"system_version.keyword": "v1.0"}}, musts)
 
 
 if __name__ == "__main__":
