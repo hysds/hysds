@@ -1,3 +1,3 @@
-__version__ = "3.1.6"
+__version__ = "3.1.7"
 __url__ = "https://github.com/hysds/hysds"
 __description__ = "HySDS (Hybrid Cloud Science Data System)"
