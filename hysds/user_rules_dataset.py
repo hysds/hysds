@@ -99,31 +99,36 @@ def _is_request_error(e):
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
 )
-def _msearch(searches):
+def _msearch(searches, preference):
     grq_es = get_grq_es()
-    # Use wrapper method instead of direct ES call for closed index handling (HC-600)
-    return grq_es.msearch(searches, request_timeout=30)
+    # Use wrapper method instead of direct ES call for closed index handling (HC-600).
+    # preference=objectid pins this to the SAME shard copy ensure_dataset_indexed's
+    # settled-probe validated, so we never query a lagging replica (HC-633).
+    return grq_es.msearch(searches, request_timeout=30, preference=preference)
 
 
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
 )
-def search_es(index, body):
+def search_es(index, body, preference):
     grq_es = get_grq_es()
     # Use wrapper method instead of direct ES call for closed index handling (HC-600)
-    return grq_es.search(index=index, body=body, request_timeout=30)
+    return grq_es.search(index=index, body=body, request_timeout=30, preference=preference)
 
 
-def msearch_es(searches):
+def msearch_es(searches, preference):
     """
     Run all rule queries in one multi search request. A rule whose query is
     valid JSON but unparseable query DSL fails the WHOLE msearch request with
     a 400 at request parse time rather than as a per-item error, so fall back
     to issuing the searches individually in that case -- one bad rule must not
     block evaluation of the remaining rules.
+
+    preference (the triggering objectid) routes every search here to the same
+    shard copy the settled-probe checked, closing the replica-lag race (HC-633).
     """
     try:
-        return _msearch(searches)
+        return _msearch(searches, preference)
     except Exception as e:
         if not _is_request_error(e):
             raise
@@ -134,7 +139,7 @@ def msearch_es(searches):
         responses = []
         for header, body in searches:
             try:
-                responses.append(search_es(index=header["index"], body=body))
+                responses.append(search_es(index=header["index"], body=body, preference=preference))
             except Exception as per_rule_error:
                 responses.append({"error": {"reason": str(per_rule_error)}})
         return responses
@@ -191,8 +196,9 @@ def evaluate_user_rules_dataset(
     if not searches:
         return True
 
-    # check all rules for matches in a single round trip
-    responses = msearch_es(searches)
+    # check all rules for matches in a single round trip; preference=objectid pins
+    # the same shard copy ensure_dataset_indexed validated (HC-633 replica-lag fix)
+    responses = msearch_es(searches, objectid)
 
     matched = []
     errored = []

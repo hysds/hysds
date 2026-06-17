@@ -35,8 +35,14 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     search-visible or its searchable copy is stale. No fixed sleep, and no per-eval
     _refresh (which would flush a segment across all shards every ingest and cause
     refresh storms under a dense cascade); the realtime GET is single-shard and
-    translog-served. NOTE: with replicas, the rule query may hit a replica that
-    lags the GET'd primary -- route both to a consistent preference if that matters.
+    translog-served.
+
+    Shard routing: with replicas, search round-robins across copies, so this probe
+    and the caller's rule query could land on different copies -- this one settled,
+    that one a lagging replica -- and the rule would miss. So this probe pins
+    `preference=doc_id`; the caller MUST pass the same `preference=doc_id` on its
+    rule query so both bind to the same copy. (Opaque routing key: same string ->
+    same copy; spreads load across copies by doc, unlike `_primary`.)
     """
     must = [{"term": {"_id": doc_id}}]
     if extra_must:
@@ -46,7 +52,7 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
         "seq_no_primary_term": True,
         "size": 1,
     }
-    hits = es_util.search(index=index, body=body)["hits"]["hits"]
+    hits = es_util.search(index=index, body=body, preference=doc_id)["hits"]["hits"]
     if not hits:
         raise RuntimeError(f"doc not yet search-visible: {doc_id}")
     hit = hits[0]

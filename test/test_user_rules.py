@@ -128,6 +128,9 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
         for header, body in searches:
             self.assertIn("index", header)
             self.assertEqual(body["size"], 1)
+        # HC-633 replica-lag fix: the rule msearch must be pinned to the objectid
+        # so it hits the same shard copy the settled-probe validated
+        self.assertEqual(self.grq_es.msearch.call_args.kwargs["preference"], "ds1")
         # non-query_all rules are constrained to the dataset _id; query_all is not
         rule_a_filters = json.dumps(searches[0][1])
         rule_c_filters = json.dumps(searches[2][1])
@@ -296,6 +299,14 @@ class TestAssertDocSettled(unittest.TestCase):
         self.assertTrue(body.get("seq_no_primary_term"))
         musts = body["query"]["bool"]["must"]
         self.assertIn({"term": {"system_version.keyword": "v1.0"}}, musts)
+
+    def test_settled_probe_pins_preference_to_doc_id(self):
+        # HC-633 replica-lag fix: the settled-probe must route by doc_id so it
+        # validates the SAME shard copy the rule msearch (also preference=doc_id)
+        # will query. Same string in both -> same copy.
+        es = self._es(7, 7)
+        self._settled()(es, "grq", "csc-20180302")
+        self.assertEqual(es.search.call_args.kwargs["preference"], "csc-20180302")
 
 
 if __name__ == "__main__":
