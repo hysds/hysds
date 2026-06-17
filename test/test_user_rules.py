@@ -128,9 +128,12 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
         for header, body in searches:
             self.assertIn("index", header)
             self.assertEqual(body["size"], 1)
-        # HC-633 replica-lag fix: the rule msearch must be pinned to the objectid
-        # so it hits the same shard copy the settled-probe validated
-        self.assertEqual(self.grq_es.msearch.call_args.kwargs["preference"], "ds1")
+        # HC-633 replica-lag fix: preference is set PER-SEARCH in each header
+        # (msearch() takes NO preference kwarg -- the v3.1.7 regression), pinning
+        # the same shard copy the settled-probe validated.
+        for header, _body in searches:
+            self.assertEqual(header.get("preference"), "ds1")
+        self.assertNotIn("preference", self.grq_es.msearch.call_args.kwargs)
         # non-query_all rules are constrained to the dataset _id; query_all is not
         rule_a_filters = json.dumps(searches[0][1])
         rule_c_filters = json.dumps(searches[2][1])
@@ -307,6 +310,28 @@ class TestAssertDocSettled(unittest.TestCase):
         es = self._es(7, 7)
         self._settled()(es, "grq", "csc-20180302")
         self.assertEqual(es.search.call_args.kwargs["preference"], "csc-20180302")
+
+
+class TestClientPreferenceSignature(unittest.TestCase):
+    """Signature-faithful guard for the v3.1.7 regression: the real opensearch-py
+    client's msearch() rejects a `preference` kwarg (so HC-633 sets preference
+    per-search in the header), whereas search() accepts it. Mocks accept any kwarg
+    -- exactly how the v3.1.7 'msearch() got an unexpected keyword argument
+    preference' crash slipped the suite. TypeError binds before any network call."""
+
+    def test_real_msearch_rejects_preference_kwarg(self):
+        import inspect
+        try:
+            import opensearchpy
+        except Exception:
+            self.skipTest("opensearchpy not importable")
+        # other suites stub sys.modules['opensearchpy'] with a Mock (whose attrs
+        # accept any kwarg) -- only run against the real client class
+        if not inspect.isclass(getattr(opensearchpy, "OpenSearch", None)):
+            self.skipTest("opensearchpy is stubbed in this run")
+        c = opensearchpy.OpenSearch(["https://localhost:9"], timeout=1, max_retries=0)
+        with self.assertRaises(TypeError):
+            c.msearch(body=[{"index": "x"}, {"query": {"match_all": {}}}], preference="p")
 
 
 if __name__ == "__main__":
