@@ -121,12 +121,12 @@ def _is_request_error(e):
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
 )
-def _msearch(searches, preference):
+def _msearch(searches):
     mozart_es = get_mozart_es()
     # Use wrapper method instead of direct ES call for closed index handling (HC-600).
-    # preference=job_id pins this to the SAME shard copy ensure_job_indexed's
-    # settled-probe validated, so we never query a lagging replica (HC-633).
-    return mozart_es.msearch(searches, request_timeout=30, preference=preference)
+    # NOTE: msearch() takes NO `preference` kwarg (raises TypeError); the per-search
+    # routing preference is set in each header line by msearch_es (HC-633).
+    return mozart_es.msearch(searches, request_timeout=30)
 
 
 @backoff.on_exception(
@@ -147,10 +147,13 @@ def msearch_es(searches, preference):
     block evaluation of the remaining rules.
 
     preference (the triggering job_id) routes every search here to the same shard
-    copy the settled-probe checked, closing the replica-lag race (HC-633).
+    copy the settled-probe checked, closing the replica-lag race (HC-633). It is
+    set PER-SEARCH in each header line -- _msearch takes no `preference` kwarg, and
+    a URL-level preference is ignored by the _msearch endpoint.
     """
+    searches = [({**header, "preference": preference}, body) for header, body in searches]
     try:
-        return _msearch(searches, preference)
+        return _msearch(searches)
     except Exception as e:
         if not _is_request_error(e):
             raise
