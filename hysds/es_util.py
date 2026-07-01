@@ -52,8 +52,6 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
         else:
@@ -75,8 +73,6 @@ def get_mozart_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
     return MOZART_ES
@@ -114,8 +110,6 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
         else:
@@ -137,8 +131,6 @@ def get_grq_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
     return GRQ_ES
@@ -176,8 +168,6 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
         else:
@@ -199,8 +189,6 @@ def get_metrics_es(hosts=None):
                     timeout=30,
                     max_retries=10,
                     retry_on_timeout=True,
-                    verify_certs=False,
-                    ssl_show_warn=False,
                     # sniff_on_start=True,
                 )
     return METRICS_ES
