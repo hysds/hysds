@@ -138,6 +138,28 @@ def search_es(index, body, preference):
     return mozart_es.search(index=index, body=body, request_timeout=30, preference=preference)
 
 
+def _is_retryable_item_error(item):
+    """True when a per-item msearch error is worth re-running individually.
+    A 4xx other than 429 is deterministic (parse/validation error; retrying
+    cannot change the outcome); 429 (search thread pool rejection under load)
+    and 5xx are transient. A missing status degrades to retryable: the re-run
+    goes through search_es, whose backoff gives up fast on a genuine 400."""
+    status = item.get("status")
+    if isinstance(status, int) and 400 <= status < 500 and status != 429:
+        return False
+    return True
+
+
+def _fallback_search(header, body, preference):
+    """Run one rule's search individually (search_es retries transient errors
+    with bounded backoff and gives up on 400s); package a persistent failure
+    as a per-item style error so only that rule is skipped."""
+    try:
+        return search_es(index=header["index"], body=body, preference=preference)
+    except Exception as e:
+        return {"error": {"reason": str(e)}}
+
+
 def msearch_es(searches, preference):
     """
     Run all rule queries in one multi search request. A rule whose query is
@@ -146,6 +168,15 @@ def msearch_es(searches, preference):
     to issuing the searches individually in that case -- one bad rule must not
     block evaluation of the remaining rules.
 
+    Transient PER-ITEM errors (e.g. a 429 search-queue rejection under a dense
+    cascade, or a 5xx) are re-run individually through the same per-rule
+    fallback: batching removed the old per-rule retry, and a saturated search
+    queue would otherwise silently drop just that rule's trigger. Deterministic
+    400-class item errors stay terminal for their rule. search_es's bounded
+    backoff doubles as backpressure -- an overloaded cluster slows this
+    evaluator (one task per worker process) instead of receiving fresh
+    msearches.
+
     preference (the triggering job_id) routes every search here to the same shard
     copy the settled-probe checked, closing the replica-lag race (HC-633). It is
     set PER-SEARCH in each header line -- _msearch takes no `preference` kwarg, and
@@ -153,7 +184,7 @@ def msearch_es(searches, preference):
     """
     searches = [({**header, "preference": preference}, body) for header, body in searches]
     try:
-        return _msearch(searches)
+        responses = _msearch(searches)
     except Exception as e:
         if not _is_request_error(e):
             raise
@@ -161,13 +192,17 @@ def msearch_es(searches, preference):
             f"msearch rejected at request parse time ({e}); "
             "falling back to per-rule searches"
         )
-        responses = []
-        for header, body in searches:
-            try:
-                responses.append(search_es(index=header["index"], body=body, preference=preference))
-            except Exception as per_rule_error:
-                responses.append({"error": {"reason": str(per_rule_error)}})
-        return responses
+        return [_fallback_search(header, body, preference) for header, body in searches]
+
+    for i, response in enumerate(responses):
+        if response.get("error") and _is_retryable_item_error(response):
+            header, body = searches[i]
+            logger.warning(
+                f"msearch item error (status {response.get('status')}) is transient, "
+                f"retrying rule query individually: {json.dumps(response['error'])}"
+            )
+            responses[i] = _fallback_search(header, body, preference)
+    return responses
 
 
 def evaluate_user_rules_job(job_id, index=None):

@@ -31,6 +31,18 @@ def parse_error_item(reason="unknown query [termzz]"):
     return {"error": {"type": "parsing_exception", "reason": reason}, "status": 400}
 
 
+def rejected_item():
+    """A search thread pool rejection as it surfaces per-item INSIDE a 200
+    msearch response -- the saturation signature under a dense cascade."""
+    return {
+        "error": {
+            "type": "es_rejected_execution_exception",
+            "reason": "rejected execution of ... search queue capacity",
+        },
+        "status": 429,
+    }
+
+
 def make_rule(name, query=None, **kwargs):
     doc = {
         "rule_name": name,
@@ -82,6 +94,27 @@ class TestIsRequestError(unittest.TestCase):
     def test_unrelated_exception_not_detected(self):
         self.assertFalse(urd._is_request_error(ValueError("nope")))
         self.assertFalse(urd._is_request_error(RuntimeError("plain")))
+
+
+class TestIsRetryableItemError(unittest.TestCase):
+    """Per-item msearch errors: 400-class (parse) errors are deterministic and
+    terminal; 429 search-queue rejections and 5xx are transient and re-run --
+    a saturated search queue must degrade to latency, not dropped triggers."""
+
+    def test_parse_400_not_retryable(self):
+        self.assertFalse(urd._is_retryable_item_error(parse_error_item()))
+        self.assertFalse(urj._is_retryable_item_error(parse_error_item()))
+
+    def test_rejection_429_retryable(self):
+        self.assertTrue(urd._is_retryable_item_error(rejected_item()))
+        self.assertTrue(urj._is_retryable_item_error(rejected_item()))
+
+    def test_5xx_retryable(self):
+        item = {"error": {"type": "internal_server_error"}, "status": 503}
+        self.assertTrue(urd._is_retryable_item_error(item))
+
+    def test_missing_status_retryable(self):
+        self.assertTrue(urd._is_retryable_item_error({"error": {"reason": "?"}}))
 
 
 class TestEvaluateUserRulesDataset(unittest.TestCase):
@@ -144,6 +177,40 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
         """A per-item msearch error skips that rule and evaluates the rest."""
         self.mozart_es.query.return_value = [make_rule("bad"), make_rule("good")]
         self.grq_es.msearch.return_value = [parse_error_item(), hit("ds1")]
+
+        self.assertTrue(self.evaluate())
+
+        self.assertEqual(self.trigger.call_count, 1)
+        self.assertEqual(self.trigger.call_args.args[1]["rule_name"], "good")
+        # a parse 400 is deterministic: no individual re-run attempted
+        self.grq_es.search.assert_not_called()
+
+    def test_per_item_rejection_retried_individually(self):
+        """A 429 search-queue rejection inside a 200 msearch response is
+        transient: re-run just that rule's search (with backoff) instead of
+        dropping its trigger -- the saturation case the old per-rule loop's
+        backoff absorbed and batching removed."""
+        self.mozart_es.query.return_value = [make_rule("rejected"), make_rule("good")]
+        self.grq_es.msearch.return_value = [rejected_item(), hit("ds1")]
+        self.grq_es.search.return_value = hit("ds1")
+
+        self.assertTrue(self.evaluate())
+
+        # re-run individually, preserving the shard-pinning preference
+        self.assertEqual(self.grq_es.search.call_count, 1)
+        self.assertEqual(self.grq_es.search.call_args.kwargs["preference"], "ds1")
+        # and BOTH rules trigger
+        self.assertEqual(self.trigger.call_count, 2)
+        triggered = [call.args[1]["rule_name"] for call in self.trigger.call_args_list]
+        self.assertEqual(triggered, ["rejected", "good"])
+
+    def test_per_item_rejection_persistent_failure_skips_only_that_rule(self):
+        """If the individual re-run also ultimately fails, only that rule is
+        skipped; the rest still evaluate and trigger."""
+        self.mozart_es.query.return_value = [make_rule("rejected"), make_rule("good")]
+        self.grq_es.msearch.return_value = [rejected_item(), hit("ds1")]
+        # giveup fires immediately on the wrapped 400 -- no real backoff sleeps
+        self.grq_es.search.side_effect = wrapped_request_error()
 
         self.assertTrue(self.evaluate())
 
@@ -254,6 +321,22 @@ class TestEvaluateUserRulesJob(unittest.TestCase):
         self.assertEqual(self.mozart_es.search.call_count, 2)
         self.assertEqual(self.trigger.call_count, 1)
         self.assertEqual(self.trigger.call_args.args[1]["rule_name"], "good")
+
+    def test_per_item_rejection_retried_individually(self):
+        """Job-path mirror of the saturation case: a per-item 429 is re-run
+        individually (preference preserved) instead of dropping the trigger."""
+        self.mozart_es.query.return_value = [
+            make_rule("rejected", job_type="hysds-io-retry"),
+            make_rule("good"),
+        ]
+        self.mozart_es.msearch.return_value = [rejected_item(), hit("job1")]
+        self.mozart_es.search.return_value = hit("job1")
+
+        self.assertTrue(urj.evaluate_user_rules_job("job1"))
+
+        self.assertEqual(self.mozart_es.search.call_count, 1)
+        self.assertEqual(self.mozart_es.search.call_args.kwargs["preference"], "job1")
+        self.assertEqual(self.trigger.call_count, 2)
 
 
 class TestAssertDocSettled(unittest.TestCase):
