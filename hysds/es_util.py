@@ -21,6 +21,54 @@ GRQ_ES = None
 METRICS_ES = None
 
 
+def assert_doc_settled(es_util, index, doc_id, extra_must=None):
+    """Confirm a doc's LATEST write is search-visible, not merely that it exists.
+
+    Search is refresh-bound, so a field UPDATE on a pre-existing doc (e.g. a
+    state-config's is_complete flipping false->true) can lag the trigger that
+    fired on that write. An _id existence check passes on the stale version and
+    the rule query then misses. So: realtime GET-by-id reads the translog
+    (refresh-independent) for the authoritative _seq_no, and we require the
+    searchable copy's _seq_no to be >= it before proceeding.
+
+    Raises (so the caller's exponential backoff retries) when the doc is not yet
+    search-visible or its searchable copy is stale. No fixed sleep, and no per-eval
+    _refresh (which would flush a segment across all shards every ingest and cause
+    refresh storms under a dense cascade); the realtime GET is single-shard and
+    translog-served.
+
+    Shard routing: with replicas, search round-robins across copies, so this probe
+    and the caller's rule query could land on different copies -- this one settled,
+    that one a lagging replica -- and the rule would miss. So this probe pins
+    `preference=doc_id`; the caller MUST pass the same `preference=doc_id` on its
+    rule query so both bind to the same copy. (Opaque routing key: same string ->
+    same copy; spreads load across copies by doc, unlike `_primary`.)
+    """
+    must = [{"term": {"_id": doc_id}}]
+    if extra_must:
+        must.extend(extra_must)
+    body = {
+        "query": {"bool": {"must": must}},
+        "seq_no_primary_term": True,
+        "size": 1,
+    }
+    hits = es_util.search(index=index, body=body, preference=doc_id)["hits"]["hits"]
+    if not hits:
+        raise RuntimeError(f"doc not yet search-visible: {doc_id}")
+    hit = hits[0]
+    searchable_seq_no = hit.get("_seq_no")
+    latest_seq_no = es_util.es.get(index=hit["_index"], id=doc_id).get("_seq_no")
+    if (
+        searchable_seq_no is not None
+        and latest_seq_no is not None
+        and searchable_seq_no < latest_seq_no
+    ):
+        raise RuntimeError(
+            f"doc search copy stale: {doc_id} seq_no {searchable_seq_no} < "
+            f"latest {latest_seq_no}; awaiting refresh"
+        )
+
+
 def get_mozart_es_engine():
     return app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
 

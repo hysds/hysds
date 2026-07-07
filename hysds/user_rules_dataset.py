@@ -4,7 +4,6 @@ standard_library.install_aliases()
 
 import json
 import socket
-import time
 
 import backoff
 import elasticsearch.exceptions
@@ -12,7 +11,7 @@ import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.es_util import get_grq_es, get_mozart_es
+from hysds.es_util import assert_doc_settled, get_grq_es, get_mozart_es
 from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
 from hysds.utils import validate_index_pattern
 
@@ -29,29 +28,26 @@ USER_RULES_DATASET_QUEUE = app.conf.USER_RULES_DATASET_QUEUE
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def ensure_dataset_indexed(objectid, system_version, alias):
-    """Ensure dataset is indexed."""
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"term": {"_id": objectid}},
-                    {"term": {"system_version.keyword": system_version}},
-                ]
-            }
-        }
-    }
+    """Ensure the dataset is indexed AND its latest write is search-visible.
 
-    logger.info(f"ensure_dataset_indexed query: {json.dumps(query)}")
+    A rule can be triggered by a field UPDATE on a pre-existing doc (e.g. a
+    cycle-state-config's is_complete flipping false->true). Search is refresh-bound,
+    so the updated value can lag the trigger; an _id existence check alone passes on
+    the stale version and the rule's filtered query then misses, dropping the
+    trigger. assert_doc_settled confirms the searchable copy has caught up to the
+    latest write (realtime GET for the authoritative _seq_no), bounded by the
+    existing exponential backoff -- no fixed sleep, no per-eval _refresh.
+    """
+    logger.info(f"ensure_dataset_indexed: {objectid} ({system_version})")
     try:
         grq_es = get_grq_es()
-        count = grq_es.get_count(index=alias, body=query)
-        if count == 0:
-            error_message = (
-                f"Failed to find indexed dataset: {objectid} ({system_version})"
-            )
-            logger.error(error_message)
-            raise RuntimeError(error_message)
-        logger.info(f"Found indexed dataset: {objectid} ({system_version})")
+        assert_doc_settled(
+            grq_es,
+            alias,
+            objectid,
+            extra_must=[{"term": {"system_version.keyword": system_version}}],
+        )
+        logger.info(f"Found settled indexed dataset: {objectid} ({system_version})")
     except (
         elasticsearch.exceptions.ElasticsearchException,
         opensearchpy.exceptions.OpenSearchException,
@@ -80,11 +76,111 @@ def update_query(_id, system_version, rule):
     return final_query
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=32)
-def search_es(index, body):
+def _is_request_error(e):
+    """True if e is (or wraps) an elasticsearch/opensearchpy RequestError (HTTP 400).
+    Query parse 400s are deterministic; retrying cannot change the outcome.
+
+    The hysds_commons jittered-backoff connection wrapper re-raises the original
+    client error as JitteredBackoffException chained via __cause__ (raise ... from e),
+    so the propagating exception is NOT the RequestError itself -- walk the cause
+    chain to find it. Resolved via isinstance per module so a stubbed-out client
+    library (as in unit test environments) degrades to False rather than breaking."""
+    seen = set()
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        for exceptions_module in (elasticsearch.exceptions, opensearchpy.exceptions):
+            cls = getattr(exceptions_module, "RequestError", None)
+            if isinstance(cls, type) and issubclass(cls, BaseException) and isinstance(e, cls):
+                return True
+        e = getattr(e, "__cause__", None) or getattr(e, "__context__", None)
+    return False
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
+)
+def _msearch(searches):
+    grq_es = get_grq_es()
+    # Use wrapper method instead of direct ES call for closed index handling (HC-600).
+    # NOTE: msearch() takes NO `preference` kwarg (raises TypeError); the per-search
+    # routing preference is set in each header line by msearch_es (HC-633).
+    return grq_es.msearch(searches, request_timeout=30)
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=5, max_value=32, giveup=_is_request_error
+)
+def search_es(index, body, preference):
     grq_es = get_grq_es()
     # Use wrapper method instead of direct ES call for closed index handling (HC-600)
-    return grq_es.search(index=index, body=body, request_timeout=30)
+    return grq_es.search(index=index, body=body, request_timeout=30, preference=preference)
+
+
+def _is_retryable_item_error(item):
+    """True when a per-item msearch error is worth re-running individually.
+    A 4xx other than 429 is deterministic (parse/validation error; retrying
+    cannot change the outcome); 429 (search thread pool rejection under load)
+    and 5xx are transient. A missing status degrades to retryable: the re-run
+    goes through search_es, whose backoff gives up fast on a genuine 400."""
+    status = item.get("status")
+    if isinstance(status, int) and 400 <= status < 500 and status != 429:
+        return False
+    return True
+
+
+def _fallback_search(header, body, preference):
+    """Run one rule's search individually (search_es retries transient errors
+    with bounded backoff and gives up on 400s); package a persistent failure
+    as a per-item style error so only that rule is skipped."""
+    try:
+        return search_es(index=header["index"], body=body, preference=preference)
+    except Exception as e:
+        return {"error": {"reason": str(e)}}
+
+
+def msearch_es(searches, preference):
+    """
+    Run all rule queries in one multi search request. A rule whose query is
+    valid JSON but unparseable query DSL fails the WHOLE msearch request with
+    a 400 at request parse time rather than as a per-item error, so fall back
+    to issuing the searches individually in that case -- one bad rule must not
+    block evaluation of the remaining rules.
+
+    Transient PER-ITEM errors (e.g. a 429 search-queue rejection under a dense
+    cascade, or a 5xx) are re-run individually through the same per-rule
+    fallback: batching removed the old per-rule retry, and a saturated search
+    queue would otherwise silently drop just that rule's trigger. Deterministic
+    400-class item errors stay terminal for their rule. search_es's bounded
+    backoff doubles as backpressure -- an overloaded cluster slows this
+    evaluator (one task per worker process) instead of receiving fresh
+    msearches.
+
+    preference (the triggering objectid) routes every search here to the same
+    shard copy the settled-probe checked, closing the replica-lag race (HC-633).
+    It is set PER-SEARCH in each header line -- _msearch takes no `preference`
+    kwarg, and a URL-level preference is ignored by the _msearch endpoint.
+    """
+    searches = [({**header, "preference": preference}, body) for header, body in searches]
+    try:
+        responses = _msearch(searches)
+    except Exception as e:
+        if not _is_request_error(e):
+            raise
+        logger.error(
+            f"msearch rejected at request parse time ({e}); "
+            "falling back to per-rule searches"
+        )
+        return [_fallback_search(header, body, preference) for header, body in searches]
+
+    for i, response in enumerate(responses):
+        if response.get("error") and _is_retryable_item_error(response):
+            header, body = searches[i]
+            logger.warning(
+                f"msearch item error (status {response.get('status')}) is transient, "
+                f"retrying rule query individually: {json.dumps(response['error'])}"
+            )
+            responses[i] = _fallback_search(header, body, preference)
+    return responses
 
 
 def evaluate_user_rules_dataset(
@@ -95,7 +191,6 @@ def evaluate_user_rules_dataset(
     If so, submit jobs. Otherwise do nothing.
     """
 
-    time.sleep(6)  # sleep for 10 seconds; let any documents finish indexing in ES
     ensure_dataset_indexed(objectid, system_version, alias)  # ensure dataset is indexed
 
     # get all enabled user rules
@@ -104,9 +199,10 @@ def evaluate_user_rules_dataset(
     rules = mozart_es.query(index=USER_RULES_DATASET_INDEX, body=query)
     logger.info(f"Total {len(rules)} enabled rules to check.")
 
+    # build a single multi search request with one search per rule
+    candidates = []
+    searches = []
     for document in rules:
-        time.sleep(1)  # sleep between queries
-
         rule = document["_source"]
         logger.info(f"rule: {json.dumps(rule, indent=2)}")
 
@@ -119,8 +215,6 @@ def evaluate_user_rules_dataset(
             logger.error(e)
             continue
 
-        rule_name = rule["rule_name"]
-        job_type = rule["job_type"]  # set clean descriptive job name
         final_qs = rule["query_string"]
 
         index_pattern = rule.get("index_pattern", "")
@@ -134,26 +228,40 @@ def evaluate_user_rules_dataset(
             index_pattern = DATASET_ALIAS
         logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
 
-        # check for matching rules
-        try:
-            result = search_es(index=index_pattern, body=final_qs)
-            if result["hits"]["total"]["value"] == 0:
-                logger.info(
-                    f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
-                )
-                continue
-            doc_res = result["hits"]["hits"][0]
-            logger.info(
-                f"Rule '{rule_name}' successfully matched for {objectid} ({system_version})"
+        searches.append(({"index": index_pattern}, {**updated_query, "size": 1}))
+        candidates.append(rule)
+
+    if not searches:
+        return True
+
+    # check all rules for matches in a single round trip; preference=objectid pins
+    # the same shard copy ensure_dataset_indexed validated (HC-633 replica-lag fix)
+    responses = msearch_es(searches, objectid)
+
+    matched = []
+    errored = []
+    for rule, result in zip(candidates, responses):
+        rule_name = rule["rule_name"]
+
+        if result.get("error"):
+            logger.error(
+                f"Rule '{rule_name}' query failed for {objectid} ({system_version}): "
+                f"{json.dumps(result['error'])}"
             )
-        except (
-            elasticsearch.exceptions.ElasticsearchException,
-            opensearchpy.exceptions.OpenSearchException,
-        ) as e:
-            logger.error("Failed to query ES")
-            logger.error(e)
+            errored.append(rule_name)
             continue
 
+        if result["hits"]["total"]["value"] == 0:
+            logger.info(
+                f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
+            )
+            continue
+        doc_res = result["hits"]["hits"][0]
+        logger.info(
+            f"Rule '{rule_name}' successfully matched for {objectid} ({system_version})"
+        )
+
+        job_type = rule["job_type"]  # set clean descriptive job name
         if job_type.startswith("hysds-io-"):
             job_type = job_type.replace("hysds-io-", "", 1)
         job_name = f"{job_type}-{objectid}"
@@ -162,6 +270,12 @@ def evaluate_user_rules_dataset(
         logger.info(
             f"Trigger task submitted for {objectid} ({system_version}): {job_type}"
         )
+        matched.append(rule_name)
+
+    logger.info(
+        f"Evaluated {len(candidates)} rules for {objectid} ({system_version}): "
+        f"matched={matched} errored={errored}"
+    )
     return True
 
 
