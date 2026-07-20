@@ -96,13 +96,12 @@ def get_job_id(job_name):
 
 
 class OrchestratorExecutionError(Exception):
-    def __init__(self, message, job_status):
+    # celery rebuilds exceptions via cls(*exc.args); params outside args need
+    # defaults or the class degrades to UnpickleableExceptionWrapper
+    def __init__(self, message, job_status=None):
         self.message = message
         self.job_status = job_status
         super().__init__(message)
-
-    def job_status(self):
-        return self.job_status
 
 
 @app.task

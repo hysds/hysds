@@ -360,13 +360,12 @@ def redelivered_job_dup(job):
 
 
 class WorkerExecutionError(Exception):
-    def __init__(self, message, job_status):
+    # celery rebuilds exceptions via cls(*exc.args); params outside args need
+    # defaults or the class degrades to UnpickleableExceptionWrapper
+    def __init__(self, message, job_status=None):
         self.message = message
         self.job_status = job_status
         super().__init__(message)
-
-    def job_status(self):
-        return self.job_status
 
 
 class JobDedupedError(Exception):
@@ -374,9 +373,6 @@ class JobDedupedError(Exception):
         self.message = message
         self.job_status = "job-deduped"
         super().__init__(message)
-
-    def job_status(self):
-        return self.job_status
 
 
 def shutdown_worker(celery_hostname):
