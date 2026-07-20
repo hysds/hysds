@@ -574,7 +574,9 @@ def run_job(job, queue_when_finished=True):
                 message = f"Redelivered job for payload {payload_id} - lock held by {lock_holder_info}. Deduping this job."
                 logger.warning(message)
                 job_status_json = {
-                    "uuid": job["job_id"],
+                    # uuid = celery task id (as at every sibling call site);
+                    # job_id would key a redis entry nobody reads
+                    "uuid": job["task_id"],
                     "job_id": job["job_id"],
                     "payload_id": payload_id,
                     "payload_hash": payload_hash,
