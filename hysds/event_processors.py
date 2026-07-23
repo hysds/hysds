@@ -61,10 +61,7 @@ def _fail_job(event, uuid, exc, short_error):
     query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
 
     result = mozart_es.search(index="job_status-current", body=query)
-    # TODO: Remove this after debugging
-    logger.info(f"job status from fail_job: {json.dumps(result, indent=2)}")
     total = result["hits"]["total"]["value"]
-    logger.info(f"total results back from fail_job function: {total}")
     if total == 0:
         msg = f"Failed to query for task UUID {uuid}"
         logger.error(msg)

@@ -87,3 +87,12 @@ def test_status_key_ttl_defaults_without_time_limit(monkeypatch):
 def test_status_key_ttl_ignores_non_int_time_limit(monkeypatch):
     r = _run_log_job_status(monkeypatch, _job("86700"))
     assert r.setex.call_args[0][1] == 86400
+
+
+def test_status_key_ttl_extends_for_float_time_limit(monkeypatch):
+    """A float time_limit must extend the TTL like an int (the watchdog accepts
+    floats); the resulting TTL stays an integer for setex."""
+    r = _run_log_job_status(monkeypatch, _job(86700.5))
+    ttl = r.setex.call_args[0][1]
+    assert ttl == 86700 + 2 * 300
+    assert isinstance(ttl, int)

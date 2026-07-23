@@ -65,17 +65,23 @@ def test_guard_reads_redis_not_es():
 
 
 def test_fail_job_skips_when_worker_finalized(monkeypatch):
-    """AC2: no ES read and no write when redis says the job is terminal."""
+    """AC2: when redis says the job is terminal the guard declines -- no ES
+    read, no write, and no rule requeue. Skipping queue_finished_job here is
+    correct: the worker's own job-failed path already triggers rule
+    evaluation, so the supervisory path must not re-fire it."""
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: True)
     mock_es = umock.MagicMock()
     monkeypatch.setattr(ep, "mozart_es", mock_es)
     mock_log = umock.MagicMock()
     monkeypatch.setattr(ep, "log_job_status", mock_log)
+    mock_finished = umock.MagicMock()
+    monkeypatch.setattr(ep, "queue_finished_job", mock_finished)
 
     ep.fail_job({"traceback": "tb"}, "uuid-1", "exc", "short")
 
     mock_es.search.assert_not_called()
     mock_log.assert_not_called()
+    mock_finished.assert_not_called()
 
 
 def test_fail_job_proceeds_when_worker_not_finalized(monkeypatch):

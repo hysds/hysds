@@ -289,8 +289,11 @@ def log_job_status(job):
     # is_job_finalized() for exactly the jobs most likely to soft-limit
     ttl = app.conf.HYSDS_JOB_STATUS_EXPIRES
     time_limit = job.get("job", {}).get("job_info", {}).get("time_limit")
-    if isinstance(time_limit, int):
-        ttl = max(ttl, time_limit + 2 * hard_time_limit_gap())
+    # accept int or float, but not bool (an int subclass); mirrors the
+    # watchdog's check so a float time_limit never leaves the TTL unextended.
+    # int() the value so the setex TTL stays an integer number of seconds.
+    if isinstance(time_limit, (int, float)) and not isinstance(time_limit, bool):
+        ttl = max(ttl, int(time_limit) + 2 * hard_time_limit_gap())
     r.setex(
         JOB_STATUS_KEY_TMPL % job["uuid"],
         ttl,
