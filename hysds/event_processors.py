@@ -3,6 +3,7 @@ from future import standard_library
 standard_library.install_aliases()
 
 import json
+import re
 import socket
 import traceback
 
@@ -17,6 +18,7 @@ from hysds.log_utils import (
     backoff_max_tries,
     backoff_max_value,
     get_val_via_socket,
+    is_job_finalized,
     log_job_status,
     logger,
 )
@@ -26,18 +28,40 @@ from hysds.user_rules_job import queue_finished_job
 
 mozart_es = get_mozart_es()
 
+# task-failed patterns meaning "the worker had no chance to send an update".
+# A soft time limit is not one: the worker catches it, triages, and logs its
+# own job-failed doc. The lookbehind keeps SoftTimeLimitExceeded from
+# matching TimeLimitExceeded.
+TASK_FAILED_RE = re.compile(
+    r"(?<![A-Za-z])(WorkerLostError|TimeLimitExceeded|ConnectionError)"
+)
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=10)
+
 def fail_job(event, uuid, exc, short_error):
     """Set job status to job-failed."""
+
+    # log_job_status() is async on the ES side, so the ES read below can
+    # trail the worker's own terminal write; the redis key is authoritative
+    # (same re-check pattern as offline_jobs below). The guard sits OUTSIDE
+    # the retried body: _fail_job's own write sets the key to job-failed, so
+    # a retried guard would read its own write and drop the requeue.
+    if is_job_finalized(uuid):
+        logger.info(
+            f"fail_job - {uuid}: worker already finalized this job; "
+            f"not overwriting. exc={exc}, short_error={short_error}"
+        )
+        return
+    _fail_job(event, uuid, exc, short_error)
+
+
+@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=10)
+def _fail_job(event, uuid, exc, short_error):
+    """Rewrite the job doc as job-failed and requeue rule evaluation."""
 
     query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
 
     result = mozart_es.search(index="job_status-current", body=query)
-    # TODO: Remove this after debugging
-    logger.info(f"job status from fail_job: {json.dumps(result, indent=2)}")
     total = result["hits"]["total"]["value"]
-    logger.info(f"total results back from fail_job function: {total}")
     if total == 0:
         msg = f"Failed to query for task UUID {uuid}"
         logger.error(msg)

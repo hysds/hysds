@@ -21,7 +21,7 @@ from kombu.serialization import loads, prepare_accept_content, registry
 from redis import ConnectionPool, StrictRedis
 
 from hysds.celery import app
-from hysds.log_utils import log_job_status
+from hysds.log_utils import is_job_finalized, log_job_status
 from hysds.utils import datetime_iso_naive
 
 log_format = "[%(asctime)s: %(levelname)s/offline_orphaned_jobs] %(message)s"
@@ -123,6 +123,15 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                     f"Cannot handle task status {task_info['_source']['status']} for {task_id}."
                 )
                 continue
+            # never rewrite a job the worker already finalized; checked
+            # before the dry-run branch so dry-run reports what a real run
+            # would actually write
+            if is_job_finalized(task_id):
+                logging.info(
+                    f"{'DRY RUN - ' if dry_run else ''}Job {id}: worker "
+                    f"already finalized; not overwriting."
+                )
+                continue
             if dry_run:
                 logging.info(
                     f"DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"
@@ -149,6 +158,13 @@ def offline_orphaned_jobs(es_url, dry_run=False):
         )
         if task_meta is None:
             updated_status = "job-offline"
+            # guard before the dry-run branch, as above
+            if is_job_finalized(task_id):
+                logging.info(
+                    f"{'DRY RUN - ' if dry_run else ''}Job {id}: worker "
+                    f"already finalized; not overwriting."
+                )
+                continue
             if dry_run:
                 logging.info(
                     f"DRY RUN - Would update job {id} status to {updated_status} for task {task_id}"

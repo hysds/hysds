@@ -226,6 +226,35 @@ def get_job_status(task_id):
     return res.decode() if hasattr(res, "decode") else res
 
 
+# statuses after which an authoritative terminal doc has been logged.
+# job-offline is included: a job never leaves it on its own, so any
+# supervisory rewrite over it is destructive.
+TERMINAL_JOB_STATUSES = frozenset(
+    {"job-completed", "job-failed", "job-deduped", "job-offline", "job-revoked"}
+)
+
+
+def is_job_finalized(task_id):
+    """Return True if a terminal status was already logged for this task.
+
+    Reads the synchronous redis key set by log_job_status(), authoritative
+    while the ES doc is still in flight (redis list -> logstash -> ES).
+    Supervisory writers must check this before rewriting a job doc. Fails
+    open (False) on a missing key or redis error.
+    """
+    try:
+        status = get_job_status(task_id)
+    except Exception as e:
+        logger.warning(f"is_job_finalized({task_id}): redis check failed: {e}")
+        return False
+    if status is None:
+        logger.warning(
+            f"is_job_finalized({task_id}): no redis job-status key (missing or expired)"
+        )
+        return False
+    return status in TERMINAL_JOB_STATUSES
+
+
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
@@ -255,9 +284,19 @@ def log_job_status(job):
     # send update to redis
     r = StrictRedis(connection_pool=JOB_STATUS_POOL,
                     ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
+    # derive the key TTL from the job's own time_limit: a fixed TTL expires
+    # mid-run for any job that outlives it, silently disabling
+    # is_job_finalized() for exactly the jobs most likely to soft-limit
+    ttl = app.conf.HYSDS_JOB_STATUS_EXPIRES
+    time_limit = job.get("job", {}).get("job_info", {}).get("time_limit")
+    # accept int or float, but not bool (an int subclass); mirrors the
+    # watchdog's check so a float time_limit never leaves the TTL unextended.
+    # int() the value so the setex TTL stays an integer number of seconds.
+    if isinstance(time_limit, (int, float)) and not isinstance(time_limit, bool):
+        ttl = max(ttl, int(time_limit) + 2 * hard_time_limit_gap())
     r.setex(
         JOB_STATUS_KEY_TMPL % job["uuid"],
-        app.conf.HYSDS_JOB_STATUS_EXPIRES,
+        ttl,
         job["status"],
     )
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job_for_indexing))  # for ES

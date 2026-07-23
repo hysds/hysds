@@ -360,13 +360,12 @@ def redelivered_job_dup(job):
 
 
 class WorkerExecutionError(Exception):
-    def __init__(self, message, job_status):
+    # celery rebuilds exceptions via cls(*exc.args); params outside args need
+    # defaults or the class degrades to UnpickleableExceptionWrapper
+    def __init__(self, message, job_status=None):
         self.message = message
         self.job_status = job_status
         super().__init__(message)
-
-    def job_status(self):
-        return self.job_status
 
 
 class JobDedupedError(Exception):
@@ -374,9 +373,6 @@ class JobDedupedError(Exception):
         self.message = message
         self.job_status = "job-deduped"
         super().__init__(message)
-
-    def job_status(self):
-        return self.job_status
 
 
 def shutdown_worker(celery_hostname):
@@ -578,7 +574,9 @@ def run_job(job, queue_when_finished=True):
                 message = f"Redelivered job for payload {payload_id} - lock held by {lock_holder_info}. Deduping this job."
                 logger.warning(message)
                 job_status_json = {
-                    "uuid": job["job_id"],
+                    # uuid = celery task id (as at every sibling call site);
+                    # job_id would key a redis entry nobody reads
+                    "uuid": job["task_id"],
                     "job_id": job["job_id"],
                     "payload_id": payload_id,
                     "payload_hash": payload_hash,
