@@ -121,6 +121,8 @@ class Podman(Base):
 
         # add runtime options
         for k, v in params["runtime_options"].items():
+            if isinstance(v, str):
+                v = os.path.expandvars(v)
             podman_cmd_base.extend([f"--{k}", v])
 
         # add volumes
