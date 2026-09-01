@@ -15,7 +15,12 @@ from datetime import datetime, timezone
 import job_utils
 
 from hysds.celery import app
-from hysds.log_utils import get_job_status, is_job_finalized, log_job_status
+from hysds.log_utils import (
+    get_job_status,
+    is_job_finalized,
+    is_job_superseded,
+    log_job_status,
+)
 from hysds.utils import get_short_error, parse_iso8601
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
@@ -181,6 +186,13 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
+                # a later attempt may own this payload now (HC-648)
+                if is_job_superseded(_id, task_id, index=_index):
+                    logging.info(
+                        f"Job {_id}: superseded by a later attempt; not overwriting."
+                    )
+                    continue
+
                 # Use log_job_status() to ensure all required fields are populated
                 # and the update goes through the proper Redis->Logstash pipeline
                 try:
@@ -208,6 +220,14 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                             f"Job {_id}: worker already finalized; not tagging "
                             f"via stale doc."
                         )
+                    continue
+
+                # a later attempt may own this payload now (HC-648)
+                if is_job_superseded(_id, task_id, index=_index):
+                    logging.info(
+                        f"Job {_id}: superseded by a later attempt; not tagging "
+                        f"via stale doc."
+                    )
                     continue
                 tags.append("timedout")
                 src["tags"] = tags

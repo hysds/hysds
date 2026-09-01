@@ -255,6 +255,52 @@ def is_job_finalized(task_id):
     return status in TERMINAL_JOB_STATUSES
 
 
+def is_job_superseded(payload_id, uuid, index=None, es=None):
+    """Return True if this payload's job doc is owned by a different task uuid.
+
+    A retry keeps the payload_id (which is the doc _id) and mints a new task
+    uuid, so a live doc whose uuid is not ours means our attempt has been
+    superseded: writing over it would either clobber the newer attempt's
+    record or resurrect a doc the retry already deleted (HC-648).
+
+    Realtime doc-ID GETs against the physical homes a job doc can have --
+    job_failed plus the dated job_status index, when the caller knows it --
+    never a refresh-bound search. Searching for a doc that is moving between
+    those two indices is the defect class this guards against, so the guard
+    must not use the same mechanism.
+
+    Fails open (False) on any error, and on a doc that is simply absent: a
+    supervisory writer must not be blocked by an OpenSearch hiccup. Pass
+    `index` as the doc's job.job_info.index (or the _index a search hit came
+    from) to cover the dated home as well, and `es` to reuse a client the
+    caller already holds instead of building a second one.
+    """
+    homes = ["job_failed"]
+    if index and index not in homes:
+        homes.append(index)
+    try:
+        if es is None:
+            # deferred import: hysds.es_util imports this module at load time
+            from hysds.es_util import get_mozart_es
+
+            es = get_mozart_es()
+        for home in homes:
+            res = es.get_by_id(index=home, id=payload_id, ignore=[404])
+            if not isinstance(res, dict) or not res.get("found"):
+                continue
+            live_uuid = (res.get("_source") or {}).get("uuid")
+            if live_uuid and live_uuid != uuid:
+                logger.info(
+                    f"is_job_superseded({payload_id}): doc in {home} belongs to "
+                    f"{live_uuid}, not {uuid}; a later attempt owns this payload"
+                )
+                return True
+    except Exception as e:
+        logger.warning(f"is_job_superseded({payload_id}): lookup failed: {e}")
+        return False
+    return False
+
+
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
 )

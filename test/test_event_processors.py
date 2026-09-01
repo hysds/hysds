@@ -122,7 +122,9 @@ def test_fail_job_proceeds_when_worker_not_finalized(monkeypatch):
     assert written["status"] == "job-failed"
     assert written["short_error"] == "WorkerLostError"
     assert written["job"]["job_info"]["time_end"].endswith("Z")
-    mock_finished.assert_called_once()
+    # rules are queued against job_failed, where logstash puts the doc, not
+    # against the (dated) index the search hit came from
+    mock_finished.assert_called_once_with("p1", index="job_failed")
 
 
 def test_script_imports_the_package_regex():
@@ -216,3 +218,82 @@ def test_fail_job_leaves_terminal_es_doc_alone(monkeypatch):
     ep.fail_job({"traceback": "tb"}, "uuid-1", "exc", "short")
 
     mock_log.assert_not_called()
+
+
+def test_fail_job_skips_when_a_later_attempt_owns_the_payload(monkeypatch):
+    """HC-648: a retry keeps the payload_id and mints a new uuid.
+
+    Rewriting the doc then would resurrect one the retry already deleted, so
+    the supersession guard must stop the write and the rule queueing.
+    """
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    monkeypatch.setattr(ep, "is_job_superseded", lambda *a, **kw: True)
+    mock_es = umock.MagicMock()
+    mock_es.search.return_value = {
+        "hits": {
+            "total": {"value": 1},
+            "hits": [
+                {
+                    "_index": "job_status-2026.08.28",
+                    "_source": {
+                        "status": "job-started",
+                        "payload_id": "p1",
+                        "uuid": "uuid-1",
+                        "job": {"job_info": {"index": "job_status-2026.08.28"}},
+                    },
+                }
+            ],
+        }
+    }
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+    mock_finished = umock.MagicMock()
+    monkeypatch.setattr(ep, "queue_finished_job", mock_finished)
+
+    ep.fail_job({"traceback": "tb"}, "uuid-1", "WorkerLostError(...)", "WorkerLostError")
+
+    mock_log.assert_not_called()
+    mock_finished.assert_not_called()
+
+
+def test_fail_job_guard_reuses_the_module_client(monkeypatch):
+    """The guard must not build a second ES client behind the tests' back."""
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    seen = {}
+
+    def _guard(payload_id, uuid, index=None, es=None):
+        seen["payload_id"] = payload_id
+        seen["uuid"] = uuid
+        seen["index"] = index
+        seen["es"] = es
+        return False
+
+    monkeypatch.setattr(ep, "is_job_superseded", _guard)
+    mock_es = umock.MagicMock()
+    mock_es.search.return_value = {
+        "hits": {
+            "total": {"value": 1},
+            "hits": [
+                {
+                    "_index": "job_status-2026.08.28",
+                    "_source": {
+                        "status": "job-started",
+                        "payload_id": "p1",
+                        "uuid": "uuid-1",
+                        "job": {"job_info": {"index": "job_status-2026.08.28"}},
+                    },
+                }
+            ],
+        }
+    }
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    monkeypatch.setattr(ep, "log_job_status", umock.MagicMock())
+    monkeypatch.setattr(ep, "queue_finished_job", umock.MagicMock())
+
+    ep.fail_job({"traceback": "tb"}, "uuid-1", "WorkerLostError(...)", "WorkerLostError")
+
+    assert seen["payload_id"] == "p1"
+    assert seen["uuid"] == "uuid-1"
+    assert seen["index"] == "job_status-2026.08.28"
+    assert seen["es"] is mock_es

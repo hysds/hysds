@@ -19,6 +19,7 @@ from hysds.log_utils import (
     backoff_max_value,
     get_val_via_socket,
     is_job_finalized,
+    is_job_superseded,
     log_job_status,
     logger,
 )
@@ -69,6 +70,23 @@ def _fail_job(event, uuid, exc, short_error):
 
     res = result["hits"]["hits"][0]
     job_status = res["_source"]
+
+    # A retry keeps the payload_id and mints a new uuid, so a live doc owned
+    # by someone else means this attempt is history: rewriting it would
+    # resurrect a doc the retry deleted (HC-648). Guarded immediately before
+    # the write, like the is_job_finalized check in fail_job() above.
+    if is_job_superseded(
+        job_status["payload_id"],
+        uuid,
+        index=(job_status.get("job") or {}).get("job_info", {}).get("index"),
+        es=mozart_es,
+    ):
+        logger.info(
+            f"fail_job - {uuid}: a later attempt owns payload "
+            f"{job_status['payload_id']}; not writing job-failed."
+        )
+        return
+
     if job_status["status"] == "job-started" or job_status["status"] == "job-queued":
         job_status["status"] = "job-failed"
         job_status["error"] = exc
@@ -81,7 +99,12 @@ def _fail_job(event, uuid, exc, short_error):
         ] = time_end
         log_job_status(job_status)
 
-        queue_finished_job(job_status["payload_id"], index=res["_index"])
+        # Rules must be evaluated against job_failed, not res["_index"]:
+        # the doc we just rewrote as job-failed is moved there by logstash
+        # (indexer.conf.mozart), so settling on the dated index the search
+        # hit either times out or passes on the pre-move job-started doc.
+        # Same index job_worker.py passes for a worker-written failure.
+        queue_finished_job(job_status["payload_id"], index="job_failed")
     else:
         logger.info(
             f"fail_job - {uuid}: Will not re-log and requeue job as job status is already set "

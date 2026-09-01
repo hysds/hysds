@@ -96,3 +96,82 @@ def test_status_key_ttl_extends_for_float_time_limit(monkeypatch):
     ttl = r.setex.call_args[0][1]
     assert ttl == 86700 + 2 * 300
     assert isinstance(ttl, int)
+
+
+# --- is_job_superseded (HC-648) -------------------------------------------
+
+
+def _es_stub(monkeypatch, docs, boom=False):
+    """Install a fake hysds.es_util for the deferred import in is_job_superseded.
+
+    `docs` maps index name -> the get_by_id response for that index.
+    """
+    import types
+
+    calls = []
+
+    class _ES:
+        def get_by_id(self, **kwargs):
+            calls.append(kwargs)
+            if boom:
+                raise ConnectionError("opensearch down")
+            return docs.get(kwargs["index"], {"found": False})
+
+    monkeypatch.setitem(
+        sys.modules,
+        "hysds.es_util",
+        types.SimpleNamespace(get_mozart_es=lambda: _ES()),
+    )
+    return calls
+
+
+def _hit(uuid):
+    return {"found": True, "_source": {"uuid": uuid, "status": "job-failed"}}
+
+
+def test_is_job_superseded_false_for_same_uuid(monkeypatch):
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_is_job_superseded_true_for_different_uuid(monkeypatch):
+    """A retry keeps the payload_id and mints a new uuid."""
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2")})
+    assert lu.is_job_superseded("payload-1", "uuid-1") is True
+
+
+def test_is_job_superseded_false_when_no_doc_anywhere(monkeypatch):
+    _es_stub(monkeypatch, {})
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_is_job_superseded_checks_the_dated_home_too(monkeypatch):
+    """job_failed is empty but the dated index holds a newer attempt."""
+    calls = _es_stub(
+        monkeypatch,
+        {"job_status-2026.08.28": _hit("uuid-2")},
+    )
+    assert (
+        lu.is_job_superseded("payload-1", "uuid-1", index="job_status-2026.08.28")
+        is True
+    )
+    assert [c["index"] for c in calls] == ["job_failed", "job_status-2026.08.28"]
+    assert all(c["ignore"] == [404] for c in calls)
+
+
+def test_is_job_superseded_does_not_double_check_job_failed(monkeypatch):
+    """index=job_failed is already the first home; do not GET it twice."""
+    calls = _es_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
+    lu.is_job_superseded("payload-1", "uuid-1", index="job_failed")
+    assert [c["index"] for c in calls] == ["job_failed"]
+
+
+def test_is_job_superseded_false_on_404_shaped_response(monkeypatch):
+    _es_stub(monkeypatch, {"job_failed": {"error": "not_found", "status": 404}})
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_is_job_superseded_fails_open_on_error(monkeypatch):
+    """A supervisory writer must not be blocked by an OpenSearch hiccup."""
+    _es_stub(monkeypatch, {}, boom=True)
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False

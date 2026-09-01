@@ -149,6 +149,20 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
+[program:reap_orphaned_job_failed]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+environment=PYTHONHTTPSVERIFY=0
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/reap_orphaned_job_failed.py -i 300 -g 120 --lookback-days 2
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
 [program:watchdog_task_timeouts]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_task_timeouts.py

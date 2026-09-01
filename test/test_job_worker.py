@@ -50,3 +50,58 @@ class TestJobWorkerFuncs(TestCase):
         # assertions
         self.assertTrue(expected_stats_file in result)
         self.assertTrue(expected_stats_file2 in result)
+
+
+class TestFailJob(TestCase):
+    """HC-648 Part A: fail_job must not re-log a status the caller logged."""
+
+    def setUp(self):
+        import hysds.job_worker
+
+        self.jw = hysds.job_worker
+        self.doc = {
+            "uuid": "task-1",
+            "payload_id": "payload-1",
+            "status": "job-failed",
+            "error": "boom",
+            "celery_hostname": "worker-1",
+            "job": {"job_info": {"index": "job_status-2026.08.28"}},
+        }
+        self.log_status = patch.object(self.jw, "log_job_status").start()
+        patch.object(self.jw, "job_drain_detected", return_value=False).start()
+        patch.object(self.jw, "shutdown_worker").start()
+
+    def tearDown(self):
+        umock.patch.stopall()
+
+    def test_fail_job_logs_status_by_default(self):
+        """Call sites whose doc was never logged must still write it."""
+        with self.assertRaises(self.jw.WorkerExecutionError):
+            self.jw.fail_job(self.doc, "/tmp/nonexistent-jd-file")
+
+        self.log_status.assert_called_once_with(self.doc)
+
+    def test_fail_job_skips_the_duplicate_write(self):
+        """The tail call site already logged this doc and queued its rules.
+
+        A second terminal write travels the async redis -> logstash -> ES
+        pipeline behind the first and can land after a fast retry has deleted
+        the doc, resurrecting it as an orphan (HC-648). On develop fail_job
+        has no log_status parameter, so this raises TypeError.
+        """
+        with self.assertRaises(self.jw.WorkerExecutionError):
+            self.jw.fail_job(self.doc, "/tmp/nonexistent-jd-file", log_status=False)
+
+        self.log_status.assert_not_called()
+
+    def test_fail_job_raises_carrying_the_status_doc(self):
+        """Either way the error carries the doc for the caller's handler.
+
+        The doc rides on .job_status, not in args: WorkerExecutionError keeps
+        args to the message alone so celery can rebuild it (see #221).
+        """
+        with self.assertRaises(self.jw.WorkerExecutionError) as ctx:
+            self.jw.fail_job(self.doc, "/tmp/nonexistent-jd-file", log_status=False)
+
+        self.assertIs(ctx.exception.job_status, self.doc)
+        self.assertEqual(ctx.exception.args, ("boom",))

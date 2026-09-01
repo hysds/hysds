@@ -71,11 +71,14 @@ def _wire(
     worker_hits=None,
     finalized=False,
     redis_status=None,
+    superseded=False,
 ):
     """Wire the watchdog's collaborators to mocks.
 
     Returns (write mock, guard mock) -- the guard is a recording mock so
     tests can assert it was not consulted on paths that must not reach it.
+    is_job_superseded is stubbed too: unstubbed it would build a real mozart
+    client and query OpenSearch (HC-648 added it beside the finalized guard).
     """
     mock_ju = umock.MagicMock()
     mock_ju.run_query_with_scroll.return_value = docs
@@ -92,6 +95,9 @@ def _wire(
     if redis_status is None:
         redis_status = "job-failed" if finalized else "job-started"
     monkeypatch.setattr(watchdog, "get_job_status", lambda task_id: redis_status)
+    monkeypatch.setattr(
+        watchdog, "is_job_superseded", lambda *a, **kw: superseded
+    )
     mock_log = umock.MagicMock()
     monkeypatch.setattr(watchdog, "log_job_status", mock_log)
     return mock_log, guard
@@ -238,3 +244,29 @@ def test_non_numeric_time_limit_does_not_abort_sweep(monkeypatch):
     watchdog.tag_timedout_jobs("http://es", 300, grace_secs=300)
     mock_log.assert_called_once()
     assert "timedout" in mock_log.call_args[0][0]["tags"]
+
+
+def test_superseded_job_is_not_rewritten(monkeypatch):
+    """HC-648: a later attempt owns this payload; the stale doc stays put."""
+    doc = _job_doc(status="job-started", time_limit=600, started_secs_ago=3600)
+    mock_log, guard = _wire(
+        monkeypatch,
+        [doc],
+        task_hits=_task_failed_hit(600),
+        finalized=False,
+        superseded=True,
+    )
+
+    watchdog.tag_timedout_jobs("http://es", timeout=600)
+
+    mock_log.assert_not_called()
+
+
+def test_superseded_job_is_not_tagged_via_stale_doc(monkeypatch):
+    """The tag lane republishes the whole _source, so it needs the guard too."""
+    doc = _job_doc(status="job-offline", time_limit=600, started_secs_ago=3600)
+    mock_log, guard = _wire(monkeypatch, [doc], finalized=False, superseded=True)
+
+    watchdog.tag_timedout_jobs("http://es", timeout=600)
+
+    mock_log.assert_not_called()

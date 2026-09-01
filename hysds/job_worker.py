@@ -430,11 +430,20 @@ def job_drain_detected(job_status_json, jd_file):
     return False
 
 
-def fail_job(job_status_json, jd_file):
-    """Log failed job, detect/handle job drain and raise error."""
+def fail_job(job_status_json, jd_file, log_status=True):
+    """Log failed job, detect/handle job drain and raise error.
+
+    Pass log_status=False when the caller has already logged this exact
+    job_status_json. A duplicate terminal write is not idempotent here: the
+    second copy travels the async redis -> logstash -> OpenSearch pipeline
+    behind the first, and can land after a retry (fast since HC-633) has
+    already deleted the doc, resurrecting it as an orphaned job_failed doc
+    beside the retried attempt (HC-648).
+    """
 
     def_err = "Unspecified worker execution error."
-    log_job_status(job_status_json)
+    if log_status:
+        log_job_status(job_status_json)
     if job_drain_detected(job_status_json, jd_file):
         log_custom_event("worker_anomaly", "job_drain", job_status_json)
         try:
@@ -1616,9 +1625,11 @@ def run_job(job, queue_when_finished=True):
 
             fail_job(job_status_json, jd_file)
 
-        # raise worker execution error
+        # raise worker execution error. The status doc was already logged
+        # above (and rules queued against job_failed), so do not log it a
+        # second time: the duplicate write is HC-648's orphan source.
         if job_status_json["status"] == "job-failed":
-            fail_job(job_status_json, jd_file)
+            fail_job(job_status_json, jd_file, log_status=False)
 
         # return basic job status
         return {
