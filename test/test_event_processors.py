@@ -303,3 +303,100 @@ def test_fail_job_guard_reuses_the_module_client(monkeypatch):
     assert seen["index"] == "job_status-2026.08.28"
     assert seen["retry_count"] == 2
     assert seen["es"] is mock_es
+
+
+def _started_hit(index="job_status-2026.08.28"):
+    return {
+        "hits": {"total": {"value": 1}, "hits": [{
+            "_index": index,
+            "_source": {"status": "job-started", "payload_id": "p1", "uuid": "uuid-1",
+                        "job": {"job_info": {"index": index}}},
+        }]}
+    }
+
+
+def test_a_broker_outage_does_not_write_the_terminal_doc_twice(monkeypatch):
+    """queue_finished_job only backs off on socket.error, and celery raises
+    kombu's OperationalError for an unreachable broker, which is not one. So
+    the failure escaped into _fail_job's own Exception backoff, which re-ran
+    log_job_status: up to five terminal writes for one _id, each with a
+    paired logstash delete. That is the duplicate Part A removes from
+    run_job, in the one supervisory writer the reaper exists to repair."""
+    from kombu.exceptions import OperationalError
+
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
+    mock_es = umock.MagicMock()
+    mock_es.search.side_effect = lambda **kw: _started_hit()   # fresh doc per read
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+    calls = {"n": 0}
+
+    def _queue(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OperationalError("broker unreachable")
+
+    monkeypatch.setattr(ep, "queue_finished_job", _queue)
+
+    ep.fail_job({"traceback": "tb"}, "uuid-1", "TimeLimitExceeded(60,)", "TimeLimitExceeded")
+
+    assert calls["n"] == 2            # the requeue was retried
+    mock_log.assert_called_once()     # the terminal doc was written once
+    mock_es.search.assert_called_once()   # and the replay did not re-read it
+
+
+def test_unknown_supersession_retries_the_read_rather_than_writing(monkeypatch):
+    """Could not ask is a transport fault, not evidence of deletion."""
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    answers = iter(["unknown", "owned"])
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: next(answers))
+    mock_es = umock.MagicMock()
+    mock_es.search.return_value = _started_hit()
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+    monkeypatch.setattr(ep, "queue_finished_job", umock.MagicMock())
+
+    ep.fail_job({"traceback": "tb"}, "uuid-1", "TimeLimitExceeded(60,)", "TimeLimitExceeded")
+
+    mock_log.assert_called_once()
+
+
+def test_terminal_doc_does_not_pay_for_a_probe(monkeypatch):
+    """The guard sits inside the branch that writes; an already-terminal doc
+    was never going to be rewritten, so it must not burn a probe budget."""
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    guard = umock.MagicMock(return_value="owned")
+    monkeypatch.setattr(ep, "job_supersession", guard)
+    mock_es = umock.MagicMock()
+    hit = _started_hit()
+    hit["hits"]["hits"][0]["_source"]["status"] = "job-completed"
+    mock_es.search.return_value = hit
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    monkeypatch.setattr(ep, "log_job_status", umock.MagicMock())
+
+    ep.fail_job({"traceback": "tb"}, "uuid-1", "TimeLimitExceeded(60,)", "TimeLimitExceeded")
+
+    guard.assert_not_called()
+
+
+def test_offline_jobs_does_not_write_over_a_superseded_payload(monkeypatch):
+    """The fourth supervisory writer. Its redis pair expires at a day and
+    nothing clears it on revoke, so after a retry the old attempt's keys can
+    still say job-started while a newer attempt owns the payload."""
+    mock_es = umock.MagicMock()
+    mock_es.query.return_value = [{"_source": {
+        "uuid": "uuid-1", "payload_id": "p1", "status": "job-started",
+        "celery_hostname": "worker-1", "job": {"job_info": {"index": "job_status-2026.08.28"}}}}]
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    monkeypatch.setattr(ep, "get_val_via_socket",
+                        lambda key: "job-started" if "job-status" in key else "worker-1")
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "superseded")
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+
+    ep.offline_jobs({"hostname": "worker-1"})
+
+    mock_log.assert_not_called()

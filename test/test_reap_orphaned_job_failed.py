@@ -30,7 +30,7 @@ else:
 
 
 def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-completed",
-               time_queued="2026-08-29T11:30:00.000000Z"):
+               time_queued="2026-08-29T11:30:00.000000Z", retry_delete=None):
     """A retried attempt's doc in a dated index -- the scan's starting point.
 
     job_info.time_queued is stamped by retry.py immediately before it deletes
@@ -45,7 +45,8 @@ def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-comple
             "status": status,
             "@timestamp": "2026-08-29T12:00:00.000Z",
             "job": {"retry_count": retry_count,
-                    "job_info": {"time_queued": time_queued}},
+                    "job_info": {"time_queued": time_queued,
+                                 **({"retry_delete": retry_delete} if retry_delete else {})}},
         },
     }
 
@@ -212,7 +213,11 @@ def test_dry_run_deletes_nothing(monkeypatch):
     assert counters["would_reap"] == 1
     assert counters["reaped"] == 0
     es.delete_by_id.assert_not_called()
-    reaper.log_custom_event.assert_not_called()
+    # emitted anyway, flagged: the audit both PR bodies prescribe reads these
+    # events, and a dry-run that produced none could not be reconciled
+    event = reaper.log_custom_event.call_args[0][2]
+    assert event["dry_run"] is True
+    assert "dry_run" in reaper.log_custom_event.call_args.kwargs["tags"]
 
 
 def test_candidate_query_scans_dated_indices_only(monkeypatch):
@@ -290,46 +295,6 @@ def test_sweep_survives_a_partial_page(monkeypatch):
 # which mechanism left the orphan behind
 # --------------------------------------------------------------------------
 
-def test_orphan_written_before_the_retry_is_a_missed_delete():
-    orphan = {"@timestamp": "2026-08-29T11:00:00.000Z"}
-    cand = _candidate()["_source"]          # retry at 11:30
-    assert reaper.classify(orphan, cand) == "missed-delete"
-
-
-def test_orphan_written_after_the_retry_is_a_late_write():
-    orphan = {"@timestamp": "2026-08-29T11:45:00.000Z"}
-    cand = _candidate()["_source"]          # retry at 11:30
-    assert reaper.classify(orphan, cand) == "late-write"
-
-
-def test_classification_is_unknown_without_both_timestamps():
-    cand = _candidate(time_queued=None)["_source"]
-    assert reaper.classify({"@timestamp": "2026-08-29T11:00:00.000Z"}, cand) == "unknown"
-    assert reaper.classify({}, _candidate()["_source"]) == "unknown"
-
-
-def test_mixed_fractional_precision_still_compares(monkeypatch):
-    """logstash writes milliseconds, log_job_status writes microseconds."""
-    orphan = {"@timestamp": "2026-08-29T11:29:59.999Z"}
-    cand = _candidate(time_queued="2026-08-29T11:30:00.000001Z")["_source"]
-    assert reaper.classify(orphan, cand) == "missed-delete"
-
-
-def test_the_reaped_event_carries_the_mechanism(monkeypatch):
-    """The event is the field triage; _version alone stops separating the two
-    causes once the worker writes the terminal doc only once."""
-    _wire(monkeypatch,
-          [_candidate(time_queued="2026-08-29T11:30:00.000000Z")],
-          [_failed_hit()])          # orphan @timestamp 11:00 -> before the retry
-
-    counters = reaper.reap_orphans()
-
-    assert counters["by_mechanism"] == {"missed-delete": 1}
-    event = reaper.log_custom_event.call_args[0][2]
-    assert event["mechanism"] == "missed-delete"
-    assert event["orphan_ts"] and event["retry_ts"]
-
-
 def test_an_expired_redis_key_is_counted_separately(monkeypatch):
     """A missing key counts as reapable, so the cross-check did not happen.
     HYSDS_JOB_STATUS_EXPIRES is a day, so any longer window runs mostly
@@ -351,26 +316,6 @@ def test_a_live_redis_key_is_not_counted_as_expired(monkeypatch):
     assert counters.get("redis_expired", 0) == 0
 
 
-def test_failures_with_no_dated_doc_are_counted(monkeypatch):
-    """The lane the candidate scan cannot see: logstash's paired delete takes
-    the candidate away at the same instant the orphan is created."""
-    es = _wire(monkeypatch, [], [])
-
-    def _query(index=None, body=None, **_kw):
-        if index == reaper.FAILED_INDEX:
-            return [{"_id": "orphan-a"}, {"_id": "orphan-b"}]
-        if body and "ids" in body.get("query", {}):
-            return [{"_id": "orphan-a"}]        # only one has a dated doc
-        return []
-
-    es.query.side_effect = _query
-
-    counters = reaper.reap_orphans()
-
-    assert counters["job_failed_examined"] == 2
-    assert counters["job_failed_without_a_dated_doc"] == 1
-
-
 def test_a_window_longer_than_the_redis_ttl_is_refused(monkeypatch):
     import pytest as _pytest
 
@@ -384,3 +329,90 @@ def test_a_window_longer_than_the_redis_ttl_is_refused(monkeypatch):
     reaper.check_window_against_redis_ttl(63, None, False, True)
     # and a short window is fine
     reaper.check_window_against_redis_ttl(0.5, None, False, False)
+
+
+# --------------------------------------------------------------------------
+# which side of the retry's delete the orphan was INDEXED on
+# --------------------------------------------------------------------------
+
+MARK = {"job_failed": {"seq_no": 100, "primary_term": 3}}
+
+
+def test_indexed_after_the_delete_by_seq_no():
+    hit = {"_seq_no": 101, "_primary_term": 3, "_source": {"@timestamp": "2026-08-29T11:00:00Z"}}
+    cand = _candidate(retry_delete=MARK)["_source"]
+    assert reaper.classify(hit, cand) == ("indexed_after_retry_delete", "seq_no")
+
+
+def test_indexed_before_the_delete_by_seq_no():
+    hit = {"_seq_no": 99, "_primary_term": 3, "_source": {}}
+    cand = _candidate(retry_delete=MARK)["_source"]
+    assert reaper.classify(hit, cand) == ("indexed_before_retry_delete", "seq_no")
+
+
+def test_primary_term_outranks_seq_no():
+    """A new primary restarts nothing but a later term always sorts later."""
+    hit = {"_seq_no": 5, "_primary_term": 4, "_source": {}}
+    cand = _candidate(retry_delete=MARK)["_source"]
+    assert reaper.classify(hit, cand) == ("indexed_after_retry_delete", "seq_no")
+
+
+def test_without_a_mark_only_write_order_is_reported():
+    """No mark: the resubmitting job predates the field, or the sweep never
+    reached job_failed. Timestamps answer WRITE order, not indexing order,
+    and the gap between those is the whole write-after-delete mechanism, so
+    the value says what it can establish and the basis says it is a guess."""
+    early = {"_seq_no": 1, "_primary_term": 1, "_source": {"@timestamp": "2026-08-29T11:00:00.000Z"}}
+    late = {"_seq_no": 1, "_primary_term": 1, "_source": {"@timestamp": "2026-08-29T11:45:00.000Z"}}
+    cand = _candidate()["_source"]                  # retry queued 11:30, no mark
+    assert reaper.classify(early, cand) == ("written_before_retry_queued", "timestamp")
+    assert reaper.classify(late, cand) == ("written_after_retry_queued", "timestamp")
+
+
+def test_nothing_to_compare_is_unknown():
+    cand = _candidate(time_queued=None)["_source"]
+    assert reaper.classify({"_source": {}}, cand) == ("unknown", "none")
+
+
+def test_the_reaped_event_carries_mechanism_basis_and_tags(monkeypatch):
+    _wire(monkeypatch, [_candidate(retry_delete=MARK)],
+          [dict(_failed_hit(), _seq_no=101, _primary_term=3)])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["by_mechanism"] == {"indexed_after_retry_delete": 1}
+    args, kwargs = reaper.log_custom_event.call_args
+    assert args[2]["mechanism"] == "indexed_after_retry_delete"
+    assert args[2]["mechanism_basis"] == "seq_no"
+    assert args[2]["retry_delete_mark"] == MARK["job_failed"]
+    assert "mechanism:indexed_after_retry_delete" in kwargs["tags"]
+    assert "reaped" in kwargs["tags"]
+
+
+def test_mget_results_are_paired_by_id_not_position(monkeypatch):
+    """A judgement that deletes a document must follow the _id."""
+    cands = [_candidate(_id="a", uuid="new-a"), _candidate(_id="b", uuid="same-b")]
+    hits = [_failed_hit(_id="b", uuid="same-b"), _failed_hit(_id="a", uuid="old-a")]  # scrambled
+    es = _wire(monkeypatch, cands, hits)
+
+    counters = reaper.reap_orphans()
+
+    assert counters["reaped"] == 1
+    assert es.delete_by_id.call_args.kwargs["id"] == "a"
+
+
+def test_the_shipped_supervisord_defaults_pass_the_ttl_guard(monkeypatch):
+    """--lookback-days 1 with the shipped TTL of one day, and no --dry-run:
+    86400 is not greater than 86400. The earlier block shipped 2 days, which
+    made the documented rollout step (drop --dry-run) exit before the first
+    sweep and go FATAL under supervisord."""
+    monkeypatch.setattr(reaper.app.conf, "get", lambda *a, **k: 86400, raising=False)
+    reaper.check_window_against_redis_ttl(1, None, False, False)   # no SystemExit
+
+
+def test_once_reports_a_failed_sweep(monkeypatch):
+    monkeypatch.setattr(reaper.app.conf, "get", lambda *a, **k: 86400, raising=False)
+    monkeypatch.setattr(reaper, "reap_orphans", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert reaper.daemon(300, 120, 1, once=True) is False
+    monkeypatch.setattr(reaper, "reap_orphans", lambda *a, **k: {"scanned": 0})
+    assert reaper.daemon(300, 120, 1, once=True) is True

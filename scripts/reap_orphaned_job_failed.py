@@ -66,28 +66,47 @@ def _parse_ts(value):
         return None
 
 
-def classify(orphan, candidate):
-    """Which mechanism left this orphan behind.
+def classify(orphan_hit, candidate):
+    """Which side of the retry's delete this orphan was INDEXED on.
 
-    retry.py stamps job_info.time_queued immediately before it deletes the old
-    status doc, so that is the moment of the retry. An orphan written BEFORE
-    it is one the delete failed to reach; an orphan written AFTER it is a late
-    write that re-created the doc the delete had already removed.
+    Returns (mechanism, basis). The exact answer needs no clock: retry.py
+    records each member's delete position as job_info.retry_delete on the
+    resubmitted job, and the same _id always routes to the same job_failed
+    shard, so the orphan's own (_primary_term, _seq_no) from the mget compares
+    directly against the job_failed mark.
 
-    This is the discriminator to trust. _version was usable while the worker
-    wrote the terminal doc twice, but the single-write fix in the same release
-    shifts every version down by one: a missed delete now leaves the doc at 1,
-    and a late write leaves it at 3 within index.gc_deletes or 1 once the
-    tombstone has expired. So 1 is ambiguous on _version alone and 2 becomes
-    unreachable except for docs written before the upgrade.
+      indexed_after_retry_delete   the doc was created after the sweep's
+                                   delete on job_failed -- a late write
+                                   re-created it (the write-side lanes)
+      indexed_before_retry_delete  the doc predates the delete that should
+                                   have removed it; not expected once the
+                                   sweep reaches job_failed at all
+
+    With no mark (the resubmitting job predates this field, or the sweep
+    could not reach job_failed) it falls back to comparing the orphan's
+    @timestamp with the candidate's job_info.time_queued, which retry.py
+    stamps before the delete. That answers WRITE order, not indexing order,
+    and the gap between those is the entire write-after-delete mechanism, so
+    it is reported as such and never as a verdict on the mechanism:
+
+      written_after_retry_queued / written_before_retry_queued
+
+    basis is "seq_no", "timestamp" or "none".
     """
-    o_ts = _parse_ts(orphan.get("@timestamp"))
-    r_ts = _parse_ts(
-        ((candidate.get("job") or {}).get("job_info") or {}).get("time_queued")
-    )
+    ji = (candidate.get("job") or {}).get("job_info") or {}
+    mark = (ji.get("retry_delete") or {}).get(FAILED_INDEX) or {}
+    pt, sn = orphan_hit.get("_primary_term"), orphan_hit.get("_seq_no")
+    m_pt, m_sn = mark.get("primary_term"), mark.get("seq_no")
+    if None not in (pt, sn, m_pt, m_sn):
+        after = (int(pt), int(sn)) > (int(m_pt), int(m_sn))
+        return ("indexed_after_retry_delete" if after
+                else "indexed_before_retry_delete"), "seq_no"
+    o_ts = _parse_ts((orphan_hit.get("_source") or {}).get("@timestamp"))
+    r_ts = _parse_ts(ji.get("time_queued"))
     if o_ts is None or r_ts is None:
-        return "unknown"
-    return "missed-delete" if o_ts < r_ts else "late-write"
+        return "unknown", "none"
+    return ("written_before_retry_queued" if o_ts < r_ts
+            else "written_after_retry_queued"), "timestamp"
 
 
 def find_candidates(mozart_es, grace_secs, lookback_days, since=None):
@@ -112,42 +131,10 @@ def find_candidates(mozart_es, grace_secs, lookback_days, since=None):
             }
         },
         "_source": ["payload_id", "uuid", "status", "@timestamp",
-                    "job.retry_count", "job.job_info.time_queued"],
+                    "job.retry_count", "job.job_info.time_queued",
+                    "job.job_info.retry_delete"],
     }
     return mozart_es.query(index=CANDIDATE_INDEX, body=query)
-
-
-def count_unpaired_failures(mozart_es, gte, limit=5000):
-    """job_failed docs in the window whose payload has no dated doc at all.
-
-    The candidate query needs a doc for the payload in a dated index, but
-    logstash's paired delete removes the payload from that daily at the same
-    instant a late write creates the orphan -- so for the very lane this
-    daemon exists to catch, the candidate is gone and the orphan is invisible
-    to every sweep. It only becomes visible once the retried task reaches a
-    worker and writes job-started, which on a scaling venue is minutes to
-    hours and never happens at all if the task is revoked, purged or deduped.
-
-    This does not reap anything. It makes the blind lane observable, so a
-    sweep reporting reaped: 0 can be told apart from a sweep that cannot see
-    what it is looking for.
-    """
-    failed = mozart_es.query(
-        index=FAILED_INDEX,
-        body={"query": {"range": {"@timestamp": {"gte": gte}}},
-              "_source": False, "size": PAGE_SIZE},
-    )
-    ids = [h["_id"] for h in failed][:limit]
-    paired = set()
-    for start in range(0, len(ids), PAGE_SIZE):
-        batch = ids[start:start + PAGE_SIZE]
-        hits = mozart_es.query(
-            index=CANDIDATE_INDEX,
-            body={"query": {"ids": {"values": batch}}, "_source": False,
-                  "size": 1000},
-        )
-        paired.update(h["_id"] for h in hits)
-    return len(ids), len(ids) - len(paired)
 
 
 def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
@@ -171,8 +158,15 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
         ids = [c["_id"] for c in page]
         # realtime multi-GET: unlike a search, this cannot show a stale view
         # of whether the failed doc is still there
-        res = mozart_es.es.mget(index=FAILED_INDEX, body={"ids": ids})
-        for cand, doc in zip(page, res["docs"]):  # mget preserves order
+        res = mozart_es.es.mget(
+            index=FAILED_INDEX, body={"ids": ids},
+            _source=["uuid", "status", "@timestamp", "job.retry_count"],
+        )
+        # pair by _id, not by position: mget preserves order, but a judgement
+        # that deletes a document must not depend on it
+        by_id = {d.get("_id"): d for d in res.get("docs", []) if isinstance(d, dict)}
+        for cand in page:
+            doc = by_id.get(cand["_id"], {})
             if not doc.get("found"):
                 continue  # no failed doc for this payload; nothing to repair
             orphan = doc["_source"]
@@ -209,21 +203,49 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 # run had no live cross-check.
                 counters["redis_expired"] += 1
 
-            mechanism = classify(orphan, cand_src)
+            mechanism, basis = classify(doc, cand_src)
             detail = (
                 f"payload_id={doc['_id']} orphan_uuid={orphan['uuid']} "
                 f"newer_uuid={cand_src.get('uuid')} "
                 f"retry_count={orphan_rc}->{cand_rc} "
                 f"orphan_status={orphan.get('status')} "
                 f"orphan_ts={orphan.get('@timestamp')} _version={doc.get('_version')} "
-                f"mechanism={mechanism}"
+                f"mechanism={mechanism} basis={basis}"
             )
+
+            event = {
+                "payload_id": doc["_id"],
+                "orphan_uuid": orphan["uuid"],
+                "newer_uuid": cand_src.get("uuid"),
+                "orphan_retry_count": orphan_rc,
+                "newer_retry_count": cand_rc,
+                "version": doc.get("_version"),
+                "orphan_seq_no": doc.get("_seq_no"),
+                "orphan_primary_term": doc.get("_primary_term"),
+                "retry_delete_mark": ((cand_src.get("job") or {}).get("job_info") or {})
+                .get("retry_delete", {}).get(FAILED_INDEX),
+                "mechanism": mechanism,
+                "mechanism_basis": basis,
+                "orphan_ts": orphan.get("@timestamp"),
+                "retry_ts": ((cand_src.get("job") or {}).get("job_info") or {}).get("time_queued"),
+                "dry_run": bool(dry_run),
+            }
+            # tags are indexed even where the event body is not, so the
+            # mechanism can be counted and filtered on without pulling every
+            # _source (event_status.template maps `event` enabled: false)
+            tags = [f"mechanism:{mechanism}", f"basis:{basis}",
+                    "dry_run" if dry_run else "reaped"]
 
             if dry_run:
                 counters["would_reap"] += 1
                 reaped_by_version[doc.get("_version")] += 1
                 by_mechanism[mechanism] += 1
                 logging.info(f"DRY-RUN would reap {detail}")
+                # emitted on dry-run too: the audit both PR bodies prescribe
+                # reads these events, and a dry-run that produced none could
+                # not be reconciled against anything
+                log_custom_event("worker_anomaly", "job_failed_orphan_reaped",
+                                 event, tags=tags)
                 continue
 
             # Optimistic concurrency: between the mget and this delete the
@@ -243,48 +265,14 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 reaped_by_version[doc.get("_version")] += 1
                 by_mechanism[mechanism] += 1
                 logging.info(f"Reaped orphaned job_failed doc: {detail}")
-                # `mechanism` is the field triage, and it stays correct after
-                # the single-write fix lands. _version is kept alongside it
-                # because it is still informative on docs written by an older
-                # worker, but on its own it no longer separates the two
-                # causes -- see classify().
-                log_custom_event(
-                    "worker_anomaly",
-                    "job_failed_orphan_reaped",
-                    {
-                        "payload_id": doc["_id"],
-                        "orphan_uuid": orphan["uuid"],
-                        "newer_uuid": cand_src.get("uuid"),
-                        "orphan_retry_count": orphan_rc,
-                        "newer_retry_count": cand_rc,
-                        "version": doc.get("_version"),
-                        "mechanism": mechanism,
-                        "orphan_ts": orphan.get("@timestamp"),
-                        "retry_ts": ((cand_src.get("job") or {}).get("job_info") or {}).get("time_queued"),
-                    },
-                )
+                log_custom_event("worker_anomaly", "job_failed_orphan_reaped",
+                                 event, tags=tags)
             elif status == 409:
                 # replaced under us; re-examined next sweep and skipped then
                 counters["skipped_conflict"] += 1
                 logging.info(f"Conflict, leaving for the next sweep: {detail}")
             else:
                 counters["skipped_gone"] += 1
-
-    try:
-        examined, unpaired = count_unpaired_failures(
-            mozart_es, since if since else f"now-{lookback_days}d"
-        )
-        counters["job_failed_examined"] = examined
-        counters["job_failed_without_a_dated_doc"] = unpaired
-        if unpaired:
-            logging.warning(
-                f"{unpaired} of {examined} job_failed docs in the window have no "
-                f"dated doc at all. Those are invisible to the candidate scan: "
-                f"if a late write created them, logstash's paired delete took "
-                f"the candidate with it."
-            )
-    except Exception as e:
-        logging.warning(f"unpaired-failure count failed: {e}")
 
     counters["reaped_by_version"] = dict(reaped_by_version)
     counters["by_mechanism"] = dict(by_mechanism)
@@ -340,6 +328,7 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=False, once=
         f"grace: {grace_secs}s  lookback: {lookback_days}d  dry_run: {dry_run}"
     )
 
+    failed_sweeps = 0
     while True:
         try:
             counters = reap_orphans(grace_secs, lookback_days, since=since,
@@ -360,10 +349,11 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=False, once=
                         f"job.retry_count is mapped in the job_status template."
                     )
         except Exception as e:
+            failed_sweeps += 1
             logging.error(f"Got error: {e}")
             logging.error(traceback.format_exc())
         if once:
-            break
+            return failed_sweeps == 0
         time.sleep(random.randint(interval_min, interval_max))
 
 
@@ -412,7 +402,7 @@ if __name__ == "__main__":
         "the redis cross-check is inert for most candidates",
     )
     args = parser.parse_args()
-    daemon(
+    ok = daemon(
         args.interval,
         args.grace_secs,
         args.lookback_days,
@@ -421,3 +411,6 @@ if __name__ == "__main__":
         once=args.once,
         allow_expired_redis=args.allow_expired_redis,
     )
+    # a --once sweep that threw must not report success to whoever ran it
+    if args.once and not ok:
+        raise SystemExit(1)

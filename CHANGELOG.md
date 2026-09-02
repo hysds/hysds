@@ -10,11 +10,26 @@ All notable changes to this project will be documented in this file.
 - `scripts/reap_orphaned_job_failed.py`, a mozart daemon that deletes
   `job_failed` documents a later attempt has superseded. It **deletes
   production failure records**, so the supervisord block ships with
-  `--dry-run`: reconcile a sweep against your own audit before dropping the
-  flag. Every PCM overrides `supervisord.conf.mozart`, so the block has to be
-  added to each override at adoption.
-- `log_utils.job_supersession()`, wired into every supervisory status writer,
-  so none of them overwrites a payload a newer attempt owns.
+  `--dry-run` and `--lookback-days 1`: reconcile a dry-run sweep against your
+  own audit before dropping the flag. The window matches the redis job-status
+  TTL (one day); a longer window is refused without `--dry-run` or
+  `--allow-expired-redis`, because past the TTL the redis cross-check is inert.
+  Dry-run sweeps still emit `job_failed_orphan_reaped` events, flagged
+  `dry_run: true`, so the audit has something to read. Every event carries a
+  `mechanism` (which side of the retry's delete the orphan was indexed on,
+  from `_seq_no` against the mark lightweight-jobs v2.1.2 records on the
+  resubmitted job) and a `mechanism_basis`, also as indexed tags. Every PCM
+  overrides `supervisord.conf.mozart`, so the block has to be added to each
+  override at adoption.
+- `log_utils.job_supersession()`, one realtime `mget` over every index a job
+  doc can live in, wired into every supervisory status writer (the watchdog,
+  `event_processors._fail_job` and `offline_jobs`, `task_revoked_handler`,
+  the job-lock contention path, `offline_orphaned_jobs`) so none of them
+  overwrites a payload a newer attempt owns. It reports `ABSENT` (a retry
+  just deleted the doc) and `UNKNOWN` (the probe could not ask) separately;
+  the verdi sites degrade to their previous unconditional write on `UNKNOWN`
+  rather than dropping a terminal record when mozart's OpenSearch is
+  unreachable from a worker.
 
 ### Changed
 - **Behaviour change.** User rules now evaluate the failures `process_events`
@@ -25,9 +40,13 @@ All notable changes to this project will be documented in this file.
   begin firing where they did not before; a celery-level ConnectionError is
   not by itself evidence that the job's work failed. Check your venue's live
   `user_rules-mozart` index before upgrading.
-- `run_job` writes a failed job's terminal status document once instead of
-  twice. The duplicate could land after a retry had deleted the document and
-  re-create it as an orphan.
+- `run_job` and `event_processors._fail_job` each write a failed job's
+  terminal status document once. `run_job` wrote it twice; `_fail_job`
+  re-wrote it on every backoff replay when the rule requeue hit an
+  unreachable broker. Either duplicate could land after a retry had deleted
+  the document and re-create it as an orphan.
+- Rule evaluation's settle probe is pinned to the attempt that queued it, so
+  an unreaped orphan under the same `_id` cannot satisfy it on the wrong doc.
 
 ## [3.3.1] - 2026-07-23
 

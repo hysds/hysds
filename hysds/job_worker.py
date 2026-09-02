@@ -24,6 +24,7 @@ from hysds.containers.factory import container_engine_factory
 from hysds.lock import JobLock, LockNotAcquiredException
 from hysds.log_utils import (
     OWNED,
+    UNKNOWN,
     get_job_status,
     get_task_worker,
     get_worker_status,
@@ -630,7 +631,7 @@ def run_job(job, queue_when_finished=True):
                     job["task_id"],
                     retry_count=job.get("retry_count"),
                     index=job.get("job_info", {}).get("index"),
-                ) != OWNED:
+                ) not in (OWNED, UNKNOWN):
                     log_custom_event(
                         "worker_anomaly",
                         "job_lock_contention",
@@ -1761,7 +1762,11 @@ def task_revoked_handler(*args, **kwargs):
         retry_count=job.get("retry_count"),
         index=job.get("job_info", {}).get("index"),
     )
-    if state == OWNED:
+    # UNKNOWN means the probe could not ask, not that anyone else owns the
+    # payload. This handler wrote unconditionally before the guard existed,
+    # and a worker that cannot reach mozart's OpenSearch must degrade to that,
+    # not silently drop its terminal write.
+    if state in (OWNED, UNKNOWN):
         log_job_status(job_status_json)
     else:
         logger.info(

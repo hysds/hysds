@@ -98,180 +98,169 @@ def test_status_key_ttl_extends_for_float_time_limit(monkeypatch):
     assert isinstance(ttl, int)
 
 
-# --- is_job_superseded ----------------------------------------------------
+# --- job_supersession ------------------------------------------------------
 
 
-def _es_stub(monkeypatch, docs, boom=False):
-    """Install a fake hysds.es_util for the deferred import in is_job_superseded.
+def _mget_stub(monkeypatch, docs_by_index, errors=None, raise_exc=None):
+    """Install a fake hysds.es_util whose client answers one mget.
 
-    `docs` maps index name -> the get_by_id response for that index.
+    docs_by_index: {index: hit}; errors: {index: error_type}; anything else
+    answers found=False. Records the request so tests can assert its shape.
     """
     import types
 
-    calls = []
+    seen = {}
+    errors = errors or {}
+
+    class _Raw:
+        def mget(self, body=None, _source=None, **_kw):
+            if raise_exc:
+                raise raise_exc
+            seen["homes"] = [d["_index"] for d in body["docs"]]
+            seen["_source"] = _source
+            out = []
+            for d in body["docs"]:
+                idx, _id = d["_index"], d["_id"]
+                if idx in errors:
+                    out.append({"_index": idx, "_id": _id,
+                                "error": {"type": errors[idx]}})
+                elif idx in docs_by_index:
+                    hit = dict(docs_by_index[idx])
+                    hit["_index"] = idx
+                    out.append(hit)
+                else:
+                    out.append({"_index": idx, "_id": _id, "found": False})
+            return {"docs": out}
 
     class _ES:
-        def get_by_id(self, **kwargs):
-            calls.append(kwargs)
-            if boom:
-                raise ConnectionError("opensearch down")
-            return docs.get(kwargs["index"], {"found": False})
-
-    monkeypatch.setitem(
-        sys.modules,
-        "hysds.es_util",
-        types.SimpleNamespace(get_mozart_es=lambda: _ES()),
-    )
-    return calls
-
-
-def _hit(uuid, retry_count=None):
-    src = {"uuid": uuid, "status": "job-failed"}
-    if retry_count is not None:
-        src["job"] = {"retry_count": retry_count}
-    return {"found": True, "_source": src}
-
-
-def test_is_job_superseded_false_for_same_uuid(monkeypatch):
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
-
-
-def test_is_job_superseded_true_for_a_later_attempt(monkeypatch):
-    """A retry keeps the payload_id, mints a new uuid AND bumps retry_count."""
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=1)})
-    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=0) is True
-
-
-def test_is_job_superseded_false_for_an_older_leftover(monkeypatch):
-    """Regression: a different uuid alone must NOT count as superseded.
-
-    An orphaned job_failed doc or an unswept job-revoked doc from an EARLIER
-    attempt also carries a uuid that is not ours. Treating that as
-    supersession makes a supervisory writer drop a legitimate failure -- which
-    is what happened on a live cluster before retry_count was compared.
-    """
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-0", retry_count=0)})
-    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=1) is False
-
-
-def test_is_job_superseded_false_for_equal_retry_counts(monkeypatch):
-    """A tie is not newer; fail open and let the write through."""
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=2)})
-    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=2) is False
-
-
-def test_is_job_superseded_missing_retry_counts_tie_at_zero(monkeypatch):
-    """Neither side carries the key: 0 vs 0 ties, so no supersession."""
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2")})
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
-
-
-def test_is_job_superseded_false_when_no_doc_anywhere(monkeypatch):
-    _es_stub(monkeypatch, {})
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
-
-
-def _today():
-    from datetime import datetime, timezone
-    return f"job_status-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
-
-
-def test_is_job_superseded_checks_the_dated_home_too(monkeypatch):
-    """job_failed is empty but the dated index holds a newer attempt."""
-    calls = _es_stub(
-        monkeypatch,
-        {"job_status-2026.08.28": _hit("uuid-2", retry_count=1)},
-    )
-    assert (
-        lu.is_job_superseded("payload-1", "uuid-1", index="job_status-2026.08.28")
-        is True
-    )
-    assert [c["index"] for c in calls][:2] == ["job_failed", "job_status-2026.08.28"]
-    assert all(c["ignore"] == [400, 404] for c in calls)
-
-
-def test_is_job_superseded_probes_todays_daily_across_a_day_boundary(monkeypatch):
-    """A retry rewrites job_info.index to the current daily, so a caller
-    holding an older attempt's doc names yesterday's index. Probing only that
-    would miss the newer attempt entirely."""
-    calls = _es_stub(
-        monkeypatch,
-        {_today(): _hit("uuid-2", retry_count=1)},
-    )
-    assert (
-        lu.is_job_superseded(
-            "payload-1", "uuid-1", retry_count=0, index="job_status-1999.01.01"
-        )
-        is True
-    )
-    assert _today() in [c["index"] for c in calls]
-
-
-def test_is_job_superseded_does_not_probe_a_home_twice(monkeypatch):
-    """index=job_failed is already the first home; do not GET it twice."""
-    calls = _es_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
-    lu.is_job_superseded("payload-1", "uuid-1", index="job_failed")
-    probed = [c["index"] for c in calls]
-    assert probed[0] == "job_failed"
-    assert len(probed) == len(set(probed))
-
-
-def test_one_failing_probe_does_not_skip_the_others(monkeypatch):
-    """A hiccup on job_failed used to abort the whole lookup, so the dated
-    home was never consulted and the guard reported False."""
-    import types
-
-    calls = []
-
-    class _ES:
-        def get_by_id(self, **kwargs):
-            calls.append(kwargs["index"])
-            if kwargs["index"] == "job_failed":
-                raise ConnectionError("transport blip")
-            return _hit("uuid-2", retry_count=1)
+        es = _Raw()
 
     monkeypatch.setitem(
         sys.modules, "hysds.es_util",
         types.SimpleNamespace(get_mozart_es=lambda: _ES()),
     )
-    assert (
-        lu.is_job_superseded(
-            "payload-1", "uuid-1", retry_count=0, index="job_status-2026.08.28"
-        )
-        is True
-    )
-    assert "job_status-2026.08.28" in calls
+    return seen
 
 
-def test_is_job_superseded_false_on_404_shaped_response(monkeypatch):
-    _es_stub(monkeypatch, {"job_failed": {"error": "not_found", "status": 404}})
+def _hit(uuid, retry_count=None):
+    src = {"uuid": uuid}
+    if retry_count is not None:
+        src["job"] = {"retry_count": retry_count}
+    return {"found": True, "_source": src}
+
+
+def _daily(days_ago):
+    from datetime import datetime, timedelta, timezone
+    d = datetime.now(timezone.utc).date() - timedelta(days=days_ago)
+    return f"job_status-{d.strftime('%Y.%m.%d')}"
+
+
+def test_same_uuid_is_owned(monkeypatch):
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.OWNED
     assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
-def test_is_job_superseded_fails_open_on_error(monkeypatch):
-    """A supervisory writer must not be blocked by an OpenSearch hiccup."""
-    _es_stub(monkeypatch, {}, boom=True)
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+def test_a_later_attempt_supersedes(monkeypatch):
+    """A retry keeps the payload_id, mints a new uuid AND bumps retry_count."""
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=1)})
+    assert lu.job_supersession("payload-1", "uuid-1", retry_count=0) == lu.SUPERSEDED
+    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=0) is True
 
 
-def test_absent_everywhere_is_reported_separately(monkeypatch):
-    """No live doc in any home is the signature of a retry having just
-    deleted it. Folding that in with "not superseded" is what let a
-    supervisory writer resurrect the old attempt and, through logstash's
-    paired delete, destroy the retried attempt's fresh doc."""
-    _es_stub(monkeypatch, {})
-    assert lu.job_supersession("payload-1", "uuid-1") == lu.ABSENT
-    # the boolean view still reports False, so it must not be used where the
-    # distinction matters
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
-
-
-def test_a_live_older_doc_is_owned_not_absent(monkeypatch):
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-0", retry_count=0)})
+def test_an_older_leftover_does_not_supersede(monkeypatch):
+    """Regression: a different uuid alone must NOT count. An orphaned
+    job_failed doc or an unswept job-revoked doc from an EARLIER attempt also
+    carries a uuid that is not ours; treating that as supersession made a
+    supervisory writer drop a legitimate failure on a live cluster."""
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-0", retry_count=0)})
     assert lu.job_supersession("payload-1", "uuid-1", retry_count=1) == lu.OWNED
 
 
-def test_a_newer_doc_is_superseded(monkeypatch):
-    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=3)})
-    assert lu.job_supersession("payload-1", "uuid-1", retry_count=1) == lu.SUPERSEDED
+def test_equal_or_missing_retry_counts_tie_and_do_not_supersede(monkeypatch):
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=2)})
+    assert lu.job_supersession("payload-1", "uuid-1", retry_count=2) == lu.OWNED
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-2")})
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.OWNED
+
+
+def test_no_live_doc_anywhere_is_absent(monkeypatch):
+    """The signature of a retry having just deleted the doc. Folding it in
+    with 'not superseded' let a writer resurrect the old attempt and, via
+    logstash's paired delete, destroy the retried attempt's fresh doc."""
+    _mget_stub(monkeypatch, {})
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.ABSENT
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_could_not_ask_is_unknown_not_absent(monkeypatch):
+    """A closed home plus nothing found is not evidence of deletion. Reading
+    it as ABSENT made the guard fail closed during a rolling node restart and
+    drop every failure record in flight."""
+    _mget_stub(monkeypatch, {}, errors={"job_failed": "index_closed_exception"})
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.UNKNOWN
+
+
+def test_probe_raising_is_unknown(monkeypatch):
+    _mget_stub(monkeypatch, {}, raise_exc=ConnectionError("transport blip"))
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.UNKNOWN
+
+
+def test_a_daily_that_never_existed_is_a_clean_miss(monkeypatch):
+    """Days with no jobs have no index. That is not a failed probe."""
+    _mget_stub(monkeypatch, {}, errors={_daily(1): "index_not_found_exception"})
+    assert lu.job_supersession("payload-1", "uuid-1", index=_daily(2)) == lu.ABSENT
+
+
+def test_a_found_doc_wins_over_an_errored_home(monkeypatch):
+    _mget_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=1)},
+               errors={_daily(0): "index_closed_exception"})
+    assert lu.job_supersession("payload-1", "uuid-1", retry_count=0) == lu.SUPERSEDED
+
+
+def test_day_crossing_retry_is_found_in_a_middle_daily(monkeypatch):
+    """Submitted on D-3, retried on D-1: the caller holds D-3 and the live
+    doc is in D-1. Probing only the caller's index and today missed it."""
+    seen = _mget_stub(monkeypatch, {_daily(1): _hit("uuid-2", retry_count=1)})
+    assert lu.job_supersession(
+        "payload-1", "uuid-1", retry_count=0, index=_daily(3)) == lu.SUPERSEDED
+    assert _daily(1) in seen["homes"]
+
+
+def test_own_leftover_does_not_hide_a_newer_attempt(monkeypatch):
+    """The false OWNED: our own leftover sits in the caller's daily AND a newer
+    attempt sits in a later one. Stopping at the first found doc authorised
+    the watchdog to manufacture the very orphan the reaper exists to reap."""
+    _mget_stub(monkeypatch, {
+        _daily(3): _hit("uuid-1", retry_count=0),          # ours, old
+        _daily(1): _hit("uuid-2", retry_count=1),          # newer
+    })
+    assert lu.job_supersession(
+        "payload-1", "uuid-1", retry_count=0, index=_daily(3)) == lu.SUPERSEDED
+
+
+def test_probe_is_one_mget_over_every_home_with_a_projection(monkeypatch):
+    seen = _mget_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
+    lu.job_supersession("payload-1", "uuid-1", index=_daily(2))
+    assert seen["homes"][0] == "job_failed"
+    assert seen["homes"][1:] == [_daily(2), _daily(1), _daily(0)]
+    assert seen["_source"] == ["uuid", "job.retry_count"]
+
+
+def test_job_status_homes_shape():
+    from datetime import date
+    today = date(2026, 9, 2)
+    assert lu.job_status_homes("job_status-2026.08.31", today=today) == [
+        "job_failed", "job_status-2026.08.31", "job_status-2026.09.01",
+        "job_status-2026.09.02"]
+    # a non-daily index is asked as given, then today
+    assert lu.job_status_homes("job_status-current", today=today) == [
+        "job_failed", "job_status-current", "job_status-2026.09.02"]
+    # job_failed is never listed twice; no index means just today
+    assert lu.job_status_homes("job_failed", today=today) == [
+        "job_failed", "job_status-2026.09.02"]
+    assert lu.job_status_homes(None, today=today) == [
+        "job_failed", "job_status-2026.09.02"]
+    # a future or ancient caller date clamps
+    assert lu.job_status_homes("job_status-2027.01.01", today=today)[-1] == "job_status-2026.09.02"
+    assert len(lu.job_status_homes("job_status-2020.01.01", today=today)) == lu.MAX_DAILY_HOMES + 2

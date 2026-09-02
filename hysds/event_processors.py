@@ -20,8 +20,10 @@ from hysds.log_utils import (
     get_val_via_socket,
     ABSENT,
     SUPERSEDED,
+    UNKNOWN,
     is_job_finalized,
     job_supersession,
+    log_custom_event,
     log_job_status,
     logger,
 )
@@ -54,12 +56,42 @@ def fail_job(event, uuid, exc, short_error):
             f"not overwriting. exc={exc}, short_error={short_error}"
         )
         return
-    _fail_job(event, uuid, exc, short_error)
+    # Owned here, outside the retried body, so a backoff replay of _fail_job
+    # can see that the terminal doc was already written and not write it
+    # again. Without this, a broker outage after the write replays the whole
+    # body up to five times: five job-failed writes for one _id, and five
+    # paired logstash deletes. That is the duplicate this branch exists to
+    # remove, in the one supervisory writer the reaper was built to repair.
+    written = {"done": False}
+    _fail_job(event, uuid, exc, short_error, written)
 
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=5, max_value=10)
-def _fail_job(event, uuid, exc, short_error):
+def _fail_job_gave_up(details):
+    """Backoff exhausted: say so where it can be seen, not just in a log."""
+    args = details.get("args") or ()
+    uuid = args[1] if len(args) > 1 else None
+    log_custom_event(
+        "worker_anomaly",
+        "fail_job_gave_up",
+        {"uuid": uuid, "tries": details.get("tries"),
+         "elapsed": details.get("elapsed")},
+    )
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=5, max_value=10, on_giveup=_fail_job_gave_up
+)
+def _fail_job(event, uuid, exc, short_error, written=None):
     """Rewrite the job doc as job-failed and requeue rule evaluation."""
+    if written is None:
+        written = {"done": False}
+    if written["done"]:
+        # A backoff replay after the terminal doc was already handed to
+        # log_job_status: only the requeue is outstanding. Do not re-read the
+        # doc. By now the search can return our own job-failed write, and the
+        # "already terminal" branch below would then drop the requeue.
+        queue_finished_job(written["payload_id"], index="job_failed", uuid=uuid)
+        return
 
     query = {"query": {"bool": {"must": [{"term": {"uuid": uuid}}]}}}
 
@@ -73,35 +105,44 @@ def _fail_job(event, uuid, exc, short_error):
     res = result["hits"]["hits"][0]
     job_status = res["_source"]
 
-    # A retry keeps the payload_id and mints a new uuid, so a live doc owned
-    # by someone else means this attempt is history: rewriting it would
-    # resurrect a doc the retry deleted. Guarded immediately before
-    # the write, like the is_job_finalized check in fail_job() above.
-    state = job_supersession(
-        job_status["payload_id"],
-        uuid,
-        retry_count=(job_status.get("job") or {}).get("retry_count"),
-        index=(job_status.get("job") or {}).get("job_info", {}).get("index"),
-        es=mozart_es,
-    )
-    if state == SUPERSEDED:
-        logger.info(
-            f"fail_job - {uuid}: a later attempt owns payload "
-            f"{job_status['payload_id']}; not writing job-failed."
-        )
-        return
-    if state == ABSENT:
-        # The doc the search just found is gone from every home, which means a
-        # retry deleted it while its replacement is still in the pipeline.
-        # Writing now would resurrect the old attempt AND, through logstash's
-        # paired delete on job_info.index, remove the retried attempt's fresh
-        # doc. Raise so this function's own backoff re-reads in a moment.
-        raise RuntimeError(
-            f"payload {job_status['payload_id']} has no live status doc; "
-            f"a retry is mid-flight, deferring"
-        )
-
     if job_status["status"] == "job-started" or job_status["status"] == "job-queued":
+        # A retry keeps the payload_id and mints a new uuid, so a live doc
+        # owned by someone else means this attempt is history: rewriting it
+        # would resurrect a doc the retry deleted. Guarded inside the branch
+        # that writes, so an already-terminal doc does not pay for a probe
+        # whose answer it would never use.
+        state = job_supersession(
+            job_status["payload_id"],
+            uuid,
+            retry_count=(job_status.get("job") or {}).get("retry_count"),
+            index=(job_status.get("job") or {}).get("job_info", {}).get("index"),
+            es=mozart_es,
+        )
+        if state == SUPERSEDED:
+            logger.info(
+                f"fail_job - {uuid}: a later attempt owns payload "
+                f"{job_status['payload_id']}; not writing job-failed."
+            )
+            return
+        if state == ABSENT:
+            # Gone from every home: a retry deleted it while its
+            # replacement is still in the pipeline. Writing now would
+            # resurrect the old attempt AND, through logstash's paired
+            # delete on job_info.index, remove the retried attempt's
+            # fresh doc. Raise so this function's backoff re-reads.
+            raise RuntimeError(
+                f"payload {job_status['payload_id']} has no live status doc; "
+                f"a retry is mid-flight, deferring"
+            )
+        if state == UNKNOWN:
+            # Could not ask -- a probe raised and nothing was found. That
+            # is a transport fault, not evidence of deletion; retry the
+            # read rather than drop a failure record on it.
+            raise RuntimeError(
+                f"payload {job_status['payload_id']}: supersession probe "
+                f"failed, retrying the read"
+            )
+
         job_status["status"] = "job-failed"
         job_status["error"] = exc
         job_status["short_error"] = short_error
@@ -112,6 +153,7 @@ def _fail_job(event, uuid, exc, short_error):
             "time_end"
         ] = time_end
         log_job_status(job_status)
+        written.update(done=True, payload_id=job_status["payload_id"])
 
         # Rules must be evaluated against job_failed, not res["_index"].
         # The doc just rewritten as job-failed is moved there by logstash
@@ -165,6 +207,22 @@ def offline_jobs(event):
             logger.info(f"cur_job_worker: {cur_job_worker}")
 
             if cur_job_status == "job-started" and cur_job_worker == event["hostname"]:
+                # Same guard as every other supervisory writer. The redis pair
+                # above expires at HYSDS_JOB_STATUS_EXPIRES and nothing clears
+                # it on revoke, so after a retry the old attempt's keys can
+                # still say job-started while a newer attempt owns the payload
+                # -- and job-offline would land on that attempt's live doc,
+                # which the reaper never sees.
+                state = job_supersession(
+                    job_status_json.get("payload_id"),
+                    uuid,
+                    retry_count=(job_status_json.get("job") or {}).get("retry_count"),
+                    index=(job_status_json.get("job") or {}).get("job_info", {}).get("index"),
+                    es=mozart_es,
+                )
+                if state in (SUPERSEDED, ABSENT):
+                    logger.info(f"Not offlining job with UUID {uuid}: {state}")
+                    continue
                 job_status_json["status"] = "job-offline"
                 job_status_json["error"] = (
                     "Received worker-offline event during job execution."

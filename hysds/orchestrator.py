@@ -449,7 +449,11 @@ def submit_job(j):
                 # job-failed docs are moved to job_failed by logstash, so the
                 # dated index recorded in job_info is not where the rule
                 # evaluation will find this doc.
-                queue_finished_job(task_id, index="job_failed", uuid=task_id)
+                # the doc's uuid is job_json["task_id"] (minted at submit),
+                # not task_id (this orchestrator task's own id / the payload)
+                queue_finished_job(
+                    task_id, index="job_failed", uuid=job_json["task_id"]
+                )
 
     return results
 
