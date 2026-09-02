@@ -375,7 +375,7 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=False, once=
         time.sleep(random.randint(interval_min, interval_max))
 
 
-if __name__ == "__main__":
+def build_parser():
     desc = "Reap job_failed docs superseded by a newer attempt."
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
@@ -419,7 +419,11 @@ if __name__ == "__main__":
         help="permit a window longer than the redis job-status TTL, in which "
         "the redis cross-check is inert for most candidates",
     )
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
     ok = daemon(
         args.interval,
         args.grace_secs,

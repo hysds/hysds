@@ -424,3 +424,11 @@ def test_once_reports_a_failed_sweep(monkeypatch):
     assert reaper.daemon(300, 120, 1, once=True) is False
     monkeypatch.setattr(reaper, "reap_orphans", lambda *a, **k: {"scanned": 0})
     assert reaper.daemon(300, 120, 1, once=True) is True
+
+
+def test_cli_defaults_match_the_shipped_supervisord_block():
+    """A bare hand run must pass the TTL guard the shipped block passes; the
+    defaults are what the block passes explicitly."""
+    args = reaper.build_parser().parse_args([])
+    assert (args.interval, args.grace_secs, args.lookback_days) == (300, 120, 1)
+    assert args.dry_run is False and args.once is False and args.since is None

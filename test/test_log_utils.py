@@ -269,3 +269,8 @@ def test_job_status_homes_shape():
     assert len(old) == lu.MAX_DAILY_HOMES + 3
     assert old[1] == "job_status-2020.01.01"
     assert old[2] == f"job_status-{(today - timedelta(days=lu.MAX_DAILY_HOMES)).strftime('%Y.%m.%d')}"
+    # a future-dated daily (clock skew between hosts) is asked too, not dropped
+    future = lu.job_status_homes("job_status-2030.01.01", today=today)
+    assert future[:2] == ["job_failed", "job_status-2030.01.01"]
+    assert future[-1] == f"job_status-{today.strftime('%Y.%m.%d')}"
+    assert len(future) == len(set(future))

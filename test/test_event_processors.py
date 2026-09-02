@@ -382,6 +382,27 @@ def test_terminal_doc_does_not_pay_for_a_probe(monkeypatch):
     guard.assert_not_called()
 
 
+def test_offline_jobs_writes_job_offline_when_owned(monkeypatch):
+    """The positive half: an OWNED payload is offlined, so the negative tests
+    below cannot pass by offlining nothing at all."""
+    mock_es = umock.MagicMock()
+    mock_es.query.return_value = [{"_source": {
+        "uuid": "uuid-1", "payload_id": "p1", "status": "job-started",
+        "celery_hostname": "worker-1", "job": {"job_info": {"index": "job_status-2026.08.28"}}}}]
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    monkeypatch.setattr(ep, "get_val_via_socket",
+                        lambda key: "job-started" if "job-status" in key else "worker-1")
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: ep.OWNED)
+    monkeypatch.setattr(ep, "queue_finished_job", umock.MagicMock(), raising=False)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+
+    ep.offline_jobs({"hostname": "worker-1"})
+
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0]["status"] == "job-offline"
+
+
 @pytest.mark.parametrize("state", ["SUPERSEDED", "ABSENT", "UNKNOWN"])
 def test_offline_jobs_writes_only_when_owned(monkeypatch, state):
     """The fourth supervisory writer. Its redis pair expires at a day and

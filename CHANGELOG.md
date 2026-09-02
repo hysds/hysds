@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [3.3.3]
+## [3.3.3] - 2026-09-02
 
 ### Added
 - `scripts/reap_orphaned_job_failed.py`, a mozart daemon that deletes
@@ -59,6 +59,12 @@ All notable changes to this project will be documented in this file.
   the document and re-create it as an orphan.
 - Rule evaluation's settle probe is pinned to the attempt that queued it, so
   an unreaped orphan under the same `_id` cannot satisfy it on the wrong doc.
+
+## [3.3.2] - 2026-08-03
+
+### Fixed
+- Properly expand environment variables in `runtime_options` for podman
+  (HC-641, #222).
 
 ## [3.3.1] - 2026-07-23
 

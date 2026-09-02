@@ -287,21 +287,20 @@ def job_status_homes(index=None, today=None):
                 start = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
             except ValueError:
                 start = None
-        elif index != "job_failed":
-            homes.append(index)          # not a daily we can walk from; ask as given
     if start is None or start > today:
         start = today
     if (today - start).days > MAX_DAILY_HOMES:
-        # the caller's own daily is always asked, even outside the window:
-        # sdscli's default ISM keeps dailies 104 days and aliases them all
-        start_index = f"job_status-{start.strftime('%Y.%m.%d')}"
-        if index == start_index:
-            homes.append(start_index)
         start = today - timedelta(days=MAX_DAILY_HOMES)
     d = start
     while d <= today:
         homes.append(f"job_status-{d.strftime('%Y.%m.%d')}")
         d += timedelta(days=1)
+    if index and index not in homes:
+        # The caller's own index is always asked, whatever the walk covered:
+        # a daily older than the window (sdscli's default ISM keeps dailies
+        # 104 days and aliases them all), a future-dated one from clock skew,
+        # or a name that is not a daily at all.
+        homes.insert(1, index)
     return homes
 
 
