@@ -23,6 +23,7 @@ from hysds.celery import app
 from hysds.containers.factory import container_engine_factory
 from hysds.lock import JobLock, LockNotAcquiredException
 from hysds.log_utils import (
+    OWNED,
     get_job_status,
     get_task_worker,
     get_worker_status,
@@ -30,6 +31,7 @@ from hysds.log_utils import (
     log_custom_event,
     log_job_info,
     log_job_status,
+    job_supersession,
     log_task_worker,
     logger,
 )
@@ -618,6 +620,27 @@ def run_job(job, queue_when_finished=True):
                     "traceback": error_msg,
                     "celery_hostname": run_job.request.hostname,
                 }
+                # The lock is held by a different task for this same payload.
+                # If that task is a newer attempt, this doc would land under an
+                # _id it does not own, so record the contention instead of
+                # writing. (A same-retry_count contender is not caught here;
+                # see the PR description.)
+                if job_supersession(
+                    payload_id,
+                    job["task_id"],
+                    retry_count=job.get("retry_count"),
+                    index=job.get("job_info", {}).get("index"),
+                ) != OWNED:
+                    log_custom_event(
+                        "worker_anomaly",
+                        "job_lock_contention",
+                        {
+                            "payload_id": payload_id,
+                            "task_id": job["task_id"],
+                            "error": error_msg,
+                        },
+                    )
+                    raise WorkerExecutionError(error_msg, job_status_json)
                 fail_job(job_status_json, jd_file)
         
         # Lock acquired successfully, start heartbeat
@@ -1606,7 +1629,9 @@ def run_job(job, queue_when_finished=True):
                 job_index = job.get("job_info", {}).get("index")
                 if job_status_json["status"] == "job-failed":
                     job_index = "job_failed"
-                queue_finished_job(payload_id, index=job_index)
+                queue_finished_job(
+                    payload_id, index=job_index, uuid=job_status_json.get("uuid")
+                )
         except Exception as e:
             error = str(e)
             if status_logged:
@@ -1725,5 +1750,22 @@ def task_revoked_handler(*args, **kwargs):
         "traceback": error,
         "celery_hostname": request.hostname,
     }
-    log_job_status(job_status_json)
+    # retry.py deliberately resubmits while the old task may still be running
+    # (its "lock still held" outcome), so this handler can fire ~30 s after a
+    # newer attempt has taken the payload over -- and job-revoked would then
+    # overwrite that attempt's live doc at the same _id. The reaper cannot
+    # repair it either; it only touches job_failed.
+    state = job_supersession(
+        payload_id,
+        job["task_id"],
+        retry_count=job.get("retry_count"),
+        index=job.get("job_info", {}).get("index"),
+    )
+    if state == OWNED:
+        log_job_status(job_status_json)
+    else:
+        logger.info(
+            f"task_revoked_handler - {payload_id}: {state}; not writing "
+            f"job-revoked over it."
+        )
     set_revoked_job_done(app.conf.ROOT_WORK_DIR, job["job_id"])

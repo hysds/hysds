@@ -222,7 +222,7 @@ def test_candidate_query_scans_dated_indices_only(monkeypatch):
 
     reaper.reap_orphans(grace_secs=120, lookback_days=2)
 
-    kwargs = es.query.call_args.kwargs
+    kwargs = es.query.call_args_list[0].kwargs   # [0] = candidates, later = unpaired count
     assert kwargs["index"] == "job_status-2*"
     must = kwargs["body"]["query"]["bool"]["must"]
     assert {"range": {"job.retry_count": {"gte": 1}}} in must
@@ -234,7 +234,7 @@ def test_since_overrides_the_lookback_window(monkeypatch):
 
     reaper.reap_orphans(grace_secs=60, lookback_days=2, since="2026-07-01")
 
-    must = es.query.call_args.kwargs["body"]["query"]["bool"]["must"]
+    must = es.query.call_args_list[0].kwargs["body"]["query"]["bool"]["must"]
     assert {"range": {"@timestamp": {"gte": "2026-07-01", "lte": "now-60s"}}} in must
 
 
@@ -328,3 +328,59 @@ def test_the_reaped_event_carries_the_mechanism(monkeypatch):
     event = reaper.log_custom_event.call_args[0][2]
     assert event["mechanism"] == "missed-delete"
     assert event["orphan_ts"] and event["retry_ts"]
+
+
+def test_an_expired_redis_key_is_counted_separately(monkeypatch):
+    """A missing key counts as reapable, so the cross-check did not happen.
+    HYSDS_JOB_STATUS_EXPIRES is a day, so any longer window runs mostly
+    unverified and an operator should be able to see how much."""
+    _wire(monkeypatch, [_candidate()], [_failed_hit()], redis_status=None)
+
+    counters = reaper.reap_orphans()
+
+    assert counters["reaped"] == 1
+    assert counters["redis_expired"] == 1
+
+
+def test_a_live_redis_key_is_not_counted_as_expired(monkeypatch):
+    _wire(monkeypatch, [_candidate()], [_failed_hit()], redis_status="job-failed")
+
+    counters = reaper.reap_orphans()
+
+    assert counters["reaped"] == 1
+    assert counters.get("redis_expired", 0) == 0
+
+
+def test_failures_with_no_dated_doc_are_counted(monkeypatch):
+    """The lane the candidate scan cannot see: logstash's paired delete takes
+    the candidate away at the same instant the orphan is created."""
+    es = _wire(monkeypatch, [], [])
+
+    def _query(index=None, body=None, **_kw):
+        if index == reaper.FAILED_INDEX:
+            return [{"_id": "orphan-a"}, {"_id": "orphan-b"}]
+        if body and "ids" in body.get("query", {}):
+            return [{"_id": "orphan-a"}]        # only one has a dated doc
+        return []
+
+    es.query.side_effect = _query
+
+    counters = reaper.reap_orphans()
+
+    assert counters["job_failed_examined"] == 2
+    assert counters["job_failed_without_a_dated_doc"] == 1
+
+
+def test_a_window_longer_than_the_redis_ttl_is_refused(monkeypatch):
+    import pytest as _pytest
+
+    monkeypatch.setattr(reaper.app.conf, "get", lambda *a, **k: 86400, raising=False)
+    with _pytest.raises(SystemExit, match="redis job-status TTL"):
+        reaper.check_window_against_redis_ttl(
+            lookback_days=63, since=None, dry_run=False, allow_expired=False
+        )
+    # allowed explicitly, and allowed for a dry run
+    reaper.check_window_against_redis_ttl(63, None, True, False)
+    reaper.check_window_against_redis_ttl(63, None, False, True)
+    # and a short window is fine
+    reaper.check_window_against_redis_ttl(0.5, None, False, False)

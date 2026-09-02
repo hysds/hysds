@@ -87,6 +87,7 @@ def test_fail_job_skips_when_worker_finalized(monkeypatch):
 def test_fail_job_proceeds_when_worker_not_finalized(monkeypatch):
     """AC5: a genuinely lost worker is still reaped."""
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
     mock_es = umock.MagicMock()
     mock_es.search.return_value = {
         "hits": {
@@ -124,7 +125,7 @@ def test_fail_job_proceeds_when_worker_not_finalized(monkeypatch):
     assert written["job"]["job_info"]["time_end"].endswith("Z")
     # rules are queued against job_failed, where logstash puts the doc, not
     # against the dated index the search hit came from
-    mock_finished.assert_called_once_with("p1", index="job_failed")
+    mock_finished.assert_called_once_with("p1", index="job_failed", uuid="uuid-1")
 
 
 def test_script_imports_the_package_regex():
@@ -145,6 +146,7 @@ def test_retry_does_not_self_arm_guard(monkeypatch):
     read the redis key the first attempt wrote and silently drop the requeue."""
     state = {"finalized": False, "queue_calls": 0}
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: state["finalized"])
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
     mock_es = umock.MagicMock()
 
     def fresh_stale_response(*args, **kwargs):
@@ -177,7 +179,7 @@ def test_retry_does_not_self_arm_guard(monkeypatch):
         ep, "log_job_status", umock.MagicMock(side_effect=log_side_effect)
     )
 
-    def queue_side_effect(payload_id, index=None):
+    def queue_side_effect(*args, **kwargs):
         state["queue_calls"] += 1
         if state["queue_calls"] == 1:
             raise ConnectionError("transient hiccup")
@@ -199,6 +201,7 @@ def test_retry_does_not_self_arm_guard(monkeypatch):
 def test_fail_job_leaves_terminal_es_doc_alone(monkeypatch):
     """Second line of defence: the pre-existing ES-status else-branch."""
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
     mock_es = umock.MagicMock()
     mock_es.search.return_value = {
         "hits": {
@@ -227,7 +230,7 @@ def test_fail_job_skips_when_a_later_attempt_owns_the_payload(monkeypatch):
     the supersession guard must stop the write and the rule queueing.
     """
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
-    monkeypatch.setattr(ep, "is_job_superseded", lambda *a, **kw: True)
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "superseded")
     mock_es = umock.MagicMock()
     mock_es.search.return_value = {
         "hits": {
@@ -268,9 +271,9 @@ def test_fail_job_guard_reuses_the_module_client(monkeypatch):
         seen["retry_count"] = retry_count
         seen["index"] = index
         seen["es"] = es
-        return False
+        return "owned"
 
-    monkeypatch.setattr(ep, "is_job_superseded", _guard)
+    monkeypatch.setattr(ep, "job_supersession", _guard)
     mock_es = umock.MagicMock()
     mock_es.search.return_value = {
         "hits": {

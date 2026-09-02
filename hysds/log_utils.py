@@ -255,7 +255,13 @@ def is_job_finalized(task_id):
     return status in TERMINAL_JOB_STATUSES
 
 
-def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
+# job_supersession() outcomes
+SUPERSEDED = "superseded"   # a later attempt demonstrably owns this payload
+OWNED = "owned"             # a live doc exists and it is ours or older
+ABSENT = "absent"           # no live doc in any home -- the payload is mid-move
+
+
+def job_supersession(payload_id, uuid, retry_count=0, index=None, es=None):
     """Return True if a LATER attempt at this payload has taken it over.
 
     A retry keeps the payload_id (which is the doc _id), mints a new task
@@ -278,10 +284,17 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
     those two indices is the defect class this guards against, so the guard
     must not use the same mechanism.
 
-    Fails open (False) on any error, and on a doc that is simply absent: a
-    supervisory writer must not be blocked by an OpenSearch hiccup. Pass
-    `index` as the doc's job.job_info.index (or the _index a search hit came
-    from) to cover the dated home as well, and `es` to reuse a client the
+    Returns SUPERSEDED, OWNED or ABSENT. ABSENT is reported separately because
+    it is not ambiguous: a live doc that no home has is the signature of
+    retry.py having just deleted it while the replacement is still in the
+    redis -> logstash pipe. Writing in that window does not merely orphan --
+    the doc carries the OLD attempt's job.job_info.index, so logstash's paired
+    delete then destroys the retried attempt's brand-new doc, and the reaper
+    cannot repair that because no dated candidate is left. Callers decide what
+    to do with it; nobody should treat it as "safe to write".
+
+    Pass `index` as the doc's job.job_info.index (or the _index a search hit
+    came from) to cover the dated home as well, and `es` to reuse a client the
     caller already holds instead of building a second one.
     """
     # A retry rewrites job_info.index to the current daily, so the index the
@@ -299,6 +312,7 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
         mine = int(retry_count or 0)
     except (TypeError, ValueError):
         mine = 0
+    found_any = False
     try:
         if es is None:
             # deferred import: hysds.es_util imports this module at load time
@@ -306,8 +320,8 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
 
             es = get_mozart_es()
     except Exception as e:
-        logger.warning(f"is_job_superseded({payload_id}): no client: {e}")
-        return False
+        logger.warning(f"job_supersession({payload_id}): no client: {e}")
+        return ABSENT
 
     for home in homes:
         # per-home try: a failure probing one home must not skip the others,
@@ -318,11 +332,12 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
             res = es.get_by_id(index=home, id=payload_id, ignore=[400, 404])
         except Exception as e:
             logger.warning(
-                f"is_job_superseded({payload_id}): probe of {home} failed: {e}"
+                f"job_supersession({payload_id}): probe of {home} failed: {e}"
             )
             continue
         if not isinstance(res, dict) or not res.get("found"):
             continue
+        found_any = True
         src = res.get("_source") or {}
         live_uuid = src.get("uuid")
         if not live_uuid or live_uuid == uuid:
@@ -333,17 +348,34 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
             theirs = 0
         if theirs > mine:
             logger.info(
-                f"is_job_superseded({payload_id}): doc in {home} belongs to "
+                f"job_supersession({payload_id}): doc in {home} belongs to "
                 f"{live_uuid} at retry_count {theirs}, ours is {uuid} at "
                 f"{mine}; a later attempt owns this payload"
             )
-            return True
+            return SUPERSEDED
         logger.info(
-            f"is_job_superseded({payload_id}): doc in {home} belongs to "
+            f"job_supersession({payload_id}): doc in {home} belongs to "
             f"{live_uuid} at retry_count {theirs}, not newer than ours "
             f"({mine}); treating it as an older leftover"
         )
-    return False
+    if not found_any:
+        logger.warning(
+            f"job_supersession({payload_id}): no live doc in {homes}; the "
+            f"payload is mid-move, so this attempt cannot be judged"
+        )
+        return ABSENT
+    return OWNED
+
+
+def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
+    """Boolean view of job_supersession: only a confirmed later attempt counts.
+
+    Callers that can act on the difference should use job_supersession and
+    handle ABSENT explicitly rather than folding it in with OWNED here.
+    """
+    return job_supersession(
+        payload_id, uuid, retry_count=retry_count, index=index, es=es
+    ) == SUPERSEDED
 
 
 @backoff.on_exception(

@@ -77,8 +77,9 @@ def _wire(
 
     Returns (write mock, guard mock) -- the guard is a recording mock so
     tests can assert it was not consulted on paths that must not reach it.
-    is_job_superseded is stubbed too: unstubbed it would build a real mozart
-    client and query OpenSearch; it sits beside the finalized guard.
+    job_supersession is stubbed too: unstubbed it would build a real mozart
+    client and query OpenSearch. It sits beside the finalized guard, and the
+    watchdog writes only when the payload is still OWNED.
     """
     mock_ju = umock.MagicMock()
     mock_ju.run_query_with_scroll.return_value = docs
@@ -96,7 +97,8 @@ def _wire(
         redis_status = "job-failed" if finalized else "job-started"
     monkeypatch.setattr(watchdog, "get_job_status", lambda task_id: redis_status)
     monkeypatch.setattr(
-        watchdog, "is_job_superseded", lambda *a, **kw: superseded
+        watchdog, "job_supersession",
+        lambda *a, **kw: "superseded" if superseded else "owned",
     )
     mock_log = umock.MagicMock()
     monkeypatch.setattr(watchdog, "log_job_status", mock_log)

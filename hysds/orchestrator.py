@@ -449,7 +449,7 @@ def submit_job(j):
                 # job-failed docs are moved to job_failed by logstash, so the
                 # dated index recorded in job_info is not where the rule
                 # evaluation will find this doc.
-                queue_finished_job(task_id, index="job_failed")
+                queue_finished_job(task_id, index="job_failed", uuid=task_id)
 
     return results
 

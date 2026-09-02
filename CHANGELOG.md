@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.3.3]
+
+### Added
+- `scripts/reap_orphaned_job_failed.py`, a mozart daemon that deletes
+  `job_failed` documents a later attempt has superseded. It **deletes
+  production failure records**, so the supervisord block ships with
+  `--dry-run`: reconcile a sweep against your own audit before dropping the
+  flag. Every PCM overrides `supervisord.conf.mozart`, so the block has to be
+  added to each override at adoption.
+- `log_utils.job_supersession()`, wired into every supervisory status writer,
+  so none of them overwrites a payload a newer attempt owns.
+
+### Changed
+- **Behaviour change.** User rules now evaluate the failures `process_events`
+  routes through `fail_job` -- WorkerLostError, TimeLimitExceeded and
+  ConnectionError. Those evaluations previously settled against the dated
+  index a job-failed doc had already been moved out of, exhausted their
+  backoff and never ran. Rule sets that match on connection-error text will
+  begin firing where they did not before; a celery-level ConnectionError is
+  not by itself evidence that the job's work failed. Check your venue's live
+  `user_rules-mozart` index before upgrading.
+- `run_job` writes a failed job's terminal status document once instead of
+  twice. The duplicate could land after a retry had deleted the document and
+  re-create it as an orphan.
+
 ## [3.3.1] - 2026-07-23
 
 ### Added

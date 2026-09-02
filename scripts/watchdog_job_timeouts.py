@@ -16,9 +16,10 @@ import job_utils
 
 from hysds.celery import app
 from hysds.log_utils import (
+    OWNED,
     get_job_status,
     is_job_finalized,
-    is_job_superseded,
+    job_supersession,
     log_job_status,
 )
 from hysds.utils import get_short_error, parse_iso8601
@@ -186,14 +187,16 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
-                # a later attempt may own this payload now
-                if is_job_superseded(
+                # write only while the payload is still ours: a later attempt
+                # may own it, or it may be mid-move with no live doc at all
+                state = job_supersession(
                     _id, task_id,
                     retry_count=(src.get("job") or {}).get("retry_count"),
                     index=_index,
-                ):
+                )
+                if state != OWNED:
                     logging.info(
-                        f"Job {_id}: superseded by a later attempt; not overwriting."
+                        f"Job {_id}: {state}; not overwriting."
                     )
                     continue
 
@@ -226,15 +229,15 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
-                # a later attempt may own this payload now
-                if is_job_superseded(
+                # same for the tag lane, which republishes the whole _source
+                state = job_supersession(
                     _id, task_id,
                     retry_count=(src.get("job") or {}).get("retry_count"),
                     index=_index,
-                ):
+                )
+                if state != OWNED:
                     logging.info(
-                        f"Job {_id}: superseded by a later attempt; not tagging "
-                        f"via stale doc."
+                        f"Job {_id}: {state}; not tagging via stale doc."
                     )
                     continue
                 tags.append("timedout")

@@ -253,3 +253,25 @@ def test_is_job_superseded_fails_open_on_error(monkeypatch):
     """A supervisory writer must not be blocked by an OpenSearch hiccup."""
     _es_stub(monkeypatch, {}, boom=True)
     assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_absent_everywhere_is_reported_separately(monkeypatch):
+    """No live doc in any home is the signature of a retry having just
+    deleted it. Folding that in with "not superseded" is what let a
+    supervisory writer resurrect the old attempt and, through logstash's
+    paired delete, destroy the retried attempt's fresh doc."""
+    _es_stub(monkeypatch, {})
+    assert lu.job_supersession("payload-1", "uuid-1") == lu.ABSENT
+    # the boolean view still reports False, so it must not be used where the
+    # distinction matters
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
+
+
+def test_a_live_older_doc_is_owned_not_absent(monkeypatch):
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-0", retry_count=0)})
+    assert lu.job_supersession("payload-1", "uuid-1", retry_count=1) == lu.OWNED
+
+
+def test_a_newer_doc_is_superseded(monkeypatch):
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=3)})
+    assert lu.job_supersession("payload-1", "uuid-1", retry_count=1) == lu.SUPERSEDED

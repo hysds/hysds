@@ -21,7 +21,12 @@ from kombu.serialization import loads, prepare_accept_content, registry
 from redis import ConnectionPool, StrictRedis
 
 from hysds.celery import app
-from hysds.log_utils import is_job_finalized, log_job_status
+from hysds.log_utils import (
+    OWNED,
+    is_job_finalized,
+    job_supersession,
+    log_job_status,
+)
 from hysds.utils import datetime_iso_naive
 
 log_format = "[%(asctime)s: %(levelname)s/offline_orphaned_jobs] %(message)s"
@@ -142,6 +147,16 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                 src["status"] = updated_status
                 time_end = datetime_iso_naive() + "Z"
                 src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+                # Same guard as the other supervisory writers: a later attempt
+                # may own this payload, or it may be mid-move with no live doc.
+                state = job_supersession(
+                    id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=(src.get("job") or {}).get("job_info", {}).get("index"),
+                )
+                if state != OWNED:
+                    logging.info(f"Job {id}: {state}; not writing {updated_status}.")
+                    continue
                 try:
                     log_job_status(src)
                     logging.info(f"Set job {id} to {updated_status} via log_job_status().")
@@ -175,6 +190,16 @@ def offline_orphaned_jobs(es_url, dry_run=False):
                 src["status"] = updated_status
                 time_end = datetime_iso_naive() + "Z"
                 src.setdefault("job", {}).setdefault("job_info", {})["time_end"] = time_end
+                # Same guard as the other supervisory writers: a later attempt
+                # may own this payload, or it may be mid-move with no live doc.
+                state = job_supersession(
+                    id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=(src.get("job") or {}).get("job_info", {}).get("index"),
+                )
+                if state != OWNED:
+                    logging.info(f"Job {id}: {state}; not writing {updated_status}.")
+                    continue
                 try:
                     log_job_status(src)
                     logging.info(f"Set job {id} to {updated_status} via log_job_status().")

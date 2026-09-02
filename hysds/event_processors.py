@@ -18,8 +18,10 @@ from hysds.log_utils import (
     backoff_max_tries,
     backoff_max_value,
     get_val_via_socket,
+    ABSENT,
+    SUPERSEDED,
     is_job_finalized,
-    is_job_superseded,
+    job_supersession,
     log_job_status,
     logger,
 )
@@ -75,18 +77,29 @@ def _fail_job(event, uuid, exc, short_error):
     # by someone else means this attempt is history: rewriting it would
     # resurrect a doc the retry deleted. Guarded immediately before
     # the write, like the is_job_finalized check in fail_job() above.
-    if is_job_superseded(
+    state = job_supersession(
         job_status["payload_id"],
         uuid,
         retry_count=(job_status.get("job") or {}).get("retry_count"),
         index=(job_status.get("job") or {}).get("job_info", {}).get("index"),
         es=mozart_es,
-    ):
+    )
+    if state == SUPERSEDED:
         logger.info(
             f"fail_job - {uuid}: a later attempt owns payload "
             f"{job_status['payload_id']}; not writing job-failed."
         )
         return
+    if state == ABSENT:
+        # The doc the search just found is gone from every home, which means a
+        # retry deleted it while its replacement is still in the pipeline.
+        # Writing now would resurrect the old attempt AND, through logstash's
+        # paired delete on job_info.index, remove the retried attempt's fresh
+        # doc. Raise so this function's own backoff re-reads in a moment.
+        raise RuntimeError(
+            f"payload {job_status['payload_id']} has no live status doc; "
+            f"a retry is mid-flight, deferring"
+        )
 
     if job_status["status"] == "job-started" or job_status["status"] == "job-queued":
         job_status["status"] = "job-failed"
@@ -106,7 +119,9 @@ def _fail_job(event, uuid, exc, short_error):
         # index the search hit either exhausts assert_doc_settled's backoff or
         # passes on the pre-move job-started doc. This is the same index
         # job_worker.py passes for a worker-written failure.
-        queue_finished_job(job_status["payload_id"], index="job_failed")
+        queue_finished_job(
+            job_status["payload_id"], index="job_failed", uuid=job_status.get("uuid")
+        )
     else:
         logger.info(
             f"fail_job - {uuid}: Will not re-log and requeue job as job status is already set "
