@@ -172,6 +172,11 @@ def test_is_job_superseded_false_when_no_doc_anywhere(monkeypatch):
     assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
+def _today():
+    from datetime import datetime, timezone
+    return f"job_status-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+
+
 def test_is_job_superseded_checks_the_dated_home_too(monkeypatch):
     """job_failed is empty but the dated index holds a newer attempt."""
     calls = _es_stub(
@@ -182,15 +187,61 @@ def test_is_job_superseded_checks_the_dated_home_too(monkeypatch):
         lu.is_job_superseded("payload-1", "uuid-1", index="job_status-2026.08.28")
         is True
     )
-    assert [c["index"] for c in calls] == ["job_failed", "job_status-2026.08.28"]
-    assert all(c["ignore"] == [404] for c in calls)
+    assert [c["index"] for c in calls][:2] == ["job_failed", "job_status-2026.08.28"]
+    assert all(c["ignore"] == [400, 404] for c in calls)
 
 
-def test_is_job_superseded_does_not_double_check_job_failed(monkeypatch):
+def test_is_job_superseded_probes_todays_daily_across_a_day_boundary(monkeypatch):
+    """A retry rewrites job_info.index to the current daily, so a caller
+    holding an older attempt's doc names yesterday's index. Probing only that
+    would miss the newer attempt entirely."""
+    calls = _es_stub(
+        monkeypatch,
+        {_today(): _hit("uuid-2", retry_count=1)},
+    )
+    assert (
+        lu.is_job_superseded(
+            "payload-1", "uuid-1", retry_count=0, index="job_status-1999.01.01"
+        )
+        is True
+    )
+    assert _today() in [c["index"] for c in calls]
+
+
+def test_is_job_superseded_does_not_probe_a_home_twice(monkeypatch):
     """index=job_failed is already the first home; do not GET it twice."""
     calls = _es_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
     lu.is_job_superseded("payload-1", "uuid-1", index="job_failed")
-    assert [c["index"] for c in calls] == ["job_failed"]
+    probed = [c["index"] for c in calls]
+    assert probed[0] == "job_failed"
+    assert len(probed) == len(set(probed))
+
+
+def test_one_failing_probe_does_not_skip_the_others(monkeypatch):
+    """A hiccup on job_failed used to abort the whole lookup, so the dated
+    home was never consulted and the guard reported False."""
+    import types
+
+    calls = []
+
+    class _ES:
+        def get_by_id(self, **kwargs):
+            calls.append(kwargs["index"])
+            if kwargs["index"] == "job_failed":
+                raise ConnectionError("transport blip")
+            return _hit("uuid-2", retry_count=1)
+
+    monkeypatch.setitem(
+        sys.modules, "hysds.es_util",
+        types.SimpleNamespace(get_mozart_es=lambda: _ES()),
+    )
+    assert (
+        lu.is_job_superseded(
+            "payload-1", "uuid-1", retry_count=0, index="job_status-2026.08.28"
+        )
+        is True
+    )
+    assert "job_status-2026.08.28" in calls
 
 
 def test_is_job_superseded_false_on_404_shaped_response(monkeypatch):

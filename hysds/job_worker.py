@@ -1577,7 +1577,11 @@ def run_job(job, queue_when_finished=True):
             if len(usage_stats) > 0:
                 job["job_info"]["metrics"]["usage_stats"].append(usage_stats)
 
-        # close up job execution
+        # close up job execution.
+        # status_logged tracks whether this payload's terminal status doc has
+        # already been handed to log_job_status, so the handler below can tell
+        # a fresh failure from one that happened after the doc was written.
+        status_logged = False
         try:
             # transition running file to done file
             if os.path.exists(job_running_file):
@@ -1595,6 +1599,7 @@ def run_job(job, queue_when_finished=True):
 
             # log final job status
             log_job_status(job_status_json)
+            status_logged = True
 
             # queue job finished for user rules processing
             if queue_when_finished is True:
@@ -1604,26 +1609,45 @@ def run_job(job, queue_when_finished=True):
                 queue_finished_job(payload_id, index=job_index)
         except Exception as e:
             error = str(e)
-            job_status_json = {
-                "uuid": job["task_id"],
-                "job_id": job["job_id"],
-                "payload_id": payload_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-failed",
-                "job": job,
-                "context": context,
-                "error": error,
-                "short_error": get_short_error(error),
-                "traceback": traceback.format_exc(),
-                "celery_hostname": run_job.request.hostname,
-            }
-            if msg:
-                job_status_json["msg"] = msg
-            if msg_details:
-                job_status_json["msg_details"] = msg_details
+            if status_logged:
+                # The terminal doc for this payload is already in the
+                # redis -> logstash -> OpenSearch pipeline. Rebuilding it here
+                # writes the same _id a second time, which is the duplicate
+                # this change exists to remove: if a retry deletes the doc
+                # between the two writes, the second one re-creates it as an
+                # orphan. Worse, logstash pairs every job-failed write with a
+                # delete of that _id from the doc's own job_info.index, so the
+                # second write can also remove the retried attempt's fresh
+                # dated doc. Keep the doc that was written, and record the tail
+                # failure in the worker log instead of overwriting the real
+                # error, short_error and traceback with this one.
+                logger.error(
+                    f"Job {payload_id} hit an error after its status doc was "
+                    f"logged; not rewriting the doc: {error}\n"
+                    f"{traceback.format_exc()}"
+                )
+                fail_job(job_status_json, jd_file, log_status=False)
+            else:
+                job_status_json = {
+                    "uuid": job["task_id"],
+                    "job_id": job["job_id"],
+                    "payload_id": payload_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-failed",
+                    "job": job,
+                    "context": context,
+                    "error": error,
+                    "short_error": get_short_error(error),
+                    "traceback": traceback.format_exc(),
+                    "celery_hostname": run_job.request.hostname,
+                }
+                if msg:
+                    job_status_json["msg"] = msg
+                if msg_details:
+                    job_status_json["msg_details"] = msg_details
 
-            fail_job(job_status_json, jd_file)
+                fail_job(job_status_json, jd_file, log_status=True)
 
         # raise worker execution error. The status doc was already logged
         # above (and rules queued against job_failed), so do not log it a

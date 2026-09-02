@@ -105,3 +105,86 @@ class TestFailJob(TestCase):
 
         self.assertIs(ctx.exception.job_status, self.doc)
         self.assertEqual(ctx.exception.args, ("boom",))
+
+
+class TestFailJobCallSites(TestCase):
+    """The call sites, not just the parameter.
+
+    Reverting the tail call to `fail_job(job_status_json, jd_file)` restores
+    the deterministic double write for every failed job, and the behavioural
+    tests above still pass because they exercise fail_job directly. Driving
+    run_job to cover this would mean ~1,200 lines of filesystem, redis, docker
+    and celery side effects, so the invariant is asserted at the source level:
+    once the terminal doc has been logged, no later call may log it again.
+    """
+
+    def _run_job(self):
+        import ast
+        import inspect
+
+        import hysds.job_worker
+
+        tree = ast.parse(inspect.getsource(hysds.job_worker))
+        return next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "run_job"
+        )
+
+    def _status_logged_line(self, run_job):
+        import ast
+
+        lines = [
+            n.lineno for n in ast.walk(run_job)
+            if isinstance(n, ast.Assign)
+            and any(
+                isinstance(tgt, ast.Name) and tgt.id == "status_logged"
+                for tgt in n.targets
+            )
+            and isinstance(n.value, ast.Constant)
+            and n.value.value is True
+        ]
+        self.assertEqual(
+            len(lines), 1,
+            "expected exactly one `status_logged = True`, marking the point "
+            "after which the terminal doc exists",
+        )
+        return lines[0]
+
+    def test_the_flag_is_set_right_after_the_terminal_write(self):
+        import ast
+
+        run_job = self._run_job()
+        flag_line = self._status_logged_line(run_job)
+        writes = [
+            n.lineno for n in ast.walk(run_job)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
+            and n.func.id == "log_job_status"
+        ]
+        self.assertIn(
+            flag_line - 1, writes,
+            "`status_logged = True` must directly follow the log_job_status "
+            "call it describes, or it stops tracking what it claims to",
+        )
+
+    def test_no_fail_job_call_relogs_after_the_terminal_write(self):
+        import ast
+
+        run_job = self._run_job()
+        flag_line = self._status_logged_line(run_job)
+        later = [
+            n for n in ast.walk(run_job)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
+            and n.func.id == "fail_job"
+            and n.lineno > flag_line
+        ]
+        self.assertTrue(later, "expected fail_job call sites after the write")
+        for call in later:
+            kwargs = {k.arg for k in call.keywords}
+            self.assertIn(
+                "log_status", kwargs,
+                f"fail_job at line {call.lineno} runs after the terminal doc "
+                f"was written but does not say whether it logs it; the "
+                f"default writes the same _id a second time",
+            )

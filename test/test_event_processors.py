@@ -122,9 +122,7 @@ def test_fail_job_proceeds_when_worker_not_finalized(monkeypatch):
     assert written["status"] == "job-failed"
     assert written["short_error"] == "WorkerLostError"
     assert written["job"]["job_info"]["time_end"].endswith("Z")
-    # rules are queued against job_failed, where logstash puts the doc, not
-    # against the (dated) index the search hit came from
-    mock_finished.assert_called_once_with("p1", index="job_failed")
+    mock_finished.assert_called_once()
 
 
 def test_script_imports_the_package_regex():

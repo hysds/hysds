@@ -284,9 +284,17 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
     from) to cover the dated home as well, and `es` to reuse a client the
     caller already holds instead of building a second one.
     """
-    homes = ["job_failed"]
-    if index and index not in homes:
-        homes.append(index)
+    # A retry rewrites job_info.index to the current daily, so the index the
+    # caller is holding can be an older attempt's. Probe today's daily too, or
+    # a retry that crosses a day boundary points the guard at the wrong home
+    # and it reports False on a genuinely superseded payload. A doc-ID GET
+    # cannot be aimed at the alias itself: OpenSearch rejects a single-index
+    # op on an alias spanning more than one index.
+    today = f"job_status-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+    homes = []
+    for home in ("job_failed", index, today):
+        if home and home not in homes:
+            homes.append(home)
     try:
         mine = int(retry_count or 0)
     except (TypeError, ValueError):
@@ -297,33 +305,44 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
             from hysds.es_util import get_mozart_es
 
             es = get_mozart_es()
-        for home in homes:
-            res = es.get_by_id(index=home, id=payload_id, ignore=[404])
-            if not isinstance(res, dict) or not res.get("found"):
-                continue
-            src = res.get("_source") or {}
-            live_uuid = src.get("uuid")
-            if not live_uuid or live_uuid == uuid:
-                continue
-            try:
-                theirs = int((src.get("job") or {}).get("retry_count") or 0)
-            except (TypeError, ValueError):
-                theirs = 0
-            if theirs > mine:
-                logger.info(
-                    f"is_job_superseded({payload_id}): doc in {home} belongs to "
-                    f"{live_uuid} at retry_count {theirs}, ours is {uuid} at "
-                    f"{mine}; a later attempt owns this payload"
-                )
-                return True
+    except Exception as e:
+        logger.warning(f"is_job_superseded({payload_id}): no client: {e}")
+        return False
+
+    for home in homes:
+        # per-home try: a failure probing one home must not skip the others,
+        # which is how a single hiccup on job_failed used to hide the dated
+        # home entirely. 400 covers a closed daily, which would otherwise cost
+        # a blind backoff on the single-threaded process_events_tasks queue.
+        try:
+            res = es.get_by_id(index=home, id=payload_id, ignore=[400, 404])
+        except Exception as e:
+            logger.warning(
+                f"is_job_superseded({payload_id}): probe of {home} failed: {e}"
+            )
+            continue
+        if not isinstance(res, dict) or not res.get("found"):
+            continue
+        src = res.get("_source") or {}
+        live_uuid = src.get("uuid")
+        if not live_uuid or live_uuid == uuid:
+            continue
+        try:
+            theirs = int((src.get("job") or {}).get("retry_count") or 0)
+        except (TypeError, ValueError):
+            theirs = 0
+        if theirs > mine:
             logger.info(
                 f"is_job_superseded({payload_id}): doc in {home} belongs to "
-                f"{live_uuid} at retry_count {theirs}, not newer than ours "
-                f"({mine}); treating it as an older leftover"
+                f"{live_uuid} at retry_count {theirs}, ours is {uuid} at "
+                f"{mine}; a later attempt owns this payload"
             )
-    except Exception as e:
-        logger.warning(f"is_job_superseded({payload_id}): lookup failed: {e}")
-        return False
+            return True
+        logger.info(
+            f"is_job_superseded({payload_id}): doc in {home} belongs to "
+            f"{live_uuid} at retry_count {theirs}, not newer than ours "
+            f"({mine}); treating it as an older leftover"
+        )
     return False
 
 

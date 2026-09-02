@@ -152,7 +152,10 @@ startsecs=10
 [program:reap_orphaned_job_failed]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 environment=PYTHONHTTPSVERIFY=0
-command={{ OPS_HOME }}/mozart/ops/hysds/scripts/reap_orphaned_job_failed.py -i 300 -g 120 --lookback-days 2
+; Ships with --dry-run: this daemon deletes production failure records,
+; so a venue upgrading to it must reconcile a sweep against its own
+; audit before letting it delete. Drop --dry-run once that is clean.
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/reap_orphaned_job_failed.py -i 300 -g 120 --lookback-days 2 --dry-run
 process_name=%(program_name)s
 priority=1
 numprocs=1
