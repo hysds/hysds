@@ -14,6 +14,7 @@ from uuid import uuid4
 import backoff
 import msgpack
 from celery.utils.log import get_task_logger
+from kombu import Exchange, Queue
 from prov_es.model import ProvEsDocument, get_uuid
 from redis import BlockingConnectionPool, RedisError, StrictRedis
 
@@ -46,6 +47,10 @@ REVOKED_TASK_TMPL = "hysds-revoked-task-%s"
 
 # payload hash key template
 PAYLOAD_HASH_KEY_TMPL = "hysds-payload-hash-%s"
+
+# lazily-created kombu connection/producer for WORKFLOW_QUEUE (D2 emit point)
+WORKFLOW_QUEUE_CONN = None
+WORKFLOW_QUEUE_PRODUCER = None
 
 
 def backoff_max_value():
@@ -411,6 +416,54 @@ def job_supersession(payload_id, uuid, retry_count=0, index=None, es=None):
     return OWNED
 
 
+def get_workflow_queue_producer():
+    """Lazily create (and cache) the kombu producer used to publish
+    WORKFLOW_QUEUE events, reusing the celery app's broker connection."""
+
+    global WORKFLOW_QUEUE_CONN, WORKFLOW_QUEUE_PRODUCER
+    if WORKFLOW_QUEUE_PRODUCER is None:
+        WORKFLOW_QUEUE_CONN = app.connection()
+        WORKFLOW_QUEUE_PRODUCER = WORKFLOW_QUEUE_CONN.Producer()
+    return WORKFLOW_QUEUE_PRODUCER
+
+
+@backoff.on_exception(
+    backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
+)
+def publish_workflow_event(job_for_indexing):
+    """D2: single WORKFLOW_QUEUE emit point.
+
+    Publishes {run_id, step_id, child_index, job_id, status, short_error} to
+    WORKFLOW_QUEUE for terminal-status jobs that carry a top-level
+    "workflow" tag. No job submitted today sets that tag, so this never
+    fires on real traffic yet -- only the (not-yet-existing) workflow
+    substrate will set it, once units 3/4 submit tagged jobs.
+    """
+    workflow = job_for_indexing.get("workflow")
+    if not workflow:
+        return
+    if job_for_indexing.get("status") not in TERMINAL_JOB_STATUSES:
+        return
+
+    payload = {
+        "run_id": workflow.get("run_id"),
+        "step_id": workflow.get("step_id"),
+        "child_index": workflow.get("child_index"),
+        "job_id": job_for_indexing.get("job_id") or job_for_indexing.get("uuid"),
+        "status": job_for_indexing.get("status"),
+        "short_error": job_for_indexing.get("short_error"),
+    }
+    queue_name = app.conf.WORKFLOW_QUEUE
+    exchange = Exchange(queue_name, type="direct")
+    queue = Queue(queue_name, exchange, routing_key=queue_name)
+    producer = get_workflow_queue_producer()
+    producer.publish(
+        payload,
+        exchange=exchange,
+        routing_key=queue_name,
+        declare=[queue],
+        retry=True,
+    )
 
 
 @backoff.on_exception(
@@ -459,6 +512,13 @@ def log_job_status(job):
     )
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job_for_indexing))  # for ES
     logger.info(f"job_status_json:{json.dumps(job_for_indexing)}")
+
+    # D2: single WORKFLOW_QUEUE emit point (no-op unless the job carries a
+    # "workflow" tag; see publish_workflow_event())
+    try:
+        publish_workflow_event(job_for_indexing)
+    except Exception as e:
+        logger.warning(f"log_job_status({job['uuid']}): WORKFLOW_QUEUE publish failed: {e}")
 
 
 @backoff.on_exception(

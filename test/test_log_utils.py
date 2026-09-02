@@ -271,3 +271,93 @@ def test_job_status_homes_shape():
     assert future[:2] == ["job_failed", "job_status-2030.01.01"]
     assert future[-1] == f"job_status-{today.strftime('%Y.%m.%d')}"
     assert len(future) == len(set(future))
+
+
+# --- D2: WORKFLOW_QUEUE emit point (unit 1, slice 2) ---
+
+
+def _workflow_job(status="job-completed", workflow=True, short_error=None):
+    job = {
+        "uuid": "uuid-1",
+        "job_id": "uuid-1",
+        "status": status,
+        "job": {"type": "test", "job_info": {}},
+    }
+    if workflow:
+        job["workflow"] = {
+            "run_id": "run-1",
+            "step_id": "step-1",
+            "spec_id": "spec-1",
+            "child_index": 2,
+        }
+    if short_error is not None:
+        job["short_error"] = short_error
+    return job
+
+
+def _run_log_job_status_capturing_publish(monkeypatch, job):
+    """Run log_job_status like _run_log_job_status, but capture whatever
+    publish_workflow_event() would send instead of touching a real broker."""
+    monkeypatch.setattr(lu.app.conf, "HYSDS_JOB_STATUS_EXPIRES", 86400, raising=False)
+    monkeypatch.setattr(lu.app.conf, "HARD_TIME_LIMIT_GAP", 300, raising=False)
+    monkeypatch.setattr(lu.app.conf, "REDIS_JOB_STATUS_KEY", "logstash", raising=False)
+    monkeypatch.setattr(lu.app.conf, "WORKFLOW_QUEUE", "workflow_queue", raising=False)
+    monkeypatch.setattr(lu, "set_redis_job_status_pool", lambda: None)
+    monkeypatch.setattr(lu, "StrictRedis", umock.MagicMock(return_value=umock.MagicMock()))
+
+    mock_producer = umock.MagicMock()
+    monkeypatch.setattr(lu, "get_workflow_queue_producer", lambda: mock_producer)
+    lu.log_job_status(job)
+    return mock_producer
+
+
+def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
+    producer = _run_log_job_status_capturing_publish(
+        monkeypatch, _workflow_job(status="job-completed", short_error="oops")
+    )
+    assert producer.publish.call_count == 1
+    payload = producer.publish.call_args[0][0]
+    assert payload == {
+        "run_id": "run-1",
+        "step_id": "step-1",
+        "child_index": 2,
+        "job_id": "uuid-1",
+        "status": "job-completed",
+        "short_error": "oops",
+    }
+    assert producer.publish.call_args.kwargs["routing_key"] == "workflow_queue"
+
+
+@pytest.mark.parametrize("status", NON_TERMINAL)
+def test_workflow_event_not_published_for_non_terminal_status(monkeypatch, status):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status=status))
+    producer.publish.assert_not_called()
+
+
+def test_workflow_event_not_published_without_workflow_tag(monkeypatch):
+    """No job submitted today sets the "workflow" tag -- this is the gate
+    that keeps slice 2 a no-op on real traffic."""
+    producer = _run_log_job_status_capturing_publish(
+        monkeypatch, _workflow_job(status="job-completed", workflow=False)
+    )
+    producer.publish.assert_not_called()
+
+
+def test_workflow_publish_failure_does_not_break_log_job_status(monkeypatch):
+    """WORKFLOW_QUEUE is best-effort from log_job_status's point of view --
+    the authoritative redis/ES write must still happen if the broker publish
+    blows up."""
+    monkeypatch.setattr(lu.app.conf, "HYSDS_JOB_STATUS_EXPIRES", 86400, raising=False)
+    monkeypatch.setattr(lu.app.conf, "HARD_TIME_LIMIT_GAP", 300, raising=False)
+    monkeypatch.setattr(lu.app.conf, "REDIS_JOB_STATUS_KEY", "logstash", raising=False)
+    monkeypatch.setattr(lu.app.conf, "WORKFLOW_QUEUE", "workflow_queue", raising=False)
+    monkeypatch.setattr(lu, "set_redis_job_status_pool", lambda: None)
+    mock_redis = umock.MagicMock()
+    monkeypatch.setattr(lu, "StrictRedis", umock.MagicMock(return_value=mock_redis))
+
+    def boom(job_for_indexing):
+        raise ConnectionError("broker down")
+
+    monkeypatch.setattr(lu, "publish_workflow_event", boom)
+    lu.log_job_status(_workflow_job(status="job-completed"))
+    assert mock_redis.rpush.call_count == 1
