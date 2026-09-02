@@ -100,7 +100,13 @@ def _fail_job(event, uuid, exc, short_error):
         ] = time_end
         log_job_status(job_status)
 
-        queue_finished_job(job_status["payload_id"], index=res["_index"])
+        # Rules must be evaluated against job_failed, not res["_index"].
+        # The doc just rewritten as job-failed is moved there by logstash
+        # (see configs/logstash/indexer.conf.mozart), so settling on the dated
+        # index the search hit either exhausts assert_doc_settled's backoff or
+        # passes on the pre-move job-started doc. This is the same index
+        # job_worker.py passes for a worker-written failure.
+        queue_finished_job(job_status["payload_id"], index="job_failed")
     else:
         logger.info(
             f"fail_job - {uuid}: Will not re-log and requeue job as job status is already set "

@@ -446,7 +446,10 @@ def submit_job(j):
                     "traceback": traceback.format_exc(),
                 }
                 log_job_status(job_status_json)
-                queue_finished_job(task_id, index=job_json["job_info"]["index"])
+                # job-failed docs are moved to job_failed by logstash, so the
+                # dated index recorded in job_info is not where the rule
+                # evaluation will find this doc.
+                queue_finished_job(task_id, index="job_failed")
 
     return results
 
