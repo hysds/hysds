@@ -1,4 +1,4 @@
-"""HC-648: the reaper deletes job_failed docs a newer attempt superseded."""
+"""The reaper deletes job_failed docs a newer attempt superseded."""
 import importlib.util
 import pathlib
 import sys
@@ -93,7 +93,7 @@ def test_superseded_orphan_is_reaped(monkeypatch):
 
 def test_reap_records_the_version_that_classifies_the_orphan(monkeypatch):
     """_version is the post-release triage signal: 2 = delete-side stale read
-    (HC-640 regressed), 3 or 1 = write-after-delete (this ticket)."""
+    (the delete-side stale read is back), 3 or 1 = write-after-delete."""
     _wire(monkeypatch, [_candidate()], [_failed_hit(version=2)])
 
     counters = reaper.reap_orphans()

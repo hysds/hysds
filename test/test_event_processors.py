@@ -221,7 +221,7 @@ def test_fail_job_leaves_terminal_es_doc_alone(monkeypatch):
 
 
 def test_fail_job_skips_when_a_later_attempt_owns_the_payload(monkeypatch):
-    """HC-648: a retry keeps the payload_id and mints a new uuid.
+    """A retry keeps the payload_id and mints a new uuid.
 
     Rewriting the doc then would resurrect one the retry already deleted, so
     the supersession guard must stop the write and the rule queueing.

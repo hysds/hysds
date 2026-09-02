@@ -78,7 +78,7 @@ def _wire(
     Returns (write mock, guard mock) -- the guard is a recording mock so
     tests can assert it was not consulted on paths that must not reach it.
     is_job_superseded is stubbed too: unstubbed it would build a real mozart
-    client and query OpenSearch (HC-648 added it beside the finalized guard).
+    client and query OpenSearch; it sits beside the finalized guard.
     """
     mock_ju = umock.MagicMock()
     mock_ju.run_query_with_scroll.return_value = docs
@@ -247,7 +247,7 @@ def test_non_numeric_time_limit_does_not_abort_sweep(monkeypatch):
 
 
 def test_superseded_job_is_not_rewritten(monkeypatch):
-    """HC-648: a later attempt owns this payload; the stale doc stays put."""
+    """A later attempt owns this payload; the stale doc stays put."""
     doc = _job_doc(status="job-started", time_limit=600, started_secs_ago=3600)
     mock_log, guard = _wire(
         monkeypatch,

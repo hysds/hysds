@@ -53,7 +53,7 @@ class TestJobWorkerFuncs(TestCase):
 
 
 class TestFailJob(TestCase):
-    """HC-648 Part A: fail_job must not re-log a status the caller logged."""
+    """fail_job must not re-log a status the caller already logged."""
 
     def setUp(self):
         import hysds.job_worker
@@ -86,7 +86,7 @@ class TestFailJob(TestCase):
 
         A second terminal write travels the async redis -> logstash -> ES
         pipeline behind the first and can land after a fast retry has deleted
-        the doc, resurrecting it as an orphan (HC-648). On develop fail_job
+        the doc, resurrecting it as an orphan. On develop fail_job
         has no log_status parameter, so this raises TypeError.
         """
         with self.assertRaises(self.jw.WorkerExecutionError):

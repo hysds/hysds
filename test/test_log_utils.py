@@ -98,7 +98,7 @@ def test_status_key_ttl_extends_for_float_time_limit(monkeypatch):
     assert isinstance(ttl, int)
 
 
-# --- is_job_superseded (HC-648) -------------------------------------------
+# --- is_job_superseded ----------------------------------------------------
 
 
 def _es_stub(monkeypatch, docs, boom=False):

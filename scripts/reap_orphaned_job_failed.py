@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Reap job_failed docs orphaned by the retry flow (HC-648).
+"""Reap job_failed docs orphaned by the retry flow.
 
 When a failed job is retried, lightweight-jobs retry.py deletes its status
 doc before resubmitting. A job-failed write that is still in flight -- a
@@ -11,7 +11,7 @@ alias next to the retried attempt's own doc, so operators read the job as
 "never retried".
 
 This sweeper deletes job_failed docs that a newer attempt has superseded. It
-is the repair-side complement to HC-640's delete fix and the write-side
+is the repair-side complement to the retry job's delete fix and the write-side
 guards in hysds (is_job_finalized, is_job_superseded), and its per-sweep
 counters are the standing health signal for late writes.
 
@@ -163,7 +163,7 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 # _version says which mechanism produced it, which is the
                 # triage that matters once nobody can patch code any more:
                 #   2  = two writes landed and no delete ever hit the doc
-                #        -> the delete-side stale read (HC-640) is back
+                #        -> the delete-side stale read is back
                 #   3, or 1 when the late write arrived more than 60 s after
                 #        the delete (past index.gc_deletes)
                 #        -> write-after-delete, this ticket's lanes
@@ -214,7 +214,7 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=False, once=
 
 
 if __name__ == "__main__":
-    desc = "Reap job_failed docs superseded by a newer attempt (HC-648)."
+    desc = "Reap job_failed docs superseded by a newer attempt."
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "-i",

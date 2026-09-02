@@ -73,7 +73,7 @@ def _fail_job(event, uuid, exc, short_error):
 
     # A retry keeps the payload_id and mints a new uuid, so a live doc owned
     # by someone else means this attempt is history: rewriting it would
-    # resurrect a doc the retry deleted (HC-648). Guarded immediately before
+    # resurrect a doc the retry deleted. Guarded immediately before
     # the write, like the is_job_finalized check in fail_job() above.
     if is_job_superseded(
         job_status["payload_id"],

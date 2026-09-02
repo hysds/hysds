@@ -186,7 +186,7 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
-                # a later attempt may own this payload now (HC-648)
+                # a later attempt may own this payload now
                 if is_job_superseded(
                     _id, task_id,
                     retry_count=(src.get("job") or {}).get("retry_count"),
@@ -226,7 +226,7 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
-                # a later attempt may own this payload now (HC-648)
+                # a later attempt may own this payload now
                 if is_job_superseded(
                     _id, task_id,
                     retry_count=(src.get("job") or {}).get("retry_count"),

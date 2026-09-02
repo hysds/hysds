@@ -262,7 +262,7 @@ def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
     uuid, and increments job.retry_count. So the test for "someone newer owns
     this payload" is a live doc with a different uuid AND a higher
     retry_count. Writing over that would clobber the newer attempt's record or
-    resurrect a doc the retry already deleted (HC-648).
+    resurrect a doc the retry already deleted.
 
     A different uuid alone is NOT enough: an older attempt's leftover doc --
     an orphaned job_failed doc, an unswept job-revoked doc -- also carries a

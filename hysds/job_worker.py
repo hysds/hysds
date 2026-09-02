@@ -436,9 +436,9 @@ def fail_job(job_status_json, jd_file, log_status=True):
     Pass log_status=False when the caller has already logged this exact
     job_status_json. A duplicate terminal write is not idempotent here: the
     second copy travels the async redis -> logstash -> OpenSearch pipeline
-    behind the first, and can land after a retry (fast since HC-633) has
+    behind the first, and can land after a fast retry has
     already deleted the doc, resurrecting it as an orphaned job_failed doc
-    beside the retried attempt (HC-648).
+    beside the retried attempt.
     """
 
     def_err = "Unspecified worker execution error."
@@ -1627,7 +1627,7 @@ def run_job(job, queue_when_finished=True):
 
         # raise worker execution error. The status doc was already logged
         # above (and rules queued against job_failed), so do not log it a
-        # second time: the duplicate write is HC-648's orphan source.
+        # second time: the duplicate write is the orphan source.
         if job_status_json["status"] == "job-failed":
             fail_job(job_status_json, jd_file, log_status=False)
 
