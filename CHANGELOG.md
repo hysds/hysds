@@ -11,8 +11,8 @@ All notable changes to this project will be documented in this file.
   `job_failed` documents a later attempt has superseded. It **deletes
   production failure records**, so the supervisord block ships with
   `--dry-run` and `--lookback-days 1`: reconcile a dry-run sweep against your
-  own audit before dropping the flag. The window matches the redis job-status
-  TTL (one day); a longer window is refused without `--dry-run` or
+  own audit before dropping the flag. `--lookback-days` defaults to one day,
+  matching the redis job-status TTL; a longer window is refused without `--dry-run` or
   `--allow-expired-redis`, because past the TTL the redis cross-check is inert.
   Dry-run sweeps still emit `job_failed_orphan_reaped` events, flagged
   `dry_run: true`, so the audit has something to read. Every event carries a
@@ -32,6 +32,18 @@ All notable changes to this project will be documented in this file.
   unreachable from a worker.
 
 ### Changed
+- **Upgrade order: factotum first.** `queue_finished_job` now sends `index`
+  and `uuid` kwargs on every finished job, and a pre-3.3.3 `user_rules_job`
+  worker raises TypeError on `uuid`, which stops all rule evaluation until it
+  is updated, with no error that points at the upgrade. That worker runs on
+  the factotum (`supervisord.conf.factotum`); the producers are on mozart
+  (`event_processors`, `orchestrator`) and verdi (`job_worker`). Update the
+  factotum before mozart and verdi.
+- **Requires lightweight-jobs v2.1.2** for the reaper's exact classification:
+  older retry jobs write no delete mark, and every classification falls back
+  to `mechanism_basis: timestamp`. **sdscli 2.1.2**, or the same additions to
+  the PCM's `job_status` template override, declares `job.retry_count` and
+  `job.job_info.retry_delete`.
 - **Behaviour change.** User rules now evaluate the failures `process_events`
   routes through `fail_job` -- WorkerLostError, TimeLimitExceeded and
   ConnectionError. Those evaluations previously settled against the dated

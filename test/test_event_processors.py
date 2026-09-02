@@ -382,10 +382,13 @@ def test_terminal_doc_does_not_pay_for_a_probe(monkeypatch):
     guard.assert_not_called()
 
 
-def test_offline_jobs_does_not_write_over_a_superseded_payload(monkeypatch):
+@pytest.mark.parametrize("state", ["SUPERSEDED", "ABSENT", "UNKNOWN"])
+def test_offline_jobs_writes_only_when_owned(monkeypatch, state):
     """The fourth supervisory writer. Its redis pair expires at a day and
     nothing clears it on revoke, so after a retry the old attempt's keys can
-    still say job-started while a newer attempt owns the payload."""
+    still say job-started while a newer attempt owns the payload. Like the
+    other mozart daemons it writes only on OWNED, so UNKNOWN skips too."""
+    state = getattr(ep, state)
     mock_es = umock.MagicMock()
     mock_es.query.return_value = [{"_source": {
         "uuid": "uuid-1", "payload_id": "p1", "status": "job-started",
@@ -393,7 +396,7 @@ def test_offline_jobs_does_not_write_over_a_superseded_payload(monkeypatch):
     monkeypatch.setattr(ep, "mozart_es", mock_es)
     monkeypatch.setattr(ep, "get_val_via_socket",
                         lambda key: "job-started" if "job-status" in key else "worker-1")
-    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "superseded")
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: state)
     mock_log = umock.MagicMock()
     monkeypatch.setattr(ep, "log_job_status", mock_log)
 

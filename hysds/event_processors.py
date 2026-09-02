@@ -19,6 +19,7 @@ from hysds.log_utils import (
     backoff_max_value,
     get_val_via_socket,
     ABSENT,
+    OWNED,
     SUPERSEDED,
     UNKNOWN,
     is_job_finalized,
@@ -220,7 +221,8 @@ def offline_jobs(event):
                     index=(job_status_json.get("job") or {}).get("job_info", {}).get("index"),
                     es=mozart_es,
                 )
-                if state in (SUPERSEDED, ABSENT):
+                if state != OWNED:
+                    # like the other mozart daemons: write only on OWNED
                     logger.info(f"Not offlining job with UUID {uuid}: {state}")
                     continue
                 job_status_json["status"] = "job-offline"

@@ -248,6 +248,7 @@ def test_probe_is_one_mget_over_every_home_with_a_projection(monkeypatch):
 
 
 def test_job_status_homes_shape():
+    from datetime import timedelta
     from datetime import date
     today = date(2026, 9, 2)
     assert lu.job_status_homes("job_status-2026.08.31", today=today) == [
@@ -263,4 +264,8 @@ def test_job_status_homes_shape():
         "job_failed", "job_status-2026.09.02"]
     # a future or ancient caller date clamps
     assert lu.job_status_homes("job_status-2027.01.01", today=today)[-1] == "job_status-2026.09.02"
-    assert len(lu.job_status_homes("job_status-2020.01.01", today=today)) == lu.MAX_DAILY_HOMES + 2
+    old = lu.job_status_homes("job_status-2020.01.01", today=today)
+    # the window is clamped, but the caller's own daily is still asked
+    assert len(old) == lu.MAX_DAILY_HOMES + 3
+    assert old[1] == "job_status-2020.01.01"
+    assert old[2] == f"job_status-{(today - timedelta(days=lu.MAX_DAILY_HOMES)).strftime('%Y.%m.%d')}"

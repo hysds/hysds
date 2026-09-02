@@ -88,12 +88,17 @@ def classify(orphan_hit, candidate):
     shard, so the orphan's own (_primary_term, _seq_no) from the mget compares
     directly against the job_failed mark.
 
-      indexed_after_retry_delete   the doc was created after the sweep's
-                                   delete on job_failed -- a late write
-                                   re-created it (the write-side lanes)
+      indexed_after_retry_delete   the doc was indexed after the sweep's
+                                   delete on job_failed: a late arrival
+                                   re-created it. Whether that arrival was
+                                   the job's own job-failed message still in
+                                   the pipe or a duplicate write is not
+                                   distinguished here; both are repaired.
       indexed_before_retry_delete  the doc predates the delete that should
-                                   have removed it; not expected once the
-                                   sweep reaches job_failed at all
+                                   have removed it. Effectively unreachable
+                                   once the sweep reached job_failed at all,
+                                   since a not_found delete is still
+                                   sequenced and stamps a mark.
 
     With no mark (the resubmitting job predates this field, or the sweep
     could not reach job_failed) it falls back to comparing the orphan's
@@ -391,7 +396,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lookback-days",
         type=int,
-        default=2,
+        default=1,
         help="steady-state candidate window",
     )
     parser.add_argument(

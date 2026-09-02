@@ -292,6 +292,11 @@ def job_status_homes(index=None, today=None):
     if start is None or start > today:
         start = today
     if (today - start).days > MAX_DAILY_HOMES:
+        # the caller's own daily is always asked, even outside the window:
+        # sdscli's default ISM keeps dailies 104 days and aliases them all
+        start_index = f"job_status-{start.strftime('%Y.%m.%d')}"
+        if index == start_index:
+            homes.append(start_index)
         start = today - timedelta(days=MAX_DAILY_HOMES)
     d = start
     while d <= today:
@@ -330,6 +335,12 @@ def job_supersession(payload_id, uuid, retry_count=0, index=None, es=None):
                   "safe to write" OR as "deleted". A missing daily is a clean
                   miss, not an error -- indices that never had a job that
                   day do not exist.
+
+    A home that could not be asked is reported only when no home held a
+    doc. Once any doc is found the verdict is taken from the docs seen,
+    even if another home errored; promoting that to UNKNOWN would send
+    every writer to UNKNOWN during a rolling restart, which is the
+    mass-record-loss case the ABSENT/UNKNOWN split exists to avoid.
     """
     homes = job_status_homes(index)
     try:
