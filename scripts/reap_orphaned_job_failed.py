@@ -66,6 +66,19 @@ def _parse_ts(value):
         return None
 
 
+def retry_delete_mark(job_info):
+    """The job_failed entry of job_info.retry_delete, or {}.
+
+    retry.py records one {index, seq_no, primary_term} entry per alias member
+    it swept -- a list rather than a dict keyed by member, so the field set
+    stays fixed however many dailies the alias spans.
+    """
+    for mark in job_info.get("retry_delete") or []:
+        if isinstance(mark, dict) and mark.get("index") == FAILED_INDEX:
+            return mark
+    return {}
+
+
 def classify(orphan_hit, candidate):
     """Which side of the retry's delete this orphan was INDEXED on.
 
@@ -94,7 +107,7 @@ def classify(orphan_hit, candidate):
     basis is "seq_no", "timestamp" or "none".
     """
     ji = (candidate.get("job") or {}).get("job_info") or {}
-    mark = (ji.get("retry_delete") or {}).get(FAILED_INDEX) or {}
+    mark = retry_delete_mark(ji)
     pt, sn = orphan_hit.get("_primary_term"), orphan_hit.get("_seq_no")
     m_pt, m_sn = mark.get("primary_term"), mark.get("seq_no")
     if None not in (pt, sn, m_pt, m_sn):
@@ -222,8 +235,8 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 "version": doc.get("_version"),
                 "orphan_seq_no": doc.get("_seq_no"),
                 "orphan_primary_term": doc.get("_primary_term"),
-                "retry_delete_mark": ((cand_src.get("job") or {}).get("job_info") or {})
-                .get("retry_delete", {}).get(FAILED_INDEX),
+                "retry_delete_mark": retry_delete_mark(
+                    (cand_src.get("job") or {}).get("job_info") or {}) or None,
                 "mechanism": mechanism,
                 "mechanism_basis": basis,
                 "orphan_ts": orphan.get("@timestamp"),

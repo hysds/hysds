@@ -335,7 +335,8 @@ def test_a_window_longer_than_the_redis_ttl_is_refused(monkeypatch):
 # which side of the retry's delete the orphan was INDEXED on
 # --------------------------------------------------------------------------
 
-MARK = {"job_failed": {"seq_no": 100, "primary_term": 3}}
+MARK = [{"index": "job_status-2026.08.29", "seq_no": 7, "primary_term": 1},
+        {"index": "job_failed", "seq_no": 100, "primary_term": 3}]
 
 
 def test_indexed_after_the_delete_by_seq_no():
@@ -355,6 +356,13 @@ def test_primary_term_outranks_seq_no():
     hit = {"_seq_no": 5, "_primary_term": 4, "_source": {}}
     cand = _candidate(retry_delete=MARK)["_source"]
     assert reaper.classify(hit, cand) == ("indexed_after_retry_delete", "seq_no")
+
+
+def test_a_mark_list_without_job_failed_is_no_mark():
+    hit = {"_seq_no": 101, "_primary_term": 3,
+           "_source": {"@timestamp": "2026-08-29T12:00:00Z"}}
+    cand = _candidate(retry_delete=[MARK[0]])["_source"]
+    assert reaper.classify(hit, cand)[1] == "timestamp"
 
 
 def test_without_a_mark_only_write_order_is_reported():
@@ -384,7 +392,7 @@ def test_the_reaped_event_carries_mechanism_basis_and_tags(monkeypatch):
     args, kwargs = reaper.log_custom_event.call_args
     assert args[2]["mechanism"] == "indexed_after_retry_delete"
     assert args[2]["mechanism_basis"] == "seq_no"
-    assert args[2]["retry_delete_mark"] == MARK["job_failed"]
+    assert args[2]["retry_delete_mark"] == MARK[1]
     assert "mechanism:indexed_after_retry_delete" in kwargs["tags"]
     assert "reaped" in kwargs["tags"]
 
