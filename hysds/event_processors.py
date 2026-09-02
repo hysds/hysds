@@ -78,6 +78,7 @@ def _fail_job(event, uuid, exc, short_error):
     if is_job_superseded(
         job_status["payload_id"],
         uuid,
+        retry_count=(job_status.get("job") or {}).get("retry_count"),
         index=(job_status.get("job") or {}).get("job_info", {}).get("index"),
         es=mozart_es,
     ):

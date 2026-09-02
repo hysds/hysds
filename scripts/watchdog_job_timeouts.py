@@ -187,7 +187,11 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                     continue
 
                 # a later attempt may own this payload now (HC-648)
-                if is_job_superseded(_id, task_id, index=_index):
+                if is_job_superseded(
+                    _id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=_index,
+                ):
                     logging.info(
                         f"Job {_id}: superseded by a later attempt; not overwriting."
                     )
@@ -223,7 +227,11 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                     continue
 
                 # a later attempt may own this payload now (HC-648)
-                if is_job_superseded(_id, task_id, index=_index):
+                if is_job_superseded(
+                    _id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=_index,
+                ):
                     logging.info(
                         f"Job {_id}: superseded by a later attempt; not tagging "
                         f"via stale doc."

@@ -255,13 +255,22 @@ def is_job_finalized(task_id):
     return status in TERMINAL_JOB_STATUSES
 
 
-def is_job_superseded(payload_id, uuid, index=None, es=None):
-    """Return True if this payload's job doc is owned by a different task uuid.
+def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
+    """Return True if a LATER attempt at this payload has taken it over.
 
-    A retry keeps the payload_id (which is the doc _id) and mints a new task
-    uuid, so a live doc whose uuid is not ours means our attempt has been
-    superseded: writing over it would either clobber the newer attempt's
-    record or resurrect a doc the retry already deleted (HC-648).
+    A retry keeps the payload_id (which is the doc _id), mints a new task
+    uuid, and increments job.retry_count. So the test for "someone newer owns
+    this payload" is a live doc with a different uuid AND a higher
+    retry_count. Writing over that would clobber the newer attempt's record or
+    resurrect a doc the retry already deleted (HC-648).
+
+    A different uuid alone is NOT enough: an older attempt's leftover doc --
+    an orphaned job_failed doc, an unswept job-revoked doc -- also carries a
+    uuid that is not ours, and declining to write because of one would drop a
+    legitimate failure. retry_count is what makes the comparison directional,
+    the same discriminator the orphan reaper uses. Pass the caller's own
+    retry_count; a missing key counts as 0 on both sides, which ties and
+    therefore does not supersede.
 
     Realtime doc-ID GETs against the physical homes a job doc can have --
     job_failed plus the dated job_status index, when the caller knows it --
@@ -279,6 +288,10 @@ def is_job_superseded(payload_id, uuid, index=None, es=None):
     if index and index not in homes:
         homes.append(index)
     try:
+        mine = int(retry_count or 0)
+    except (TypeError, ValueError):
+        mine = 0
+    try:
         if es is None:
             # deferred import: hysds.es_util imports this module at load time
             from hysds.es_util import get_mozart_es
@@ -288,13 +301,26 @@ def is_job_superseded(payload_id, uuid, index=None, es=None):
             res = es.get_by_id(index=home, id=payload_id, ignore=[404])
             if not isinstance(res, dict) or not res.get("found"):
                 continue
-            live_uuid = (res.get("_source") or {}).get("uuid")
-            if live_uuid and live_uuid != uuid:
+            src = res.get("_source") or {}
+            live_uuid = src.get("uuid")
+            if not live_uuid or live_uuid == uuid:
+                continue
+            try:
+                theirs = int((src.get("job") or {}).get("retry_count") or 0)
+            except (TypeError, ValueError):
+                theirs = 0
+            if theirs > mine:
                 logger.info(
                     f"is_job_superseded({payload_id}): doc in {home} belongs to "
-                    f"{live_uuid}, not {uuid}; a later attempt owns this payload"
+                    f"{live_uuid} at retry_count {theirs}, ours is {uuid} at "
+                    f"{mine}; a later attempt owns this payload"
                 )
                 return True
+            logger.info(
+                f"is_job_superseded({payload_id}): doc in {home} belongs to "
+                f"{live_uuid} at retry_count {theirs}, not newer than ours "
+                f"({mine}); treating it as an older leftover"
+            )
     except Exception as e:
         logger.warning(f"is_job_superseded({payload_id}): lookup failed: {e}")
         return False

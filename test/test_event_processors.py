@@ -262,9 +262,10 @@ def test_fail_job_guard_reuses_the_module_client(monkeypatch):
     monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
     seen = {}
 
-    def _guard(payload_id, uuid, index=None, es=None):
+    def _guard(payload_id, uuid, retry_count=None, index=None, es=None):
         seen["payload_id"] = payload_id
         seen["uuid"] = uuid
+        seen["retry_count"] = retry_count
         seen["index"] = index
         seen["es"] = es
         return False
@@ -281,7 +282,8 @@ def test_fail_job_guard_reuses_the_module_client(monkeypatch):
                         "status": "job-started",
                         "payload_id": "p1",
                         "uuid": "uuid-1",
-                        "job": {"job_info": {"index": "job_status-2026.08.28"}},
+                        "job": {"retry_count": 2,
+                                "job_info": {"index": "job_status-2026.08.28"}},
                     },
                 }
             ],
@@ -296,4 +298,5 @@ def test_fail_job_guard_reuses_the_module_client(monkeypatch):
     assert seen["payload_id"] == "p1"
     assert seen["uuid"] == "uuid-1"
     assert seen["index"] == "job_status-2026.08.28"
+    assert seen["retry_count"] == 2
     assert seen["es"] is mock_es

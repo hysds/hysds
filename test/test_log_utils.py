@@ -125,8 +125,11 @@ def _es_stub(monkeypatch, docs, boom=False):
     return calls
 
 
-def _hit(uuid):
-    return {"found": True, "_source": {"uuid": uuid, "status": "job-failed"}}
+def _hit(uuid, retry_count=None):
+    src = {"uuid": uuid, "status": "job-failed"}
+    if retry_count is not None:
+        src["job"] = {"retry_count": retry_count}
+    return {"found": True, "_source": src}
 
 
 def test_is_job_superseded_false_for_same_uuid(monkeypatch):
@@ -134,10 +137,34 @@ def test_is_job_superseded_false_for_same_uuid(monkeypatch):
     assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
-def test_is_job_superseded_true_for_different_uuid(monkeypatch):
-    """A retry keeps the payload_id and mints a new uuid."""
+def test_is_job_superseded_true_for_a_later_attempt(monkeypatch):
+    """A retry keeps the payload_id, mints a new uuid AND bumps retry_count."""
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=1)})
+    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=0) is True
+
+
+def test_is_job_superseded_false_for_an_older_leftover(monkeypatch):
+    """Regression: a different uuid alone must NOT count as superseded.
+
+    An orphaned job_failed doc or an unswept job-revoked doc from an EARLIER
+    attempt also carries a uuid that is not ours. Treating that as
+    supersession makes a supervisory writer drop a legitimate failure -- which
+    is what happened on a live cluster before retry_count was compared.
+    """
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-0", retry_count=0)})
+    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=1) is False
+
+
+def test_is_job_superseded_false_for_equal_retry_counts(monkeypatch):
+    """A tie is not newer; fail open and let the write through."""
+    _es_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=2)})
+    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=2) is False
+
+
+def test_is_job_superseded_missing_retry_counts_tie_at_zero(monkeypatch):
+    """Neither side carries the key: 0 vs 0 ties, so no supersession."""
     _es_stub(monkeypatch, {"job_failed": _hit("uuid-2")})
-    assert lu.is_job_superseded("payload-1", "uuid-1") is True
+    assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
 def test_is_job_superseded_false_when_no_doc_anywhere(monkeypatch):
@@ -149,7 +176,7 @@ def test_is_job_superseded_checks_the_dated_home_too(monkeypatch):
     """job_failed is empty but the dated index holds a newer attempt."""
     calls = _es_stub(
         monkeypatch,
-        {"job_status-2026.08.28": _hit("uuid-2")},
+        {"job_status-2026.08.28": _hit("uuid-2", retry_count=1)},
     )
     assert (
         lu.is_job_superseded("payload-1", "uuid-1", index="job_status-2026.08.28")
