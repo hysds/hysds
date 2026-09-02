@@ -29,8 +29,13 @@ else:
     sys.modules.pop("hysds.es_util", None)
 
 
-def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-completed"):
-    """A retried attempt's doc in a dated index -- the scan's starting point."""
+def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-completed",
+               time_queued="2026-08-29T11:30:00.000000Z"):
+    """A retried attempt's doc in a dated index -- the scan's starting point.
+
+    job_info.time_queued is stamped by retry.py immediately before it deletes
+    the old status doc, so it marks the moment of the retry.
+    """
     return {
         "_id": _id,
         "_index": "job_status-2026.08.29",
@@ -39,7 +44,8 @@ def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-comple
             "uuid": uuid,
             "status": status,
             "@timestamp": "2026-08-29T12:00:00.000Z",
-            "job": {"retry_count": retry_count},
+            "job": {"retry_count": retry_count,
+                    "job_info": {"time_queued": time_queued}},
         },
     }
 
@@ -278,3 +284,47 @@ def test_sweep_survives_a_partial_page(monkeypatch):
     assert counters["reaped"] == 1
     assert counters["skipped_same_uuid"] == 1
     assert es.delete_by_id.call_args.kwargs["id"] == "a"
+
+
+# --------------------------------------------------------------------------
+# which mechanism left the orphan behind
+# --------------------------------------------------------------------------
+
+def test_orphan_written_before_the_retry_is_a_missed_delete():
+    orphan = {"@timestamp": "2026-08-29T11:00:00.000Z"}
+    cand = _candidate()["_source"]          # retry at 11:30
+    assert reaper.classify(orphan, cand) == "missed-delete"
+
+
+def test_orphan_written_after_the_retry_is_a_late_write():
+    orphan = {"@timestamp": "2026-08-29T11:45:00.000Z"}
+    cand = _candidate()["_source"]          # retry at 11:30
+    assert reaper.classify(orphan, cand) == "late-write"
+
+
+def test_classification_is_unknown_without_both_timestamps():
+    cand = _candidate(time_queued=None)["_source"]
+    assert reaper.classify({"@timestamp": "2026-08-29T11:00:00.000Z"}, cand) == "unknown"
+    assert reaper.classify({}, _candidate()["_source"]) == "unknown"
+
+
+def test_mixed_fractional_precision_still_compares(monkeypatch):
+    """logstash writes milliseconds, log_job_status writes microseconds."""
+    orphan = {"@timestamp": "2026-08-29T11:29:59.999Z"}
+    cand = _candidate(time_queued="2026-08-29T11:30:00.000001Z")["_source"]
+    assert reaper.classify(orphan, cand) == "missed-delete"
+
+
+def test_the_reaped_event_carries_the_mechanism(monkeypatch):
+    """The event is the field triage; _version alone stops separating the two
+    causes once the worker writes the terminal doc only once."""
+    _wire(monkeypatch,
+          [_candidate(time_queued="2026-08-29T11:30:00.000000Z")],
+          [_failed_hit()])          # orphan @timestamp 11:00 -> before the retry
+
+    counters = reaper.reap_orphans()
+
+    assert counters["by_mechanism"] == {"missed-delete": 1}
+    event = reaper.log_custom_event.call_args[0][2]
+    assert event["mechanism"] == "missed-delete"
+    assert event["orphan_ts"] and event["retry_ts"]

@@ -30,6 +30,7 @@ import random
 import time
 import traceback
 from collections import Counter
+from datetime import datetime
 
 import hysds.es_util as es_util
 from hysds.log_utils import get_job_status, log_custom_event
@@ -54,6 +55,40 @@ def _retry_count(source):
     return int((source.get("job") or {}).get("retry_count") or 0)
 
 
+def _parse_ts(value):
+    """ISO-8601 as written by log_job_status and by logstash, or None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def classify(orphan, candidate):
+    """Which mechanism left this orphan behind.
+
+    retry.py stamps job_info.time_queued immediately before it deletes the old
+    status doc, so that is the moment of the retry. An orphan written BEFORE
+    it is one the delete failed to reach; an orphan written AFTER it is a late
+    write that re-created the doc the delete had already removed.
+
+    This is the discriminator to trust. _version was usable while the worker
+    wrote the terminal doc twice, but the single-write fix in the same release
+    shifts every version down by one: a missed delete now leaves the doc at 1,
+    and a late write leaves it at 3 within index.gc_deletes or 1 once the
+    tombstone has expired. So 1 is ambiguous on _version alone and 2 becomes
+    unreachable except for docs written before the upgrade.
+    """
+    o_ts = _parse_ts(orphan.get("@timestamp"))
+    r_ts = _parse_ts(
+        ((candidate.get("job") or {}).get("job_info") or {}).get("time_queued")
+    )
+    if o_ts is None or r_ts is None:
+        return "unknown"
+    return "missed-delete" if o_ts < r_ts else "late-write"
+
+
 def find_candidates(mozart_es, grace_secs, lookback_days, since=None):
     """Retried attempts old enough to be worth checking.
 
@@ -75,7 +110,8 @@ def find_candidates(mozart_es, grace_secs, lookback_days, since=None):
                 ]
             }
         },
-        "_source": ["payload_id", "uuid", "status", "@timestamp", "job.retry_count"],
+        "_source": ["payload_id", "uuid", "status", "@timestamp",
+                    "job.retry_count", "job.job_info.time_queued"],
     }
     return mozart_es.query(index=CANDIDATE_INDEX, body=query)
 
@@ -86,6 +122,7 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
     mozart_es = es_util.get_mozart_es()
     counters = Counter()
     reaped_by_version = Counter()
+    by_mechanism = Counter()
 
     candidates = find_candidates(mozart_es, grace_secs, lookback_days, since=since)
     counters["scanned"] = len(candidates)
@@ -130,17 +167,20 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 )
                 continue
 
+            mechanism = classify(orphan, cand_src)
             detail = (
                 f"payload_id={doc['_id']} orphan_uuid={orphan['uuid']} "
                 f"newer_uuid={cand_src.get('uuid')} "
                 f"retry_count={orphan_rc}->{cand_rc} "
                 f"orphan_status={orphan.get('status')} "
-                f"orphan_ts={orphan.get('@timestamp')} _version={doc.get('_version')}"
+                f"orphan_ts={orphan.get('@timestamp')} _version={doc.get('_version')} "
+                f"mechanism={mechanism}"
             )
 
             if dry_run:
                 counters["would_reap"] += 1
                 reaped_by_version[doc.get("_version")] += 1
+                by_mechanism[mechanism] += 1
                 logging.info(f"DRY-RUN would reap {detail}")
                 continue
 
@@ -159,14 +199,13 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
             if result == "deleted":
                 counters["reaped"] += 1
                 reaped_by_version[doc.get("_version")] += 1
+                by_mechanism[mechanism] += 1
                 logging.info(f"Reaped orphaned job_failed doc: {detail}")
-                # _version says which mechanism produced it, which is the
-                # triage that matters once nobody can patch code any more:
-                #   2  = two writes landed and no delete ever hit the doc
-                #        -> the delete-side stale read is back
-                #   3, or 1 when the late write arrived more than 60 s after
-                #        the delete (past index.gc_deletes)
-                #        -> write-after-delete, this ticket's lanes
+                # `mechanism` is the field triage, and it stays correct after
+                # the single-write fix lands. _version is kept alongside it
+                # because it is still informative on docs written by an older
+                # worker, but on its own it no longer separates the two
+                # causes -- see classify().
                 log_custom_event(
                     "worker_anomaly",
                     "job_failed_orphan_reaped",
@@ -177,6 +216,9 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                         "orphan_retry_count": orphan_rc,
                         "newer_retry_count": cand_rc,
                         "version": doc.get("_version"),
+                        "mechanism": mechanism,
+                        "orphan_ts": orphan.get("@timestamp"),
+                        "retry_ts": ((cand_src.get("job") or {}).get("job_info") or {}).get("time_queued"),
                     },
                 )
             elif status == 409:
@@ -187,6 +229,7 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 counters["skipped_gone"] += 1
 
     counters["reaped_by_version"] = dict(reaped_by_version)
+    counters["by_mechanism"] = dict(by_mechanism)
     logging.info(f"sweep summary: {dict(counters)}")
     return counters
 
