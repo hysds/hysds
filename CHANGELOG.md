@@ -4,6 +4,100 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-09-02
+
+### Added
+- `scripts/reap_orphaned_job_failed.py`, a mozart daemon that deletes
+  `job_failed` documents a later attempt has superseded. It **deletes
+  production failure records**, so the supervisord block ships with
+  `--dry-run` and `--lookback-days 1`: reconcile a dry-run sweep against your
+  own audit before letting it delete. **Deleting is opt-in**: without
+  `--delete-orphans` the daemon only reports what it would delete, so a block
+  copied into a PCM override that loses a flag can only get quieter, never
+  destructive. `--lookback-days` defaults to one day, matching the redis
+  job-status TTL; a longer window is refused without `--dry-run` or
+  `--allow-expired-redis`, because past the TTL the redis cross-check is inert.
+  Reporting sweeps still emit `job_failed_orphan_reaped` events, flagged
+  `dry_run: true`, so the audit has something to read. Every event carries a
+  `mechanism` (which side of the retry's delete the orphan was indexed on,
+  from `_seq_no` against the mark lightweight-jobs v2.1.2 records on the
+  resubmitted job) and a `mechanism_basis`, also as indexed tags. Every PCM
+  overrides `supervisord.conf.mozart`, so the block has to be added to each
+  override at adoption.
+- `log_utils.job_supersession()`, one realtime `mget` over every index a job
+  doc can live in, wired into every supervisory status writer (the watchdog,
+  `event_processors._fail_job` and `offline_jobs`, `task_revoked_handler`,
+  the job-lock contention path, `offline_orphaned_jobs`) so none of them
+  overwrites a payload a newer attempt owns. It reports `ABSENT` (a retry
+  just deleted the doc) and `UNKNOWN` (the probe could not ask) separately;
+  the verdi sites degrade to their previous unconditional write on `UNKNOWN`
+  rather than dropping a terminal record when mozart's OpenSearch is
+  unreachable from a worker.
+
+  Three limits are worth knowing before planning around this guard.
+
+  **Two of the six sites are inert wherever a worker cannot reach mozart's
+  OpenSearch.** On a venue whose verdi client verifies certificates, both
+  `get_mozart_es().es.info()` and the guard's `mget` fail in about 0.2 s
+  (`CERTIFICATE_VERIFY_FAILED` was measured on one live venue). The revoked-task
+  handler and the job-lock path then answer `UNKNOWN` every time and keep their
+  previous unconditional write. Failing open is deliberate -- losing the guard
+  beats losing the record -- but do not count on live coverage at those two
+  sites until a worker on that venue can make the call.
+
+  **It does not separate two first attempts.** `job.retry_count` is written
+  only by `retry.py`, so a first attempt carries no key and the comparison
+  coerces both sides to `0`. With the strict "theirs greater than mine", two
+  different first attempts under one payload -- a celery redelivery, or lock
+  contention -- neither supersedes the other. That is correct for what this
+  guard is for, since a retry always arrives at N+1, but it means the
+  revoked-task handler is not a defence against redelivery contention.
+
+  **`_fail_job` can now give up without writing a record.** It raises on both
+  `ABSENT` and `UNKNOWN` so its own backoff re-reads, and if the retry's
+  replacement doc is not visible within five tries the backoff exhausts and no
+  terminal record is written. Given that writing during `ABSENT` would destroy
+  the retried attempt's own doc through logstash's paired delete, losing the
+  record is the better trade -- but it is a new way to lose one. The
+  `fail_job_gave_up` event means either that a record was written and its rules
+  never queued, or that no record was written at all; treat any occurrence as
+  worth investigating rather than as routine.
+
+### Changed
+- **Upgrade order: factotum first.** `queue_finished_job` now sends `index`
+  and `uuid` kwargs on every finished job, and a pre-3.3.3 `user_rules_job`
+  worker raises TypeError on `uuid`, which stops all rule evaluation until it
+  is updated, with no error that points at the upgrade. That worker runs on
+  the factotum (`supervisord.conf.factotum`); the producers are on mozart
+  (`event_processors`, `orchestrator`) and verdi (`job_worker`). Update the
+  factotum before mozart and verdi.
+- **Requires lightweight-jobs v2.1.2** for the reaper's exact classification:
+  older retry jobs write no delete mark, and every classification falls back
+  to `mechanism_basis: timestamp`. **sdscli 2.1.2**, or the same additions to
+  the PCM's `job_status` template override, declares `job.retry_count` and
+  `job.job_info.retry_delete`.
+- **Behaviour change.** User rules now evaluate the failures `process_events`
+  routes through `fail_job` -- WorkerLostError, TimeLimitExceeded and
+  ConnectionError. Those evaluations previously settled against the dated
+  index a job-failed doc had already been moved out of, exhausted their
+  backoff and never ran. Rule sets that match on connection-error text will
+  begin firing where they did not before; a celery-level ConnectionError is
+  not by itself evidence that the job's work failed. Check your venue's live
+  `user_rules-mozart` index before upgrading.
+- `run_job` and `event_processors._fail_job` each write a failed job's
+  terminal status document once. `run_job` wrote it twice; `_fail_job`
+  re-wrote it on every backoff replay when the rule requeue hit an
+  unreachable broker. Either duplicate could land after a retry had deleted
+  the document and re-create it as an orphan.
+- Rule evaluation's settle probe is pinned to the attempt that queued it, so
+  an unreaped orphan under the same `_id` cannot satisfy it on the wrong doc.
+
+## [3.3.2] - 2026-08-03
+
+### Fixed
+- Properly expand environment variables in `runtime_options` for podman
+  (HC-641, #222).
+
 ## [3.3.1] - 2026-07-23
 
 ### Added

@@ -23,6 +23,8 @@ from hysds.celery import app
 from hysds.containers.factory import container_engine_factory
 from hysds.lock import JobLock, LockNotAcquiredException
 from hysds.log_utils import (
+    OWNED,
+    UNKNOWN,
     get_job_status,
     get_task_worker,
     get_worker_status,
@@ -30,6 +32,7 @@ from hysds.log_utils import (
     log_custom_event,
     log_job_info,
     log_job_status,
+    job_supersession,
     log_task_worker,
     logger,
 )
@@ -430,11 +433,20 @@ def job_drain_detected(job_status_json, jd_file):
     return False
 
 
-def fail_job(job_status_json, jd_file):
-    """Log failed job, detect/handle job drain and raise error."""
+def fail_job(job_status_json, jd_file, log_status=True):
+    """Log failed job, detect/handle job drain and raise error.
+
+    Pass log_status=False when the caller has already logged this exact
+    job_status_json. A duplicate terminal write is not idempotent here: the
+    second copy travels the async redis -> logstash -> OpenSearch pipeline
+    behind the first, and can land after a fast retry has
+    already deleted the doc, resurrecting it as an orphaned job_failed doc
+    beside the retried attempt.
+    """
 
     def_err = "Unspecified worker execution error."
-    log_job_status(job_status_json)
+    if log_status:
+        log_job_status(job_status_json)
     if job_drain_detected(job_status_json, jd_file):
         log_custom_event("worker_anomaly", "job_drain", job_status_json)
         try:
@@ -609,6 +621,27 @@ def run_job(job, queue_when_finished=True):
                     "traceback": error_msg,
                     "celery_hostname": run_job.request.hostname,
                 }
+                # The lock is held by a different task for this same payload.
+                # If that task is a newer attempt, this doc would land under an
+                # _id it does not own, so record the contention instead of
+                # writing. (A same-retry_count contender is not caught here;
+                # see the PR description.)
+                if job_supersession(
+                    payload_id,
+                    job["task_id"],
+                    retry_count=job.get("retry_count"),
+                    index=job.get("job_info", {}).get("index"),
+                ) not in (OWNED, UNKNOWN):
+                    log_custom_event(
+                        "worker_anomaly",
+                        "job_lock_contention",
+                        {
+                            "payload_id": payload_id,
+                            "task_id": job["task_id"],
+                            "error": error_msg,
+                        },
+                    )
+                    raise WorkerExecutionError(error_msg, job_status_json)
                 fail_job(job_status_json, jd_file)
         
         # Lock acquired successfully, start heartbeat
@@ -1568,7 +1601,11 @@ def run_job(job, queue_when_finished=True):
             if len(usage_stats) > 0:
                 job["job_info"]["metrics"]["usage_stats"].append(usage_stats)
 
-        # close up job execution
+        # close up job execution.
+        # status_logged tracks whether this payload's terminal status doc has
+        # already been handed to log_job_status, so the handler below can tell
+        # a fresh failure from one that happened after the doc was written.
+        status_logged = False
         try:
             # transition running file to done file
             if os.path.exists(job_running_file):
@@ -1586,39 +1623,63 @@ def run_job(job, queue_when_finished=True):
 
             # log final job status
             log_job_status(job_status_json)
+            status_logged = True
 
             # queue job finished for user rules processing
             if queue_when_finished is True:
                 job_index = job.get("job_info", {}).get("index")
                 if job_status_json["status"] == "job-failed":
                     job_index = "job_failed"
-                queue_finished_job(payload_id, index=job_index)
+                queue_finished_job(
+                    payload_id, index=job_index, uuid=job_status_json.get("uuid")
+                )
         except Exception as e:
             error = str(e)
-            job_status_json = {
-                "uuid": job["task_id"],
-                "job_id": job["job_id"],
-                "payload_id": payload_id,
-                "payload_hash": payload_hash,
-                "dedup": dedup,
-                "status": "job-failed",
-                "job": job,
-                "context": context,
-                "error": error,
-                "short_error": get_short_error(error),
-                "traceback": traceback.format_exc(),
-                "celery_hostname": run_job.request.hostname,
-            }
-            if msg:
-                job_status_json["msg"] = msg
-            if msg_details:
-                job_status_json["msg_details"] = msg_details
+            if status_logged:
+                # The terminal doc for this payload is already in the
+                # redis -> logstash -> OpenSearch pipeline. Rebuilding it here
+                # writes the same _id a second time, which is the duplicate
+                # this change exists to remove: if a retry deletes the doc
+                # between the two writes, the second one re-creates it as an
+                # orphan. Worse, logstash pairs every job-failed write with a
+                # delete of that _id from the doc's own job_info.index, so the
+                # second write can also remove the retried attempt's fresh
+                # dated doc. Keep the doc that was written, and record the tail
+                # failure in the worker log instead of overwriting the real
+                # error, short_error and traceback with this one.
+                logger.error(
+                    f"Job {payload_id} hit an error after its status doc was "
+                    f"logged; not rewriting the doc: {error}\n"
+                    f"{traceback.format_exc()}"
+                )
+                fail_job(job_status_json, jd_file, log_status=False)
+            else:
+                job_status_json = {
+                    "uuid": job["task_id"],
+                    "job_id": job["job_id"],
+                    "payload_id": payload_id,
+                    "payload_hash": payload_hash,
+                    "dedup": dedup,
+                    "status": "job-failed",
+                    "job": job,
+                    "context": context,
+                    "error": error,
+                    "short_error": get_short_error(error),
+                    "traceback": traceback.format_exc(),
+                    "celery_hostname": run_job.request.hostname,
+                }
+                if msg:
+                    job_status_json["msg"] = msg
+                if msg_details:
+                    job_status_json["msg_details"] = msg_details
 
-            fail_job(job_status_json, jd_file)
+                fail_job(job_status_json, jd_file, log_status=True)
 
-        # raise worker execution error
+        # raise worker execution error. The status doc was already logged
+        # above (and rules queued against job_failed), so do not log it a
+        # second time: the duplicate write is the orphan source.
         if job_status_json["status"] == "job-failed":
-            fail_job(job_status_json, jd_file)
+            fail_job(job_status_json, jd_file, log_status=False)
 
         # return basic job status
         return {
@@ -1690,5 +1751,26 @@ def task_revoked_handler(*args, **kwargs):
         "traceback": error,
         "celery_hostname": request.hostname,
     }
-    log_job_status(job_status_json)
+    # retry.py deliberately resubmits while the old task may still be running
+    # (its "lock still held" outcome), so this handler can fire ~30 s after a
+    # newer attempt has taken the payload over -- and job-revoked would then
+    # overwrite that attempt's live doc at the same _id. The reaper cannot
+    # repair it either; it only touches job_failed.
+    state = job_supersession(
+        payload_id,
+        job["task_id"],
+        retry_count=job.get("retry_count"),
+        index=job.get("job_info", {}).get("index"),
+    )
+    # UNKNOWN means the probe could not ask, not that anyone else owns the
+    # payload. This handler wrote unconditionally before the guard existed,
+    # and a worker that cannot reach mozart's OpenSearch must degrade to that,
+    # not silently drop its terminal write.
+    if state in (OWNED, UNKNOWN):
+        log_job_status(job_status_json)
+    else:
+        logger.info(
+            f"task_revoked_handler - {payload_id}: {state}; not writing "
+            f"job-revoked over it."
+        )
     set_revoked_job_done(app.conf.ROOT_WORK_DIR, job["job_id"])

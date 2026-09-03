@@ -52,7 +52,7 @@ def process_xpath(xpath, trigger):
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def ensure_job_indexed(job_id, alias):
+def ensure_job_indexed(job_id, alias, uuid=None):
     """Ensure the job is indexed AND its latest write is search-visible.
 
     Job rules commonly filter on a status field that transitions post-creation
@@ -63,7 +63,10 @@ def ensure_job_indexed(job_id, alias):
     """
     logger.info(f"ensure_job_indexed: {job_id}")
     mozart_es = get_mozart_es()
-    assert_doc_settled(mozart_es, alias, job_id)
+    # Pin the attempt when the caller knows it: with an unreaped orphan present
+    # the probe would otherwise pass instantly on the older attempt's doc.
+    extra_must = [{"term": {"uuid": uuid}}] if uuid else None
+    assert_doc_settled(mozart_es, alias, job_id, extra_must=extra_must)
 
 
 def get_job(job_id, rule, result):
@@ -205,13 +208,13 @@ def msearch_es(searches, preference):
     return responses
 
 
-def evaluate_user_rules_job(job_id, index=None):
+def evaluate_user_rules_job(job_id, index=None, uuid=None):
     """
     Process all user rules in ES database and check if this job ID matches.
     If so, submit jobs. Otherwise do nothing.
     """
 
-    ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS)  # ensure job is indexed
+    ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS, uuid=uuid)
 
     # get all enabled user rules
     query = {"query": {"term": {"enabled": True}}}
@@ -304,13 +307,17 @@ def evaluate_user_rules_job(job_id, index=None):
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_finished_job(_id, index=None):
-    """Queue job id for user_rules_job evaluation."""
+def queue_finished_job(_id, index=None, uuid=None):
+    """Queue job id for user_rules_job evaluation.
+
+    `uuid` identifies which attempt the evaluation is about, so the settle
+    probe does not pass on an older attempt's doc under the same _id.
+    """
     payload = {
         "type": "user_rules_job",
         "function": "hysds.user_rules_job.evaluate_user_rules_job",
         "args": [_id],
-        "kwargs": {"index": index},
+        "kwargs": {"index": index, "uuid": uuid},
     }
     hysds.task_worker.run_task.apply_async(
         (payload,), queue=USER_RULES_JOB_QUEUE

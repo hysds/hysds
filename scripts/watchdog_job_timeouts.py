@@ -15,7 +15,13 @@ from datetime import datetime, timezone
 import job_utils
 
 from hysds.celery import app
-from hysds.log_utils import get_job_status, is_job_finalized, log_job_status
+from hysds.log_utils import (
+    OWNED,
+    get_job_status,
+    is_job_finalized,
+    job_supersession,
+    log_job_status,
+)
 from hysds.utils import get_short_error, parse_iso8601
 
 log_format = "[%(asctime)s: %(levelname)s/watchdog_job_timeouts] %(message)s"
@@ -181,6 +187,19 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                         )
                     continue
 
+                # write only while the payload is still ours: a later attempt
+                # may own it, or it may be mid-move with no live doc at all
+                state = job_supersession(
+                    _id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=_index,
+                )
+                if state != OWNED:
+                    logging.info(
+                        f"Job {_id}: {state}; not overwriting."
+                    )
+                    continue
+
                 # Use log_job_status() to ensure all required fields are populated
                 # and the update goes through the proper Redis->Logstash pipeline
                 try:
@@ -208,6 +227,18 @@ def tag_timedout_jobs(url, timeout, grace_secs=300):
                             f"Job {_id}: worker already finalized; not tagging "
                             f"via stale doc."
                         )
+                    continue
+
+                # same for the tag lane, which republishes the whole _source
+                state = job_supersession(
+                    _id, task_id,
+                    retry_count=(src.get("job") or {}).get("retry_count"),
+                    index=_index,
+                )
+                if state != OWNED:
+                    logging.info(
+                        f"Job {_id}: {state}; not tagging via stale doc."
+                    )
                     continue
                 tags.append("timedout")
                 src["tags"] = tags

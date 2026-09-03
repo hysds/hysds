@@ -37,6 +37,13 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     refresh storms under a dense cascade); the realtime GET is single-shard and
     translog-served.
 
+    Attempt: an _id can be served by an older attempt's doc while an orphan is
+    unreaped, and this probe would then pass on it -- the rule decision would
+    describe the wrong failure, invisibly, because the retry job pulls
+    retry_job_id from job.job_info.id, which is identical across attempts.
+    Callers that know which attempt they mean should pass it through
+    extra_must as a uuid term.
+
     Shard routing: with replicas, search round-robins across copies, so this probe
     and the caller's rule query could land on different copies -- this one settled,
     that one a lagging replica -- and the rule would miss. So this probe pins
@@ -57,7 +64,15 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
         raise RuntimeError(f"doc not yet search-visible: {doc_id}")
     hit = hits[0]
     searchable_seq_no = hit.get("_seq_no")
-    latest_seq_no = es_util.es.get(index=hit["_index"], id=doc_id).get("_seq_no")
+    # ignore=[404]: the doc can be deleted between the search and this GET --
+    # the orphan reaper removes job_failed docs on its own schedule -- and an
+    # unignored 404 would raise NotFoundError, which the caller's backoff then
+    # blind-retries for minutes on a deterministic miss. Absent means not
+    # settled, which is what the raise below says.
+    latest = es_util.es.get(index=hit["_index"], id=doc_id, ignore=[404])
+    if not isinstance(latest, dict) or latest.get("found") is False:
+        raise RuntimeError(f"doc disappeared while settling: {doc_id}")
+    latest_seq_no = latest.get("_seq_no")
     if (
         searchable_seq_no is not None
         and latest_seq_no is not None
