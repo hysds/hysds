@@ -316,19 +316,18 @@ def test_a_live_redis_key_is_not_counted_as_expired(monkeypatch):
     assert counters.get("redis_expired", 0) == 0
 
 
-def test_a_window_longer_than_the_redis_ttl_is_refused(monkeypatch):
-    import pytest as _pytest
-
+def test_a_window_longer_than_the_redis_ttl_is_refused_when_deleting(monkeypatch):
+    """Past the TTL a missing redis key is indistinguishable from an expired
+    one, so the cross-check is inert. Reporting over a long window is the
+    documented historical audit; deleting over one is refused."""
     monkeypatch.setattr(reaper.app.conf, "get", lambda *a, **k: 86400, raising=False)
-    with _pytest.raises(SystemExit, match="redis job-status TTL"):
+    with pytest.raises(SystemExit, match="redis job-status TTL"):
         reaper.check_window_against_redis_ttl(
-            lookback_days=63, since=None, dry_run=False, allow_expired=False
+            lookback_days=63, since=None, deleting=True, allow_expired=False
         )
-    # allowed explicitly, and allowed for a dry run
-    reaper.check_window_against_redis_ttl(63, None, True, False)
-    reaper.check_window_against_redis_ttl(63, None, False, True)
-    # and a short window is fine
-    reaper.check_window_against_redis_ttl(0.5, None, False, False)
+    reaper.check_window_against_redis_ttl(63, None, False, False)   # reporting only
+    reaper.check_window_against_redis_ttl(63, None, True, True)     # acknowledged
+    reaper.check_window_against_redis_ttl(0.5, None, True, False)   # short window
 
 
 # --------------------------------------------------------------------------
@@ -426,9 +425,11 @@ def test_once_reports_a_failed_sweep(monkeypatch):
     assert reaper.daemon(300, 120, 1, once=True) is True
 
 
-def test_cli_defaults_match_the_shipped_supervisord_block():
-    """A bare hand run must pass the TTL guard the shipped block passes; the
-    defaults are what the block passes explicitly."""
+def test_cli_defaults_are_the_shipped_block_and_do_not_delete():
+    """Deleting is an addition, never a preservation: a block copied into a
+    PCM override that loses a flag can only get quieter."""
     args = reaper.build_parser().parse_args([])
     assert (args.interval, args.grace_secs, args.lookback_days) == (300, 120, 1)
-    assert args.dry_run is False and args.once is False and args.since is None
+    assert args.delete_orphans is False
+    assert args.once is False and args.since is None
+    assert reaper.build_parser().parse_args(["--delete-orphans"]).delete_orphans is True

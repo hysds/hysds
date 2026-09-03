@@ -411,15 +411,6 @@ def job_supersession(payload_id, uuid, retry_count=0, index=None, es=None):
     return OWNED
 
 
-def is_job_superseded(payload_id, uuid, retry_count=0, index=None, es=None):
-    """Boolean view of job_supersession: only a confirmed later attempt counts.
-
-    Callers that can act on the difference should use job_supersession and
-    handle ABSENT explicitly rather than folding it in with OWNED here.
-    """
-    return job_supersession(
-        payload_id, uuid, retry_count=retry_count, index=index, es=es
-    ) == SUPERSEDED
 
 
 @backoff.on_exception(

@@ -158,14 +158,12 @@ def _daily(days_ago):
 def test_same_uuid_is_owned(monkeypatch):
     _mget_stub(monkeypatch, {"job_failed": _hit("uuid-1")})
     assert lu.job_supersession("payload-1", "uuid-1") == lu.OWNED
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
 def test_a_later_attempt_supersedes(monkeypatch):
     """A retry keeps the payload_id, mints a new uuid AND bumps retry_count."""
     _mget_stub(monkeypatch, {"job_failed": _hit("uuid-2", retry_count=1)})
     assert lu.job_supersession("payload-1", "uuid-1", retry_count=0) == lu.SUPERSEDED
-    assert lu.is_job_superseded("payload-1", "uuid-1", retry_count=0) is True
 
 
 def test_an_older_leftover_does_not_supersede(monkeypatch):
@@ -190,7 +188,6 @@ def test_no_live_doc_anywhere_is_absent(monkeypatch):
     logstash's paired delete, destroy the retried attempt's fresh doc."""
     _mget_stub(monkeypatch, {})
     assert lu.job_supersession("payload-1", "uuid-1") == lu.ABSENT
-    assert lu.is_job_superseded("payload-1", "uuid-1") is False
 
 
 def test_could_not_ask_is_unknown_not_absent(monkeypatch):

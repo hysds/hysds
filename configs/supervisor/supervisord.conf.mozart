@@ -152,13 +152,15 @@ startsecs=10
 [program:reap_orphaned_job_failed]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 environment=PYTHONHTTPSVERIFY=0
-; Ships with --dry-run: this daemon deletes production failure records,
-; so a venue upgrading to it must reconcile a sweep against its own
-; audit before letting it delete. Drop --dry-run once that is clean.
+; This daemon deletes production failure records, so deleting is opt-in:
+; without --delete-orphans it only reports what it would delete. A venue
+; adds that flag once it has reconciled a reporting sweep against its own
+; audit. Copying this block into a PCM override and losing a flag can only
+; make it quieter, never destructive.
 ; --lookback-days 1 matches HYSDS_JOB_STATUS_EXPIRES (one day): a longer
-; window runs with the redis cross-check inert and the daemon refuses to
-; start without --dry-run or --allow-expired-redis.
-command={{ OPS_HOME }}/mozart/ops/hysds/scripts/reap_orphaned_job_failed.py -i 300 -g 120 --lookback-days 1 --dry-run
+; window leaves the redis cross-check inert, which the daemon refuses when
+; deleting unless --allow-expired-redis is given.
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/reap_orphaned_job_failed.py -i 300 -g 120 --lookback-days 1
 process_name=%(program_name)s
 priority=1
 numprocs=1

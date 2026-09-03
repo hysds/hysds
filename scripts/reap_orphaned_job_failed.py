@@ -12,7 +12,7 @@ alias next to the retried attempt's own doc, so operators read the job as
 
 This sweeper deletes job_failed docs that a newer attempt has superseded. It
 is the repair-side complement to the retry job's delete fix and the write-side
-guards in hysds (is_job_finalized, is_job_superseded), and its per-sweep
+guards in hysds (is_job_finalized, job_supersession), and its per-sweep
 counters are the standing health signal for late writes.
 
 Scan direction matters. Retried jobs are rare next to failures, so the sweep
@@ -298,7 +298,7 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
     return counters
 
 
-def check_window_against_redis_ttl(lookback_days, since, dry_run, allow_expired):
+def check_window_against_redis_ttl(lookback_days, since, deleting, allow_expired):
     """The redis cross-check is structurally inert past HYSDS_JOB_STATUS_EXPIRES.
 
     A missing key counts as reapable, so any window longer than the TTL runs
@@ -316,11 +316,11 @@ def check_window_against_redis_ttl(lookback_days, since, dry_run, allow_expired)
             window = float("inf")
     else:
         window = lookback_days * 86400
-    if window > ttl and not (dry_run or allow_expired):
+    if window > ttl and deleting and not allow_expired:
         raise SystemExit(
             f"window of {window / 86400:.1f}d exceeds the redis job-status TTL "
             f"({ttl / 86400:.1f}d), so the redis cross-check would be inert for "
-            f"most candidates. Re-run with --dry-run, or with "
+            f"most candidates. Drop --delete-orphans to report only, or pass "
             f"--allow-expired-redis if that is understood."
         )
     if window > ttl:
@@ -331,11 +331,11 @@ def check_window_against_redis_ttl(lookback_days, since, dry_run, allow_expired)
         )
 
 
-def daemon(interval, grace_secs, lookback_days, since=None, dry_run=False, once=False,
+def daemon(interval, grace_secs, lookback_days, since=None, dry_run=True, once=False,
            allow_expired_redis=False):
     """Sweep forever, jittered like the other mozart watchdogs."""
 
-    check_window_against_redis_ttl(lookback_days, since, dry_run, allow_expired_redis)
+    check_window_against_redis_ttl(lookback_days, since, not dry_run, allow_expired_redis)
     empty_sweeps = 0
 
     interval_min = interval - int(interval / 4)
@@ -406,9 +406,17 @@ def build_parser():
         "cleanup or audit (e.g. 2026-07-01)",
     )
     parser.add_argument(
+        "--delete-orphans",
+        action="store_true",
+        help="actually delete. Without this the daemon only reports what it "
+        "would delete, because it deletes production failure records and the "
+        "safe mode must not depend on anyone remembering to preserve a flag",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="log and count what would be reaped without deleting anything",
+        help="report only. This is the default and the flag is accepted for "
+        "clarity in a supervisord block; deleting requires --delete-orphans",
     )
     parser.add_argument(
         "--once", action="store_true", help="run a single sweep and exit"
@@ -429,7 +437,7 @@ if __name__ == "__main__":
         args.grace_secs,
         args.lookback_days,
         since=args.since,
-        dry_run=args.dry_run,
+        dry_run=not args.delete_orphans,
         once=args.once,
         allow_expired_redis=args.allow_expired_redis,
     )

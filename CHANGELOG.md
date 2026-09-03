@@ -11,10 +11,13 @@ All notable changes to this project will be documented in this file.
   `job_failed` documents a later attempt has superseded. It **deletes
   production failure records**, so the supervisord block ships with
   `--dry-run` and `--lookback-days 1`: reconcile a dry-run sweep against your
-  own audit before dropping the flag. `--lookback-days` defaults to one day,
-  matching the redis job-status TTL; a longer window is refused without `--dry-run` or
+  own audit before letting it delete. **Deleting is opt-in**: without
+  `--delete-orphans` the daemon only reports what it would delete, so a block
+  copied into a PCM override that loses a flag can only get quieter, never
+  destructive. `--lookback-days` defaults to one day, matching the redis
+  job-status TTL; a longer window is refused without `--dry-run` or
   `--allow-expired-redis`, because past the TTL the redis cross-check is inert.
-  Dry-run sweeps still emit `job_failed_orphan_reaped` events, flagged
+  Reporting sweeps still emit `job_failed_orphan_reaped` events, flagged
   `dry_run: true`, so the audit has something to read. Every event carries a
   `mechanism` (which side of the retry's delete the orphan was indexed on,
   from `_seq_no` against the mark lightweight-jobs v2.1.2 records on the
@@ -30,6 +33,35 @@ All notable changes to this project will be documented in this file.
   the verdi sites degrade to their previous unconditional write on `UNKNOWN`
   rather than dropping a terminal record when mozart's OpenSearch is
   unreachable from a worker.
+
+  Three limits are worth knowing before planning around this guard.
+
+  **Two of the six sites are inert wherever a worker cannot reach mozart's
+  OpenSearch.** On a venue whose verdi client verifies certificates, both
+  `get_mozart_es().es.info()` and the guard's `mget` fail in about 0.2 s
+  (`CERTIFICATE_VERIFY_FAILED` was measured on one live venue). The revoked-task
+  handler and the job-lock path then answer `UNKNOWN` every time and keep their
+  previous unconditional write. Failing open is deliberate -- losing the guard
+  beats losing the record -- but do not count on live coverage at those two
+  sites until a worker on that venue can make the call.
+
+  **It does not separate two first attempts.** `job.retry_count` is written
+  only by `retry.py`, so a first attempt carries no key and the comparison
+  coerces both sides to `0`. With the strict "theirs greater than mine", two
+  different first attempts under one payload -- a celery redelivery, or lock
+  contention -- neither supersedes the other. That is correct for what this
+  guard is for, since a retry always arrives at N+1, but it means the
+  revoked-task handler is not a defence against redelivery contention.
+
+  **`_fail_job` can now give up without writing a record.** It raises on both
+  `ABSENT` and `UNKNOWN` so its own backoff re-reads, and if the retry's
+  replacement doc is not visible within five tries the backoff exhausts and no
+  terminal record is written. Given that writing during `ABSENT` would destroy
+  the retried attempt's own doc through logstash's paired delete, losing the
+  record is the better trade -- but it is a new way to lose one. The
+  `fail_job_gave_up` event means either that a record was written and its rules
+  never queued, or that no record was written at all; treat any occurrence as
+  worth investigating rather than as routine.
 
 ### Changed
 - **Upgrade order: factotum first.** `queue_finished_job` now sends `index`
