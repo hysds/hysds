@@ -213,6 +213,12 @@ class TestRedeliveredTerminalDup(TestCase):
         self.assertFalse(self.jw.redelivered_terminal_dup(self._job(redelivered=False)))
         self.status.assert_not_called()
 
+    def test_a_job_without_delivery_info_is_never_a_duplicate(self):
+        self.status.return_value = "job-completed"
+
+        self.assertFalse(self.jw.redelivered_terminal_dup({"task_id": "task-1"}))
+        self.status.assert_not_called()
+
     def test_a_redelivery_of_a_finished_execution_is_a_duplicate(self):
         for status in ("job-completed", "job-deduped"):
             self.status.return_value = status

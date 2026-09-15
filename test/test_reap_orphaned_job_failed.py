@@ -702,3 +702,15 @@ def test_a_failed_doc_that_is_the_later_execution_is_never_deleted(monkeypatch):
     assert counters["reaped"] == 0
     es.delete_by_id.assert_not_called()
     reaper.log_custom_event.assert_not_called()
+
+
+def test_classify_redelivered_equal_stamps_is_not_later():
+    """The gate is strictly later: a re-run stamped at the same instant the
+    failed execution ended is not provably a different execution, so it is
+    never reaped. Clock skew between workers can only turn a real re-run into
+    this case, which errs toward keeping the failed doc."""
+    orphan = _failed_hit(time_end="2026-08-29T11:00:00Z")
+    same = _redelivered(time_start="2026-08-29T11:00:00Z")["_source"]
+    assert reaper.classify_redelivered(orphan, same) == (
+        "same_or_earlier_execution", "time_start"
+    )
