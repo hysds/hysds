@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
   of pairs that already exist. New counters: `redelivered_scanned`,
   `redelivered_skipped_different_uuid`, `redelivered_skipped_not_later`,
   `redelivered_skipped_unclassified`, `redelivered_skipped_redis`.
-- HC-651: with `ENABLE_JOB_LOCKING`, a redelivered task whose uuid already
+- HC-652: with `ENABLE_JOB_LOCKING`, a redelivered task whose uuid already
   reads `job-completed` or `job-deduped` in redis is now deduped before any
   lock is taken, as the non-locking branch already did. The locking branch
   never made that check: a finished execution has released its lock, so the
