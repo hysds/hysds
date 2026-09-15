@@ -21,7 +21,7 @@ id (two requests per 500 candidates, and the probe is a realtime mget so it
 cannot be stale). Scanning job_failed instead would re-run one search per
 failed doc every interval -- tens of thousands of them on a busy venue.
 
-A second source (HC-651) is celery redelivery. A worker shut down mid-job
+A second source is celery redelivery. A worker shut down mid-job
 writes job-failed and is killed before it acks, so the broker delivers the
 same task -- same uuid -- to another worker, which may run it to completion.
 That leaves a job_failed doc beside a job-completed doc under one payload_id
@@ -408,7 +408,7 @@ def _reap_retried(mozart_es, candidates, dry_run, counters, reaped_by_version,
 
 def _reap_redelivered(mozart_es, candidates, dry_run, counters, reaped_by_version,
                       by_mechanism):
-    """Celery redelivery: one uuid executed twice (HC-651)."""
+    """Celery redelivery: one uuid executed twice."""
     for start in range(0, len(candidates), PAGE_SIZE):
         page = candidates[start : start + PAGE_SIZE]
         by_id = _probe_failed(mozart_es, page)

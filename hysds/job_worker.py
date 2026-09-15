@@ -378,7 +378,7 @@ def redelivered_terminal_dup(job):
     job-completed takes the lock and runs again; publish then finds its own
     dataset already there (same payload_id, same task id), the job fails,
     and logstash's paired delete removes the completed doc. A prior
-    job-failed is left to re-run on purpose (HC-651: re-run and supersede).
+    job-failed is left to re-run on purpose: re-run and supersede.
     """
     if not job.get("delivery_info", {}).get("redelivered", False):
         return False

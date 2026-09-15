@@ -484,7 +484,7 @@ def test_cli_defaults_are_the_shipped_block_and_do_not_delete():
 
 
 # --------------------------------------------------------------------------
-# celery redelivery: one uuid executed twice (HC-651)
+# celery redelivery: one uuid executed twice
 # --------------------------------------------------------------------------
 
 def test_a_redelivered_later_execution_is_reaped(monkeypatch):

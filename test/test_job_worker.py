@@ -192,7 +192,7 @@ class TestFailJobCallSites(TestCase):
 
 class TestRedeliveredTerminalDup(TestCase):
     """The locking branch's dedup of a redelivery whose earlier execution
-    already finished (HC-651)."""
+    already finished."""
 
     def setUp(self):
         import hysds.job_worker
