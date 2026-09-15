@@ -188,3 +188,112 @@ class TestFailJobCallSites(TestCase):
                 f"was written but does not say whether it logs it; the "
                 f"default writes the same _id a second time",
             )
+
+
+class TestRedeliveredTerminalDup(TestCase):
+    """The locking branch's dedup of a redelivery whose earlier execution
+    already finished (HC-651)."""
+
+    def setUp(self):
+        import hysds.job_worker
+
+        self.jw = hysds.job_worker
+        self.status = patch.object(self.jw, "get_job_status").start()
+
+    def tearDown(self):
+        umock.patch.stopall()
+
+    @staticmethod
+    def _job(redelivered=True):
+        return {"task_id": "task-1", "delivery_info": {"redelivered": redelivered}}
+
+    def test_a_first_delivery_is_never_a_duplicate(self):
+        self.status.return_value = "job-completed"
+
+        self.assertFalse(self.jw.redelivered_terminal_dup(self._job(redelivered=False)))
+        self.status.assert_not_called()
+
+    def test_a_redelivery_of_a_finished_execution_is_a_duplicate(self):
+        for status in ("job-completed", "job-deduped"):
+            self.status.return_value = status
+            self.assertTrue(self.jw.redelivered_terminal_dup(self._job()), status)
+
+    def test_a_redelivery_after_a_failure_or_mid_run_is_not(self):
+        """job-failed re-runs on purpose (re-run and supersede); job-started
+        and job-offline are the lock's call; a missing key fails open."""
+        for status in ("job-failed", "job-started", "job-offline", "job-revoked", None):
+            self.status.return_value = status
+            self.assertFalse(self.jw.redelivered_terminal_dup(self._job()), status)
+
+
+class TestLockingBranchDedup(TestCase):
+    """Asserted at the source level, like TestFailJobCallSites: driving
+    run_job's locking branch means the same ~1,200 lines of side effects.
+
+    The invariant: with locking enabled, a redelivery whose uuid is already
+    terminal returns before any lock is touched, and returns without logging
+    a status -- a job-deduped write would land under the shared _id and
+    clobber the completed doc it defers to.
+    """
+
+    def _locking_branch(self):
+        import ast
+        import inspect
+
+        import hysds.job_worker
+
+        tree = ast.parse(inspect.getsource(hysds.job_worker))
+        run_job = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "run_job"
+        )
+        return next(
+            n for n in ast.walk(run_job)
+            if isinstance(n, ast.If)
+            and isinstance(n.test, ast.Name)
+            and n.test.id == "enable_job_locking"
+        )
+
+    @staticmethod
+    def _calls(node, name):
+        import ast
+
+        return [
+            n for n in ast.walk(node)
+            if isinstance(n, ast.Call)
+            and (
+                (isinstance(n.func, ast.Name) and n.func.id == name)
+                or (isinstance(n.func, ast.Attribute) and n.func.attr == name)
+            )
+        ]
+
+    def _dedup(self, branch):
+        import ast
+
+        dedup = next(
+            (
+                s for s in branch.body
+                if isinstance(s, ast.If)
+                and self._calls(s.test, "redelivered_terminal_dup")
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            dedup, "locking branch must check redelivered_terminal_dup"
+        )
+        return dedup
+
+    def test_the_dedup_runs_before_the_lock_is_touched(self):
+        branch = self._locking_branch()
+        dedup = self._dedup(branch)
+        lock_calls = self._calls(branch, "check_and_break_stale_lock")
+        self.assertTrue(lock_calls, "expected the stale-lock check in the branch")
+        self.assertLess(dedup.lineno, min(n.lineno for n in lock_calls))
+
+    def test_the_dedup_returns_without_writing_a_status(self):
+        import ast
+
+        dedup = self._dedup(self._locking_branch())
+        self.assertTrue(any(isinstance(n, ast.Return) for n in ast.walk(dedup)))
+        self.assertFalse(self._calls(dedup, "log_job_status"))
+        self.assertFalse(self._calls(dedup, "fail_job"))

@@ -61,6 +61,10 @@ PRE_PROCESSORS = (
 # built-in post-processors
 POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
 
+# a broker redelivery whose earlier execution already reached one of these
+# must not run again; see redelivered_terminal_dup()
+REDELIVERED_TERMINAL_STATUSES = ("job-completed", "job-deduped")
+
 # signal names
 SIG_NAMES = {
     1: "hangup",
@@ -362,6 +366,27 @@ def redelivered_job_dup(job):
         return False
 
 
+def redelivered_terminal_dup(job):
+    """True if this delivery is a broker redelivery of an execution that
+    already finished.
+
+    The job-locking branch of run_job cannot reuse redelivered_job_dup():
+    the job-started half of that check (wait, then ask whether the previous
+    worker is alive) is what the lock itself decides. But the terminal half
+    is outside the lock's reach -- an execution that finished has released
+    it -- so without this a redelivered task whose uuid already reads
+    job-completed takes the lock and runs again; publish then finds its own
+    dataset already there (same payload_id, same task id), the job fails,
+    and logstash's paired delete removes the completed doc. A prior
+    job-failed is left to re-run on purpose (HC-651: re-run and supersede).
+    """
+    if not job.get("delivery_info", {}).get("redelivered", False):
+        return False
+    status = get_job_status(job["task_id"])
+    logger.info(f"redelivered_terminal_dup: status:{status}")
+    return status in REDELIVERED_TERMINAL_STATUSES
+
+
 class WorkerExecutionError(Exception):
     # celery rebuilds exceptions via cls(*exc.args); params outside args need
     # defaults or the class degrades to UnpickleableExceptionWrapper
@@ -552,6 +577,22 @@ def run_job(job, queue_when_finished=True):
     lock_acquired = False
     
     if enable_job_locking:
+        # A redelivery of an execution that already finished. Return without
+        # logging a status: a job-deduped write would land under the shared
+        # _id and clobber the completed doc it defers to. The non-locking
+        # branch below returns the same way.
+        if redelivered_terminal_dup(job):
+            logger.info(f"Encountered duplicate redelivered job:{json.dumps(job)}")
+            return {
+                "uuid": job["task_id"],
+                "job_id": job["job_id"],
+                "payload_id": payload_id,
+                "payload_hash": payload_hash,
+                "dedup": dedup,
+                "status": "job-deduped",
+                "celery_hostname": run_job.request.hostname,
+            }
+
         logger.info(f"JobLock: Preparing to acquire lock for payload_id={payload_id}, task_id={job['task_id']}, hostname={run_job.request.hostname}")
         
         # Check for and break stale locks
