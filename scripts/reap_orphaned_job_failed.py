@@ -20,6 +20,16 @@ starts from the retried attempts in the dated indices and probes job_failed by
 id (two requests per 500 candidates, and the probe is a realtime mget so it
 cannot be stale). Scanning job_failed instead would re-run one search per
 failed doc every interval -- tens of thousands of them on a busy venue.
+
+A second source is celery redelivery. A worker shut down mid-job
+writes job-failed and is killed before it acks, so the broker delivers the
+same task -- same uuid -- to another worker, which may run it to completion.
+That leaves a job_failed doc beside a job-completed doc under one payload_id
+with one uuid, and nothing in the retry flow ever touches it: no retry_count
+moved, no delete was issued, and both executions share one redis job-status
+key. The second scan starts from executions that carry
+delivery_info.redelivered and reached job-completed, and judges the pair by
+each execution's own time_start / time_end stamps.
 """
 from future import standard_library
 
@@ -49,6 +59,15 @@ PAGE_SIZE = 500
 # a redis status other than these means the orphan's own attempt is somehow
 # still live, so leave its doc alone
 REAPABLE_REDIS_STATUSES = (None, "job-failed")
+
+# The redelivered scan reaps only when the later execution demonstrably
+# finished: any other terminal state of a re-run leaves the earlier failure
+# as the more informative record. It reads the SHARED redis key, which the
+# later execution overwrote, so job-completed is what "the re-run finished"
+# looks like there; job-failed would mean a still later execution failed and
+# its own doc has replaced the one being judged.
+REDELIVERED_CANDIDATE_STATUS = "job-completed"
+REDELIVERED_REAPABLE_REDIS_STATUSES = (None, "job-completed")
 
 
 def _retry_count(source):
@@ -155,34 +174,180 @@ def find_candidates(mozart_es, grace_secs, lookback_days, since=None):
     return mozart_es.query(index=CANDIDATE_INDEX, body=query)
 
 
-def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
-    """One sweep. Returns the counters dict."""
+def find_redelivered_candidates(mozart_es, grace_secs, lookback_days, since=None):
+    """Redelivered executions that finished, old enough to be worth checking.
 
-    mozart_es = es_util.get_mozart_es()
-    counters = Counter()
-    reaped_by_version = Counter()
-    by_mechanism = Counter()
+    run_job stores the broker's delivery_info on every status doc, so the
+    second execution of a redelivered task is marked on the doc itself, and
+    the job_status template maps the flag as boolean: an exact filter with no
+    worker change. The retried-attempt scan cannot see these (no retry_count
+    moved), and a redelivered execution that itself failed has already
+    replaced the job_failed doc under the same _id, so only job-completed is
+    asked for.
+    """
+    gte = since if since else f"now-{lookback_days}d"
+    query = {
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"job.delivery_info.redelivered": True}},
+                    {"term": {"status": REDELIVERED_CANDIDATE_STATUS}},
+                    {
+                        "range": {
+                            "@timestamp": {"gte": gte, "lte": f"now-{grace_secs}s"}
+                        }
+                    },
+                ]
+            }
+        },
+        "_source": ["payload_id", "uuid", "status", "@timestamp", "celery_hostname",
+                    "job.retry_count", "job.job_info.time_start",
+                    "job.job_info.time_end", "job.job_info.execute_node"],
+    }
+    return mozart_es.query(index=CANDIDATE_INDEX, body=query)
 
-    candidates = find_candidates(mozart_es, grace_secs, lookback_days, since=since)
-    counters["scanned"] = len(candidates)
-    window = f"since {since}" if since else f"{lookback_days}d"
-    logging.info(
-        f"Found {len(candidates)} retried attempts to check "
-        f"(grace={grace_secs}s, window={window})"
+
+def _job_info(source):
+    return ((source or {}).get("job") or {}).get("job_info") or {}
+
+
+def _as_utc(dt):
+    """A naive stamp is read as UTC, which is what every hysds writer means."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def classify_redelivered(orphan_hit, candidate):
+    """Is the candidate a LATER execution of the same task than the orphan?
+
+    Both docs carry one uuid, so retry_count and the retry's delete mark say
+    nothing here. What separates two executions of one task is that each
+    stamps its own job_info.time_start when it begins and time_end when it
+    ends. A re-run that started after the failed execution ended is a
+    different execution, and the failed doc records an attempt that has been
+    superseded. The same execution seen in both homes -- mid-move, or a
+    job-offline a supervisory writer put over it -- shares its time_start,
+    which is never later than its own time_end.
+
+    Returns (mechanism, basis):
+
+      redelivered_after_terminal  the candidate started after the orphan
+                                  ended: the broker re-ran the task after
+                                  its earlier execution had already written
+                                  job-failed
+      same_or_earlier_execution   not later; leave the failed doc alone.
+                                  This is the safety gate: a failed doc that
+                                  postdates the completed doc may be the only
+                                  trace left of a completed job whose re-run
+                                  then failed, so it is never deleted
+      unknown                     a stamp is missing: a job-deduped doc is
+                                  written before time_start is set, and an
+                                  older writer may omit either
+
+    basis is "time_start" or "none". The orphan's end falls back to its
+    @timestamp, stamped at write time and so never earlier than time_end:
+    the fallback can only make "later" harder to establish, never easier.
+    """
+    o_src = orphan_hit.get("_source") or {}
+    o_end = _as_utc(
+        _parse_ts(_job_info(o_src).get("time_end"))
+        or _parse_ts(o_src.get("@timestamp"))
     )
+    c_start = _as_utc(_parse_ts(_job_info(candidate).get("time_start")))
+    if o_end is None or c_start is None:
+        return "unknown", "none"
+    if c_start > o_end:
+        return "redelivered_after_terminal", "time_start"
+    return "same_or_earlier_execution", "time_start"
 
+
+def _probe_failed(mozart_es, page):
+    """The job_failed docs for one page of candidates, keyed by _id.
+
+    A realtime multi-GET: unlike a search, it cannot show a stale view of
+    whether the failed doc is still there. Paired by _id, not by position:
+    mget preserves order, but a judgement that deletes a document must not
+    depend on it.
+    """
+    res = mozart_es.es.mget(
+        index=FAILED_INDEX, body={"ids": [c["_id"] for c in page]},
+        _source=["uuid", "status", "@timestamp", "celery_hostname",
+                 "job.retry_count", "job.job_info.time_start",
+                 "job.job_info.time_end", "job.job_info.execute_node"],
+    )
+    return {d.get("_id"): d for d in res.get("docs", []) if isinstance(d, dict)}
+
+
+def _base_event(doc, orphan, cand_src, orphan_rc, cand_rc, mechanism, basis, dry_run):
+    return {
+        "payload_id": doc["_id"],
+        "orphan_uuid": orphan["uuid"],
+        "newer_uuid": cand_src.get("uuid"),
+        "orphan_retry_count": orphan_rc,
+        "newer_retry_count": cand_rc,
+        "version": doc.get("_version"),
+        "orphan_seq_no": doc.get("_seq_no"),
+        "orphan_primary_term": doc.get("_primary_term"),
+        "mechanism": mechanism,
+        "mechanism_basis": basis,
+        "orphan_ts": orphan.get("@timestamp"),
+        "dry_run": bool(dry_run),
+    }
+
+
+def _repair(mozart_es, doc, mechanism, basis, event, detail, dry_run, counters,
+            reaped_by_version, by_mechanism):
+    """Delete (or, on a dry run, report) one orphan and emit its audit event."""
+    # tags are indexed even where the event body is not, so the mechanism
+    # can be counted and filtered on without pulling every _source
+    # (event_status.template maps `event` enabled: false)
+    tags = [f"mechanism:{mechanism}", f"basis:{basis}",
+            "dry_run" if dry_run else "reaped"]
+
+    if dry_run:
+        counters["would_reap"] += 1
+        reaped_by_version[doc.get("_version")] += 1
+        by_mechanism[mechanism] += 1
+        logging.info(f"DRY-RUN would reap {detail}")
+        # emitted on dry-run too: the audit both PR bodies prescribe reads
+        # these events, and a dry-run that produced none could not be
+        # reconciled against anything
+        log_custom_event("worker_anomaly", "job_failed_orphan_reaped", event, tags=tags)
+        return
+
+    # Optimistic concurrency: between the mget and this delete the payload
+    # can fail again and REPLACE the doc under the same _id. An unguarded
+    # delete would erase that real failure.
+    r = mozart_es.delete_by_id(
+        index=FAILED_INDEX,
+        id=doc["_id"],
+        if_seq_no=doc["_seq_no"],
+        if_primary_term=doc["_primary_term"],
+        ignore=[404, 409],
+    )
+    result = r.get("result") if isinstance(r, dict) else None
+    status = r.get("status") if isinstance(r, dict) else None
+    if result == "deleted":
+        counters["reaped"] += 1
+        reaped_by_version[doc.get("_version")] += 1
+        by_mechanism[mechanism] += 1
+        logging.info(f"Reaped orphaned job_failed doc: {detail}")
+        log_custom_event("worker_anomaly", "job_failed_orphan_reaped", event, tags=tags)
+    elif status == 409:
+        # replaced under us; re-examined next sweep and skipped then
+        counters["skipped_conflict"] += 1
+        logging.info(f"Conflict, leaving for the next sweep: {detail}")
+    else:
+        counters["skipped_gone"] += 1
+
+
+def _reap_retried(mozart_es, candidates, dry_run, counters, reaped_by_version,
+                  by_mechanism):
+    """The retry.py flow: a newer attempt with its own uuid and retry_count."""
     for start in range(0, len(candidates), PAGE_SIZE):
         page = candidates[start : start + PAGE_SIZE]
-        ids = [c["_id"] for c in page]
-        # realtime multi-GET: unlike a search, this cannot show a stale view
-        # of whether the failed doc is still there
-        res = mozart_es.es.mget(
-            index=FAILED_INDEX, body={"ids": ids},
-            _source=["uuid", "status", "@timestamp", "job.retry_count"],
-        )
-        # pair by _id, not by position: mget preserves order, but a judgement
-        # that deletes a document must not depend on it
-        by_id = {d.get("_id"): d for d in res.get("docs", []) if isinstance(d, dict)}
+        by_id = _probe_failed(mozart_es, page)
         for cand in page:
             doc = by_id.get(cand["_id"], {})
             if not doc.get("found"):
@@ -191,7 +356,9 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
             cand_src = cand["_source"]
 
             if orphan.get("uuid") == cand_src.get("uuid"):
-                # same attempt seen in both homes mid-move, not an orphan
+                # one execution seen in both homes mid-move, or a redelivered
+                # re-run of it: neither is judged here. The redelivered scan
+                # tells those two apart by their time stamps.
                 counters["skipped_same_uuid"] += 1
                 continue
 
@@ -230,67 +397,118 @@ def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
                 f"orphan_ts={orphan.get('@timestamp')} _version={doc.get('_version')} "
                 f"mechanism={mechanism} basis={basis}"
             )
+            event = _base_event(
+                doc, orphan, cand_src, orphan_rc, cand_rc, mechanism, basis, dry_run
+            )
+            event["retry_delete_mark"] = retry_delete_mark(_job_info(cand_src)) or None
+            event["retry_ts"] = _job_info(cand_src).get("time_queued")
+            _repair(mozart_es, doc, mechanism, basis, event, detail, dry_run,
+                    counters, reaped_by_version, by_mechanism)
 
-            event = {
-                "payload_id": doc["_id"],
-                "orphan_uuid": orphan["uuid"],
-                "newer_uuid": cand_src.get("uuid"),
-                "orphan_retry_count": orphan_rc,
-                "newer_retry_count": cand_rc,
-                "version": doc.get("_version"),
-                "orphan_seq_no": doc.get("_seq_no"),
-                "orphan_primary_term": doc.get("_primary_term"),
-                "retry_delete_mark": retry_delete_mark(
-                    (cand_src.get("job") or {}).get("job_info") or {}) or None,
-                "mechanism": mechanism,
-                "mechanism_basis": basis,
-                "orphan_ts": orphan.get("@timestamp"),
-                "retry_ts": ((cand_src.get("job") or {}).get("job_info") or {}).get("time_queued"),
-                "dry_run": bool(dry_run),
-            }
-            # tags are indexed even where the event body is not, so the
-            # mechanism can be counted and filtered on without pulling every
-            # _source (event_status.template maps `event` enabled: false)
-            tags = [f"mechanism:{mechanism}", f"basis:{basis}",
-                    "dry_run" if dry_run else "reaped"]
 
-            if dry_run:
-                counters["would_reap"] += 1
-                reaped_by_version[doc.get("_version")] += 1
-                by_mechanism[mechanism] += 1
-                logging.info(f"DRY-RUN would reap {detail}")
-                # emitted on dry-run too: the audit both PR bodies prescribe
-                # reads these events, and a dry-run that produced none could
-                # not be reconciled against anything
-                log_custom_event("worker_anomaly", "job_failed_orphan_reaped",
-                                 event, tags=tags)
+def _reap_redelivered(mozart_es, candidates, dry_run, counters, reaped_by_version,
+                      by_mechanism):
+    """Celery redelivery: one uuid executed twice."""
+    for start in range(0, len(candidates), PAGE_SIZE):
+        page = candidates[start : start + PAGE_SIZE]
+        by_id = _probe_failed(mozart_es, page)
+        for cand in page:
+            doc = by_id.get(cand["_id"], {})
+            if not doc.get("found"):
+                continue  # the common case: the re-run left nothing behind
+            orphan = doc["_source"]
+            cand_src = cand["_source"]
+
+            if orphan.get("uuid") != cand_src.get("uuid"):
+                # a different uuid under this payload is a retry.py
+                # resubmission, which the retried-attempt scan judges by
+                # retry_count; nothing about a redelivery applies to it
+                counters["redelivered_skipped_different_uuid"] += 1
                 continue
 
-            # Optimistic concurrency: between the mget and this delete the
-            # retried attempt can itself fail and REPLACE the doc under the
-            # same _id. An unguarded delete would erase that real failure.
-            r = mozart_es.delete_by_id(
-                index=FAILED_INDEX,
-                id=doc["_id"],
-                if_seq_no=doc["_seq_no"],
-                if_primary_term=doc["_primary_term"],
-                ignore=[404, 409],
+            mechanism, basis = classify_redelivered(doc, cand_src)
+            if mechanism == "unknown":
+                counters["redelivered_skipped_unclassified"] += 1
+                continue
+            if mechanism != "redelivered_after_terminal":
+                # The safety gate, not just a label. A failed doc that is the
+                # LATER execution can be the last trace of a completed job
+                # whose re-run then failed (logstash's paired delete has
+                # already removed the completed doc in that variant), so the
+                # scan refuses to delete it rather than tagging and deleting.
+                counters["redelivered_skipped_not_later"] += 1
+                continue
+
+            # one key for both executions, overwritten by the later one:
+            # job-completed is the expected reading, and any live status
+            # means a further execution is under way
+            redis_status = get_job_status(orphan["uuid"])
+            if redis_status not in REDELIVERED_REAPABLE_REDIS_STATUSES:
+                counters["redelivered_skipped_redis"] += 1
+                logging.info(
+                    f"{doc['_id']}: uuid {orphan['uuid']} reads {redis_status} in "
+                    f"redis, not job-completed; leaving it."
+                )
+                continue
+            if redis_status is None:
+                counters["redis_expired"] += 1
+
+            orphan_rc = _retry_count(orphan)
+            cand_rc = _retry_count(cand_src)
+            o_ji, c_ji = _job_info(orphan), _job_info(cand_src)
+            detail = (
+                f"payload_id={doc['_id']} uuid={orphan['uuid']} "
+                f"orphan_host={orphan.get('celery_hostname')} "
+                f"orphan_time_end={o_ji.get('time_end')} "
+                f"newer_host={cand_src.get('celery_hostname')} "
+                f"newer_time_start={c_ji.get('time_start')} "
+                f"retry_count={orphan_rc} _version={doc.get('_version')} "
+                f"mechanism={mechanism} basis={basis}"
             )
-            result = r.get("result") if isinstance(r, dict) else None
-            status = r.get("status") if isinstance(r, dict) else None
-            if result == "deleted":
-                counters["reaped"] += 1
-                reaped_by_version[doc.get("_version")] += 1
-                by_mechanism[mechanism] += 1
-                logging.info(f"Reaped orphaned job_failed doc: {detail}")
-                log_custom_event("worker_anomaly", "job_failed_orphan_reaped",
-                                 event, tags=tags)
-            elif status == 409:
-                # replaced under us; re-examined next sweep and skipped then
-                counters["skipped_conflict"] += 1
-                logging.info(f"Conflict, leaving for the next sweep: {detail}")
-            else:
-                counters["skipped_gone"] += 1
+            event = _base_event(
+                doc, orphan, cand_src, orphan_rc, cand_rc, mechanism, basis, dry_run
+            )
+            event.update({
+                "orphan_host": orphan.get("celery_hostname"),
+                "orphan_execute_node": o_ji.get("execute_node"),
+                "orphan_time_end": o_ji.get("time_end"),
+                "newer_host": cand_src.get("celery_hostname"),
+                "newer_execute_node": c_ji.get("execute_node"),
+                "newer_time_start": c_ji.get("time_start"),
+                "newer_status": cand_src.get("status"),
+            })
+            _repair(mozart_es, doc, mechanism, basis, event, detail, dry_run,
+                    counters, reaped_by_version, by_mechanism)
+
+
+def reap_orphans(grace_secs=120, lookback_days=2, since=None, dry_run=False):
+    """One sweep over both orphan sources. Returns the counters dict."""
+
+    mozart_es = es_util.get_mozart_es()
+    counters = Counter()
+    reaped_by_version = Counter()
+    by_mechanism = Counter()
+    window = f"since {since}" if since else f"{lookback_days}d"
+
+    candidates = find_candidates(mozart_es, grace_secs, lookback_days, since=since)
+    counters["scanned"] = len(candidates)
+    logging.info(
+        f"Found {len(candidates)} retried attempts to check "
+        f"(grace={grace_secs}s, window={window})"
+    )
+    _reap_retried(mozart_es, candidates, dry_run, counters, reaped_by_version,
+                  by_mechanism)
+
+    redelivered = find_redelivered_candidates(
+        mozart_es, grace_secs, lookback_days, since=since
+    )
+    counters["redelivered_scanned"] = len(redelivered)
+    logging.info(
+        f"Found {len(redelivered)} redelivered executions to check "
+        f"(grace={grace_secs}s, window={window})"
+    )
+    _reap_redelivered(mozart_es, redelivered, dry_run, counters, reaped_by_version,
+                      by_mechanism)
 
     counters["reaped_by_version"] = dict(reaped_by_version)
     counters["by_mechanism"] = dict(by_mechanism)
@@ -335,7 +553,9 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=True, once=F
            allow_expired_redis=False):
     """Sweep forever, jittered like the other mozart watchdogs."""
 
-    check_window_against_redis_ttl(lookback_days, since, not dry_run, allow_expired_redis)
+    check_window_against_redis_ttl(
+        lookback_days, since, not dry_run, allow_expired_redis
+    )
     empty_sweeps = 0
 
     interval_min = interval - int(interval / 4)
@@ -376,7 +596,10 @@ def daemon(interval, grace_secs, lookback_days, since=None, dry_run=True, once=F
 
 
 def build_parser():
-    desc = "Reap job_failed docs superseded by a newer attempt."
+    desc = (
+        "Reap job_failed docs superseded by a newer attempt, or by a "
+        "redelivered re-run of the same task."
+    )
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "-i",

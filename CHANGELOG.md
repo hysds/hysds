@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- HC-651: `scripts/reap_orphaned_job_failed.py` gains a second scan, for the
+  pair celery redelivery leaves behind. A worker shut down mid-job writes
+  `job-failed` and is killed before it acks, so the broker delivers the same
+  task -- same uuid -- to another worker, which runs it to completion; the
+  stale `job_failed` doc then sits beside the `job-completed` doc under one
+  payload_id, and the retried-attempt scan excludes it at four gates (no
+  `retry_count` moved, same uuid, equal counts, and a shared redis key that
+  now reads `job-completed`). The new scan starts from executions carrying
+  `job.delivery_info.redelivered: true` that reached `job-completed`, requires
+  the same uuid, and judges the pair by each execution's own
+  `job_info.time_start` / `time_end`: the re-run must have started after the
+  failed execution ended. It reports `mechanism: redelivered_after_terminal`
+  with basis `time_start`, records both executions' hosts in the event, and
+  accepts `job-completed` for the shared key. Nothing else changes: the same
+  flags, the same opt-in delete, and the same `--since` for a one-time sweep
+  of pairs that already exist. New counters: `redelivered_scanned`,
+  `redelivered_skipped_different_uuid`, `redelivered_skipped_not_later`,
+  `redelivered_skipped_unclassified`, `redelivered_skipped_redis`.
+- HC-652: with `ENABLE_JOB_LOCKING`, a redelivered task whose uuid already
+  reads `job-completed` or `job-deduped` in redis is now deduped before any
+  lock is taken, as the non-locking branch already did. The locking branch
+  never made that check: a finished execution has released its lock, so the
+  redelivery ran again, `publish_datasets` found its own dataset already
+  published (same payload_id and task id), the job failed, and logstash's
+  paired delete then removed the good `job-completed` doc. The dedup returns
+  without writing a status, since a `job-deduped` write would land under the
+  shared `_id` and clobber the completed doc it defers to. A redelivery after
+  `job-failed` still re-runs on purpose.
+
 ## [3.3.3] - 2026-09-02
 
 ### Added

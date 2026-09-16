@@ -1,5 +1,6 @@
 """The reaper deletes job_failed docs a newer attempt superseded."""
 import importlib.util
+import json
 import pathlib
 import sys
 import unittest.mock as umock
@@ -51,9 +52,15 @@ def _candidate(_id="payload-1", uuid="uuid-2", retry_count=1, status="job-comple
     }
 
 
-def _failed_hit(_id="payload-1", uuid="uuid-1", retry_count=None, version=3):
-    """An mget hit for the job_failed doc under the same _id."""
+def _failed_hit(_id="payload-1", uuid="uuid-1", retry_count=None, version=3,
+                time_end="2026-08-29T10:59:00.000000Z", hostname="worker-a"):
+    """An mget hit for the job_failed doc under the same _id.
+
+    job_info.time_end is the failed execution's own end stamp; @timestamp is
+    the write time, a minute later here.
+    """
     job = {} if retry_count is None else {"retry_count": retry_count}
+    job["job_info"] = {"time_end": time_end} if time_end else {}
     return {
         "_id": _id,
         "found": True,
@@ -64,15 +71,54 @@ def _failed_hit(_id="payload-1", uuid="uuid-1", retry_count=None, version=3):
             "uuid": uuid,
             "status": "job-failed",
             "@timestamp": "2026-08-29T11:00:00.000Z",
+            "celery_hostname": hostname,
             "job": job,
         },
     }
 
 
-def _wire(monkeypatch, candidates, failed_docs, delete_result=None, redis_status=None):
-    """Wire the reaper's collaborators; returns the mock mozart client."""
+def _redelivered(_id="payload-1", uuid="uuid-1", status="job-completed",
+                 time_start="2026-08-29T11:05:00.000000Z", hostname="worker-b",
+                 retry_count=None):
+    """A redelivered execution's doc in a dated index -- the second scan's
+    starting point. Its uuid is the failed doc's own; what makes it a later
+    execution is its time_start, stamped when the re-run began."""
+    job = {
+        "delivery_info": {"redelivered": True},
+        "job_info": {"time_start": time_start} if time_start else {},
+    }
+    if retry_count is not None:
+        job["retry_count"] = retry_count
+    return {
+        "_id": _id,
+        "_index": "job_status-2026.08.29",
+        "_source": {
+            "payload_id": _id,
+            "uuid": uuid,
+            "status": status,
+            "@timestamp": "2026-08-29T12:00:00.000Z",
+            "celery_hostname": hostname,
+            "job": job,
+        },
+    }
+
+
+def _route(candidates, redelivered):
+    """A query stub that answers each scan with its own list."""
+    def query(index=None, body=None, **kwargs):
+        return list(redelivered) if "redelivered" in json.dumps(body) else candidates
+    return query
+
+
+def _wire(monkeypatch, candidates, failed_docs, delete_result=None, redis_status=None,
+          redelivered=()):
+    """Wire the reaper's collaborators; returns the mock mozart client.
+
+    `candidates` answers the retried-attempt scan, `redelivered` the
+    redelivered-execution scan; the mget answers both with `failed_docs`.
+    """
     es = umock.MagicMock()
-    es.query.return_value = candidates
+    es.query.side_effect = _route(candidates, redelivered)
     es.es.mget.return_value = {"docs": failed_docs}
     es.delete_by_id.return_value = (
         delete_result if delete_result is not None else {"result": "deleted"}
@@ -125,7 +171,9 @@ def test_no_failed_doc_is_left_alone(monkeypatch):
 
 
 def test_same_uuid_sibling_is_not_an_orphan(monkeypatch):
-    """The same attempt visible in both homes mid-move."""
+    """One uuid in both homes is not the retried-attempt scan's to judge:
+    mid-move it is one execution, after a redelivery it is two. The
+    redelivered scan (below) tells those apart; this scan steps aside."""
     es = _wire(monkeypatch, [_candidate(uuid="uuid-1")], [_failed_hit(uuid="uuid-1")])
 
     counters = reaper.reap_orphans()
@@ -250,7 +298,7 @@ def test_candidates_are_paged_through_mget_in_order(monkeypatch):
     hits = [_failed_hit(_id=f"payload-{i}") for i in range(total)]
 
     es = umock.MagicMock()
-    es.query.return_value = candidates
+    es.query.side_effect = _route(candidates, [])
     es.es.mget.side_effect = [
         {"docs": hits[: reaper.PAGE_SIZE]},
         {"docs": hits[reaper.PAGE_SIZE :]},
@@ -433,3 +481,236 @@ def test_cli_defaults_are_the_shipped_block_and_do_not_delete():
     assert args.delete_orphans is False
     assert args.once is False and args.since is None
     assert reaper.build_parser().parse_args(["--delete-orphans"]).delete_orphans is True
+
+
+# --------------------------------------------------------------------------
+# celery redelivery: one uuid executed twice
+# --------------------------------------------------------------------------
+
+def test_a_redelivered_later_execution_is_reaped(monkeypatch):
+    """The re-run started after the failed execution ended, and redis --
+    one key for both executions, overwritten by the later one -- reads
+    job-completed."""
+    es = _wire(monkeypatch, [], [_failed_hit()], redis_status="job-completed",
+               redelivered=[_redelivered()])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["reaped"] == 1
+    assert counters["redelivered_scanned"] == 1
+    assert counters["by_mechanism"] == {"redelivered_after_terminal": 1}
+    es.delete_by_id.assert_called_once_with(
+        index="job_failed",
+        id="payload-1",
+        if_seq_no=42,
+        if_primary_term=7,
+        ignore=[404, 409],
+    )
+    args, kwargs = reaper.log_custom_event.call_args
+    event = args[2]
+    assert event["orphan_uuid"] == event["newer_uuid"] == "uuid-1"
+    assert event["mechanism"] == "redelivered_after_terminal"
+    assert event["mechanism_basis"] == "time_start"
+    assert (event["orphan_host"], event["newer_host"]) == ("worker-a", "worker-b")
+    assert event["orphan_time_end"] == "2026-08-29T10:59:00.000000Z"
+    assert event["newer_time_start"] == "2026-08-29T11:05:00.000000Z"
+    assert "mechanism:redelivered_after_terminal" in kwargs["tags"]
+    assert "basis:time_start" in kwargs["tags"]
+    assert "reaped" in kwargs["tags"]
+
+
+def test_the_redelivered_scan_asks_for_finished_executions_only(monkeypatch):
+    """The flag run_job stores from the broker, mapped boolean by the
+    job_status template, is the whole candidate filter."""
+    es = _wire(monkeypatch, [], [])
+
+    reaper.reap_orphans(grace_secs=120, lookback_days=2)
+
+    kwargs = es.query.call_args_list[1].kwargs
+    assert kwargs["index"] == "job_status-2*"
+    flt = kwargs["body"]["query"]["bool"]["filter"]
+    assert {"term": {"job.delivery_info.redelivered": True}} in flt
+    assert {"term": {"status": "job-completed"}} in flt
+    assert {"range": {"@timestamp": {"gte": "now-2d", "lte": "now-120s"}}} in flt
+
+
+def test_the_redelivered_scan_requires_the_same_uuid(monkeypatch):
+    """A different uuid under the payload is a retry.py resubmission; the
+    retried-attempt scan judges those by retry_count."""
+    es = _wire(monkeypatch, [], [_failed_hit(uuid="uuid-1")],
+               redelivered=[_redelivered(uuid="uuid-2")])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["redelivered_skipped_different_uuid"] == 1
+    es.delete_by_id.assert_not_called()
+
+
+def test_the_same_execution_in_both_homes_is_not_reaped(monkeypatch):
+    """Mid-move, or a job-offline a supervisory writer put over the same
+    execution: the dated doc's time_start is the failed execution's own,
+    so it is not later than that execution's end."""
+    es = _wire(monkeypatch, [], [_failed_hit(time_end="2026-08-29T10:59:00Z")],
+               redelivered=[_redelivered(time_start="2026-08-29T10:30:00Z")])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["redelivered_skipped_not_later"] == 1
+    es.delete_by_id.assert_not_called()
+
+
+def test_a_doc_without_a_start_stamp_is_left_alone(monkeypatch):
+    """The locking branch writes job-deduped before time_start is set."""
+    es = _wire(monkeypatch, [], [_failed_hit()],
+               redelivered=[_redelivered(time_start=None)])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["redelivered_skipped_unclassified"] == 1
+    es.delete_by_id.assert_not_called()
+
+
+@pytest.mark.parametrize("redis_status", ["job-started", "job-failed", "job-offline"])
+def test_a_shared_key_that_is_not_job_completed_blocks_the_reap(
+    monkeypatch, redis_status
+):
+    """job-started means a further execution is under way; job-failed means
+    one already failed and its own doc has replaced the one being judged."""
+    es = _wire(monkeypatch, [], [_failed_hit()], redis_status=redis_status,
+               redelivered=[_redelivered()])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["redelivered_skipped_redis"] == 1
+    es.delete_by_id.assert_not_called()
+
+
+def test_an_expired_shared_key_still_allows_the_reap(monkeypatch):
+    _wire(monkeypatch, [], [_failed_hit()], redis_status=None,
+          redelivered=[_redelivered()])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["reaped"] == 1
+    assert counters["redis_expired"] == 1
+
+
+def test_a_redelivered_dry_run_reports_without_deleting(monkeypatch):
+    es = _wire(monkeypatch, [], [_failed_hit()], redis_status="job-completed",
+               redelivered=[_redelivered()])
+
+    counters = reaper.reap_orphans(dry_run=True)
+
+    assert counters["would_reap"] == 1
+    assert counters["reaped"] == 0
+    es.delete_by_id.assert_not_called()
+    assert "dry_run" in reaper.log_custom_event.call_args.kwargs["tags"]
+
+
+def test_a_retried_attempt_that_was_then_redelivered_is_reaped(monkeypatch):
+    """The retried attempt carries retry_count, so the retried-attempt scan
+    sees the pair first and steps aside (same uuid); the redelivered scan
+    then judges it by the stamps."""
+    es = _wire(monkeypatch,
+               [_candidate(uuid="uuid-1", retry_count=1)],
+               [_failed_hit(uuid="uuid-1", retry_count=1)],
+               redis_status="job-completed",
+               redelivered=[_redelivered(uuid="uuid-1", retry_count=1)])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["skipped_same_uuid"] == 1
+    assert counters["reaped"] == 1
+    assert es.delete_by_id.call_count == 1
+
+
+def test_both_scans_run_in_one_sweep(monkeypatch):
+    """A retry orphan and a redelivery orphan in one sweep are each judged
+    by their own scan and both counted."""
+    es = _wire(
+        monkeypatch,
+        [_candidate(_id="r", uuid="new-r")],
+        [_failed_hit(_id="r", uuid="old-r"), _failed_hit(_id="d", uuid="same-d")],
+        redis_status=None,
+        redelivered=[_redelivered(_id="d", uuid="same-d")],
+    )
+
+    counters = reaper.reap_orphans()
+
+    assert counters["scanned"] == 1
+    assert counters["redelivered_scanned"] == 1
+    assert counters["reaped"] == 2
+    assert set(counters["by_mechanism"]) == {
+        "written_before_retry_queued", "redelivered_after_terminal"
+    }
+    assert {c.kwargs["id"] for c in es.delete_by_id.call_args_list} == {"r", "d"}
+
+
+def test_classify_redelivered_by_start_and_end_stamps():
+    orphan = _failed_hit(time_end="2026-08-29T11:00:00Z")
+    later = _redelivered(time_start="2026-08-29T11:00:01Z")["_source"]
+    same = _redelivered(time_start="2026-08-29T10:00:00Z")["_source"]
+    assert reaper.classify_redelivered(orphan, later) == (
+        "redelivered_after_terminal", "time_start"
+    )
+    assert reaper.classify_redelivered(orphan, same) == (
+        "same_or_earlier_execution", "time_start"
+    )
+
+
+def test_classify_redelivered_falls_back_to_the_write_time():
+    """No time_end on the failed doc: its @timestamp is stamped at write
+    time, so it is never earlier than the end it stands in for."""
+    orphan = _failed_hit(time_end=None)                      # @timestamp 11:00
+    later = _redelivered(time_start="2026-08-29T11:30:00Z")["_source"]
+    earlier = _redelivered(time_start="2026-08-29T10:59:00Z")["_source"]
+    assert reaper.classify_redelivered(orphan, later)[0] == "redelivered_after_terminal"
+    assert (
+        reaper.classify_redelivered(orphan, earlier)[0] == "same_or_earlier_execution"
+    )
+
+
+def test_classify_redelivered_with_nothing_to_compare_is_unknown():
+    assert reaper.classify_redelivered({"_source": {}}, _redelivered()["_source"]) == (
+        "unknown", "none"
+    )
+    assert reaper.classify_redelivered(
+        _failed_hit(), _redelivered(time_start=None)["_source"]
+    ) == ("unknown", "none")
+
+
+def test_classify_redelivered_reads_a_naive_stamp_as_utc():
+    orphan = _failed_hit(time_end="2026-08-29T11:00:00")     # no zone designator
+    later = _redelivered(time_start="2026-08-29T11:00:01Z")["_source"]
+    assert reaper.classify_redelivered(orphan, later)[0] == "redelivered_after_terminal"
+
+
+def test_a_failed_doc_that_is_the_later_execution_is_never_deleted(monkeypatch):
+    """The gate refuses rather than tags. A failed doc that postdates the
+    completed doc can be the last trace of a completed job whose re-run then
+    failed: in that variant logstash's paired delete has already removed the
+    completed doc, so deleting the failed one would erase the victim. (Here a
+    completed doc is still present, which is what makes the case reachable
+    at all; the verdict must not depend on that.)"""
+    es = _wire(monkeypatch, [], [_failed_hit(time_end="2026-08-29T11:40:00Z")],
+               redis_status="job-completed",
+               redelivered=[_redelivered(time_start="2026-08-29T11:05:00Z")])
+
+    counters = reaper.reap_orphans()
+
+    assert counters["redelivered_skipped_not_later"] == 1
+    assert counters["reaped"] == 0
+    es.delete_by_id.assert_not_called()
+    reaper.log_custom_event.assert_not_called()
+
+
+def test_classify_redelivered_equal_stamps_is_not_later():
+    """The gate is strictly later: a re-run stamped at the same instant the
+    failed execution ended is not provably a different execution, so it is
+    never reaped. Clock skew between workers can only turn a real re-run into
+    this case, which errs toward keeping the failed doc."""
+    orphan = _failed_hit(time_end="2026-08-29T11:00:00Z")
+    same = _redelivered(time_start="2026-08-29T11:00:00Z")["_source"]
+    assert reaper.classify_redelivered(orphan, same) == (
+        "same_or_earlier_execution", "time_start"
+    )
