@@ -4,6 +4,11 @@ The hard time limit SIGKILLs the child that would have stopped the job's
 containers and written .done. These tests pin the main-process side: where a
 job dir is found, when it is marked done, that containers go first, and which
 celery signals get there.
+
+A teardown must touch only the execution that ended. A retry keeps the job
+id, a redelivery keeps the task id too, and a host running several workers on
+one queue (NISAR's GPU hosts) can have another execution of the same task live
+in a sibling dir.
 """
 
 import ast
@@ -30,14 +35,25 @@ class JobDirs:
     def cleanup(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def job(self, job_id="job-1", minute="25", task_id="t1", running=True, done=False):
+    def job(
+        self,
+        job_id="job-1",
+        minute="25",
+        task_id="t1",
+        running=True,
+        done=False,
+        owner=None,
+    ):
+        """owner: the worker node name run_job writes on .running's second
+        line; None writes the one-line .running of older releases."""
         d = os.path.join(self.root, "jobs", "2026", "08", "17", "21", minute, job_id)
         os.makedirs(d)
         if task_id is not None:
             with open(os.path.join(d, "_job.json"), "w") as f:
                 json.dump({"task_id": task_id, "job_info": {"time_limit": 100}}, f)
         if running:
-            open(os.path.join(d, ".running"), "w").write("2026-08-17T21:25:41Z\n")
+            body = "2026-08-17T21:25:41Z\n" + (f"{owner}\n" if owner else "")
+            open(os.path.join(d, ".running"), "w").write(body)
         if done:
             open(os.path.join(d, ".done"), "w").write("2026-08-17T22:25:41Z\n")
         return d
@@ -67,6 +83,22 @@ class TestFindJobDirs(unittest.TestCase):
         """A job dir holds a PGE's whole output tree; the old os.walk descended
         into every one of them before reaching the next sibling."""
         self.assertNotIn("os.walk", inspect.getsource(jw.find_job_dirs))
+
+
+class TestJobDirOwner(unittest.TestCase):
+    def setUp(self):
+        self.dirs = JobDirs()
+        self.addCleanup(self.dirs.cleanup)
+
+    def test_the_owner_is_the_second_line_of_running(self):
+        d = self.dirs.job(owner="celery@gpu-1.10.0.0.1")
+        self.assertEqual(jw.job_dir_owner(d), "celery@gpu-1.10.0.0.1")
+
+    def test_a_one_line_running_from_an_older_release_has_no_owner(self):
+        self.assertIsNone(jw.job_dir_owner(self.dirs.job(owner=None)))
+
+    def test_no_running_has_no_owner(self):
+        self.assertIsNone(jw.job_dir_owner(self.dirs.job(running=False)))
 
 
 class TestMarkJobDone(unittest.TestCase):
@@ -109,9 +141,7 @@ class TestTeardownJob(unittest.TestCase):
         d = self.dirs.job(task_id="t1")
         finished = jw.teardown_job(self.dirs.root, "job-1", task_id="t1")
         self.assertEqual(finished, [d])
-        self.engine.kill_job_containers.assert_called_once_with(
-            d, job_id="job-1", task_id="t1"
-        )
+        self.engine.kill_job_containers.assert_called_once_with(d)
         self.assertTrue(os.path.exists(os.path.join(d, ".done")))
         self.assertFalse(os.path.exists(os.path.join(d, ".running")))
 
@@ -120,7 +150,7 @@ class TestTeardownJob(unittest.TestCase):
         by then, so order matters."""
         d = self.dirs.job(task_id="t1")
 
-        def kill(job_dir, job_id=None, task_id=None):
+        def kill(job_dir):
             self.assertFalse(os.path.exists(os.path.join(job_dir, ".done")))
             return []
 
@@ -169,6 +199,50 @@ class TestTeardownJob(unittest.TestCase):
         self.assertEqual(jw.teardown_job(self.dirs.root, "job-1"), [d])
         self.assertTrue(os.path.exists(os.path.join(d, ".done")))
 
+    def test_a_sibling_workers_execution_of_the_same_task_is_left_alone(self):
+        """NISAR GPU hosts run several workers on one queue. A redelivery that
+        dedup misses runs the same task (same job id, same task id) beside the
+        original; the main process of one must not finish the other's dir."""
+        ours = self.dirs.job(minute="25", owner="celery@gpu-0.h")
+        theirs = self.dirs.job(minute="31", owner="celery@gpu-1.h")
+        finished = jw.teardown_job(
+            self.dirs.root, "job-1", task_id="t1", hostname="celery@gpu-0.h"
+        )
+        self.assertEqual(finished, [ours])
+        self.engine.kill_job_containers.assert_called_once_with(ours)
+        self.assertTrue(os.path.exists(os.path.join(theirs, ".running")))
+        self.assertFalse(os.path.exists(os.path.join(theirs, ".done")))
+
+    def test_a_dir_without_an_owner_is_still_finished(self):
+        """A one-line .running (older release) or none at all: no owner to
+        compare, so the task id decides, as before."""
+        a = self.dirs.job(minute="25", owner=None)
+        b = self.dirs.job(minute="31", running=False)
+        self.assertEqual(
+            jw.teardown_job(self.dirs.root, "job-1", task_id="t1", hostname="w"),
+            [a, b],
+        )
+
+    def test_a_known_job_dir_is_the_only_dir(self):
+        """The child knows its own dir; nothing else of the job is touched,
+        whoever owns it."""
+        ours = self.dirs.job(minute="25")
+        other = self.dirs.job(minute="31")
+        finished = jw.teardown_job(self.dirs.root, "job-1", task_id="t1", job_dir=ours)
+        self.assertEqual(finished, [ours])
+        self.assertFalse(os.path.exists(os.path.join(other, ".done")))
+
+    def test_a_known_job_dir_that_is_done_is_a_no_op(self):
+        d = self.dirs.job(running=False, done=True)
+        self.assertEqual(jw.teardown_job(self.dirs.root, "job-1", job_dir=d), [])
+        self.engine.kill_job_containers.assert_not_called()
+
+    def test_a_known_job_dir_that_is_gone_is_a_no_op(self):
+        self.assertEqual(
+            jw.teardown_job(self.dirs.root, "job-1", job_dir=self.dirs.root + "/x"),
+            [],
+        )
+
     def test_the_old_name_still_marks_done_without_touching_containers(self):
         d = self.dirs.job()
         jw.set_revoked_job_done(self.dirs.root, "job-1")
@@ -187,24 +261,23 @@ class TestKillJobContainersHelper(unittest.TestCase):
                 "podman" if k == "CONTAINER_ENGINE" else d
             )
             try:
-                self.assertEqual(jw.kill_job_containers("/j", "job-1", "t1"), ["abc"])
+                self.assertEqual(jw.kill_job_containers("/j"), ["abc"])
             finally:
                 jw.app.conf.get.side_effect = None
         f.assert_called_once_with("podman")
-        engine.kill_job_containers.assert_called_once_with(
-            "/j", job_id="job-1", task_id="t1"
-        )
+        engine.kill_job_containers.assert_called_once_with("/j")
 
     def test_never_raises(self):
         with umock.patch.object(
             jw, "container_engine_factory", side_effect=ValueError("x")
         ):
-            self.assertEqual(jw.kill_job_containers("/j", "job-1", "t1"), [])
+            self.assertEqual(jw.kill_job_containers("/j"), [])
 
 
 class TestSignalHandlers(unittest.TestCase):
     def setUp(self):
         self.teardown = umock.patch.object(jw, "teardown_job", return_value=[]).start()
+        umock.patch.object(jw, "WORKER_HOSTNAME", "celery@gpu-0.h").start()
         self.addCleanup(umock.patch.stopall)
         jw.app.conf.ROOT_WORK_DIR = "/data/work"
 
@@ -220,9 +293,10 @@ class TestSignalHandlers(unittest.TestCase):
             },
         }
 
-    def test_task_failure_tears_the_job_down(self):
+    def test_task_failure_in_the_main_process_goes_by_owner(self):
         """celery sends this from the main process for TimeLimitExceeded and a
-        lost child; the child itself can no longer write .done."""
+        lost child. Its copy of the message has no job dir, so the teardown
+        is scoped to dirs this worker owns."""
         jw.task_failure_handler(
             sender=jw.run_job,
             task_id="t1",
@@ -230,7 +304,35 @@ class TestSignalHandlers(unittest.TestCase):
             args=[self.job()],
             kwargs={},
         )
-        self.teardown.assert_called_once_with("/data/work", "job-1", task_id="t1")
+        self.teardown.assert_called_once_with(
+            "/data/work",
+            "job-1",
+            task_id="t1",
+            hostname="celery@gpu-0.h",
+            job_dir=None,
+        )
+
+    def test_task_failure_in_the_process_that_ran_the_job_uses_its_dir(self):
+        """The pool child (or a solo-pool worker) recorded the dir when it
+        created it, so the teardown is exactly that dir."""
+        d = "/data/work/jobs/2026/08/17/21/25/job-1"
+        with umock.patch.dict(jw.CURRENT_EXECUTION, {"task_id": "t1", "job_dir": d}):
+            jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=[self.job()])
+        self.assertEqual(self.teardown.call_args.kwargs["job_dir"], d)
+
+    def test_a_job_dir_in_the_message_is_not_trusted(self):
+        """A job doc resubmitted from its status doc can carry the previous
+        attempt's job_info.job_dir."""
+        job = self.job()
+        job["job_info"]["job_dir"] = "/data/work/jobs/2026/08/16/10/00/job-1"
+        jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=[job])
+        self.assertIsNone(self.teardown.call_args.kwargs["job_dir"])
+
+    def test_the_record_of_another_execution_is_not_used(self):
+        stale = {"task_id": "t0", "job_dir": "/data/work/jobs/old/job-1"}
+        with umock.patch.dict(jw.CURRENT_EXECUTION, stale):
+            jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=[self.job()])
+        self.assertIsNone(self.teardown.call_args.kwargs["job_dir"])
 
     def test_task_failure_without_a_job_payload_is_ignored(self):
         jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=None)
@@ -245,10 +347,17 @@ class TestSignalHandlers(unittest.TestCase):
         jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=[self.job()])
 
     def test_the_signals_are_connected_to_run_job(self):
-        from celery.signals import task_failure, task_revoked
+        from celery.signals import celeryd_init, task_failure, task_revoked
 
         self.assertTrue(task_failure.has_listeners(jw.run_job))
         self.assertTrue(task_revoked.has_listeners(jw.run_job))
+        self.assertTrue(celeryd_init.has_listeners())
+
+    def test_the_node_name_is_recorded_at_startup(self):
+        """celery imports task modules before it sends celeryd_init, whose
+        sender is the node name; task_failure does not carry it."""
+        jw.record_worker_hostname(sender="celery@gpu-3.h", instance=None)
+        self.assertEqual(jw.WORKER_HOSTNAME, "celery@gpu-3.h")
 
     def test_revoke_tears_the_job_down_for_its_own_task(self):
         umock.patch.object(jw, "log_job_status").start()
@@ -257,7 +366,9 @@ class TestSignalHandlers(unittest.TestCase):
         request.args = [self.job()]
         request.hostname = "celery@worker-1"
         jw.task_revoked_handler(sender=jw.run_job, request=request, signum=15)
-        self.teardown.assert_called_once_with("/data/work", "job-1", task_id="t1")
+        self.teardown.assert_called_once_with(
+            "/data/work", "job-1", task_id="t1", hostname="celery@worker-1"
+        )
 
 
 def run_job_source():
@@ -277,7 +388,7 @@ class TestRunJobFailurePath(unittest.TestCase):
     redis, engine and celery surface, so this is pinned at the source level
     like the other run_job invariants in test_job_worker.py."""
 
-    KILL = 'kill_job_containers(job_dir, job_id, job["task_id"])'
+    KILL = "kill_job_containers(job_dir)"
 
     def test_kill_runs_after_the_soft_limit_signal_and_before_the_close_out(self):
         src = run_job_source()
@@ -291,10 +402,33 @@ class TestRunJobFailurePath(unittest.TestCase):
         kill = src.index(self.KILL)
         self.assertIn("if cmd_start is not None:", src[kill - 200 : kill])
 
-    def test_the_job_containers_are_labelled(self):
+    def test_the_job_containers_are_labelled_with_their_job_dir(self):
         src = run_job_source()
-        self.assertIn('JOB_ID_LABEL: job_id, TASK_ID_LABEL: job["task_id"]', src)
+        self.assertIn("JOB_DIR_LABEL: job_dir,", src)
+        self.assertIn("JOB_ID_LABEL: job_id,", src)
         self.assertEqual(src.count("labels=container_labels"), 2)
+
+    def test_the_current_execution_is_recorded_once_its_dir_exists(self):
+        src = run_job_source()
+        clear = src.index("CURRENT_EXECUTION.clear()")
+        made = src.index("makedirs(job_dir)")
+        record = src.index(
+            'CURRENT_EXECUTION.update(task_id=job["task_id"], job_dir=job_dir)'
+        )
+        self.assertLess(clear, made)
+        self.assertLess(made, record)
+        self.assertLess(
+            record, src.index('job_running_file = os.path.join(job_dir, ".running")')
+        )
+
+    def test_running_records_the_owning_worker(self):
+        """The main process tells its own dirs from a sibling worker's by
+        this line."""
+        src = run_job_source()
+        running = src.index('job_running_file = os.path.join(job_dir, ".running")')
+        owner = src.index('f.write(f"{run_job.request.hostname}\\n")')
+        self.assertLess(running, owner)
+        self.assertLess(owner, src.index("# get job's .done file"))
 
 
 if __name__ == "__main__":

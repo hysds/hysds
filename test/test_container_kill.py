@@ -3,6 +3,10 @@
 A revoke or the hard time limit only ever reaches the celery pool child; the
 job's containers live on the host daemon. These tests pin how they are found
 and stopped afterwards, against fake engine CLI output.
+
+Matching is per execution (job dir), not per job or task: a redelivered task
+keeps its job and task ids, and a host running several workers on one queue
+(NISAR's GPU hosts) can run two executions of the same task side by side.
 """
 
 import json
@@ -17,7 +21,16 @@ sys.modules.setdefault("hysds.celery", umock.MagicMock())
 from hysds.containers import base  # noqa: E402
 
 JOB_DIR = "/data/work/jobs/2026/08/17/21/25/job-WF-SCIFLO_L3_DISP_S1-frame-10855"
+SIBLING_DIR = "/data/work/jobs/2026/08/17/21/31/job-WF-SCIFLO_L3_DISP_S1-frame-10855"
 OTHER_JOB_DIR = "/data/work/jobs/2026/08/17/21/25/job-WF-SCIFLO_L3_DISP_S1-frame-3061"
+
+
+def labels(job_dir, job_id="job-a", task_id="t1"):
+    return {
+        base.JOB_ID_LABEL: job_id,
+        base.TASK_ID_LABEL: task_id,
+        base.JOB_DIR_LABEL: job_dir,
+    }
 
 
 def record(cid, status="running", labels=None, workdir="/", mounts=(), image="img"):
@@ -65,33 +78,50 @@ class TestFindJobContainers(unittest.TestCase):
 
         self.engine = Docker()
 
-    def find(self, records, **kwargs):
+    def find(self, records, job_dir=JOB_DIR):
         self.engine.run_cli = FakeCli(records)
-        return [c["Id"] for c in self.engine.find_job_containers(JOB_DIR, **kwargs)]
+        return [c["Id"] for c in self.engine.find_job_containers(job_dir)]
 
-    def test_the_job_container_is_found_by_its_labels(self):
+    def test_the_job_container_is_found_by_its_job_dir_label(self):
+        found = self.find(
+            [record("pcm", labels=labels(JOB_DIR), mounts=["/data/work/jobs"])]
+        )
+        self.assertEqual(found, ["pcm"])
+
+    def test_the_label_is_compared_as_a_path(self):
+        found = self.find([record("pcm", labels=labels(JOB_DIR + "/"))])
+        self.assertEqual(found, ["pcm"])
+
+    def test_a_sibling_execution_of_the_same_task_is_left_alone(self):
+        """A redelivery keeps the job and task ids. On a host with several
+        workers on one queue both executions can be live; tearing one down
+        must not stop the other's containers."""
         found = self.find(
             [
+                record("ours", labels=labels(JOB_DIR)),
+                record("sibling", labels=labels(SIBLING_DIR)),
                 record(
-                    "pcm",
-                    labels={base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "t1"},
-                    mounts=["/data/work/jobs"],
-                )
-            ],
-            job_id="job-a",
-            task_id="t1",
+                    "sibling-pge", workdir="/home/conda", mounts=[SIBLING_DIR + "/out"]
+                ),
+            ]
         )
-        self.assertEqual(found, ["pcm"])
+        self.assertEqual(found, ["ours"])
 
-    def test_the_job_container_is_found_by_its_working_dir(self):
-        """Older workers stamp no labels; the job container still has -w job_dir."""
+    def test_the_label_decides_over_the_mounts(self):
+        """A labelled container belongs to the dir on its label, whatever it
+        mounts."""
         found = self.find(
-            [record("pcm", workdir=JOB_DIR, mounts=["/data/work/jobs"])],
-            job_id="job-a",
+            [record("odd", labels=labels(SIBLING_DIR), mounts=[JOB_DIR + "/x"])]
         )
+        self.assertEqual(found, [])
+
+    def test_an_unlabelled_job_container_is_found_by_its_working_dir(self):
+        """Workers before this change stamp no labels; the job container still
+        has -w job_dir."""
+        found = self.find([record("pcm", workdir=JOB_DIR, mounts=["/data/work/jobs"])])
         self.assertEqual(found, ["pcm"])
 
-    def test_a_pge_container_is_found_by_the_job_dir_it_mounts(self):
+    def test_an_unlabelled_pge_container_is_found_by_the_job_dir_it_mounts(self):
         """The PGE wrapper launches its own container through the engine socket
         with subdirs of the job dir mounted and no labels."""
         found = self.find(
@@ -113,12 +143,11 @@ class TestFindJobContainers(unittest.TestCase):
                 record("verdi", mounts=["/data/work/jobs", "/data/work/cache"]),
                 record("sdswatch", mounts=["/data/work/jobs"]),
                 record("registry", mounts=[]),
-            ],
-            job_id="job-a",
+            ]
         )
         self.assertEqual(found, [])
 
-    def test_a_sibling_job_dir_does_not_match(self):
+    def test_another_jobs_dir_does_not_match(self):
         found = self.find(
             [record("other", workdir=OTHER_JOB_DIR, mounts=[OTHER_JOB_DIR + "/x"])]
         )
@@ -127,36 +156,6 @@ class TestFindJobContainers(unittest.TestCase):
     def test_a_dir_whose_name_extends_the_job_dir_does_not_match(self):
         found = self.find([record("other", mounts=[JOB_DIR + "-2/pge_output_dir"])])
         self.assertEqual(found, [])
-
-    def test_another_attempt_of_the_same_job_is_left_alone(self):
-        """A late signal for an old attempt must not stop a live retry."""
-        found = self.find(
-            [
-                record(
-                    "retry",
-                    labels={base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "t2"},
-                    mounts=[JOB_DIR + "/pge_output_dir"],
-                ),
-                record(
-                    "old",
-                    labels={base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "t1"},
-                ),
-            ],
-            job_id="job-a",
-            task_id="t1",
-        )
-        self.assertEqual(found, ["old"])
-
-    def test_without_a_task_id_the_job_label_is_enough(self):
-        found = self.find(
-            [
-                record(
-                    "c", labels={base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "t9"}
-                )
-            ],
-            job_id="job-a",
-        )
-        self.assertEqual(found, ["c"])
 
     def test_containers_without_a_process_are_skipped(self):
         found = self.find(
@@ -188,15 +187,16 @@ class TestKillJobContainers(unittest.TestCase):
     def test_stop_then_kill_only_the_survivors(self):
         cli = FakeCli(
             [
-                record("pcm", workdir=JOB_DIR),
+                record("pcm", labels=labels(JOB_DIR)),
                 record("pge", mounts=[JOB_DIR + "/pge_output_dir"]),
+                record("sibling", labels=labels(SIBLING_DIR)),
                 record("verdi", mounts=["/data/work/jobs"]),
             ],
             survive_stop={"pge"},
         )
         self.engine.run_cli = cli
 
-        stopped = self.engine.kill_job_containers(JOB_DIR, job_id="job-a", grace=7)
+        stopped = self.engine.kill_job_containers(JOB_DIR, grace=7)
 
         self.assertEqual(sorted(stopped), ["pcm", "pge"])
         verbs = [c[0] for c in cli.calls]
@@ -207,6 +207,7 @@ class TestKillJobContainers(unittest.TestCase):
         kill = next(c for c in cli.calls if c[0] == "kill")
         self.assertEqual(kill, ["kill", "pge"])
         self.assertEqual(cli.records["verdi"]["State"]["Status"], "running")
+        self.assertEqual(cli.records["sibling"]["State"]["Status"], "running")
 
     def test_nothing_running_means_no_stop_call(self):
         cli = FakeCli([record("verdi", mounts=["/data/work/jobs"])])
@@ -277,15 +278,14 @@ class TestContainerLabels(unittest.TestCase):
     def test_docker_run_carries_the_labels(self):
         from hysds.containers.docker import Docker
 
-        cmd = Docker().create_base_cmd(
-            self.params({base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "t1"})
-        )
+        cmd = Docker().create_base_cmd(self.params(labels(JOB_DIR)))
         self.assertEqual(
             cmd[:6], ["docker", "run", "--init", "--rm", "-u", "1000:1000"]
         )
-        self.assertIn("--label", cmd)
+        self.assertEqual(cmd.count("--label"), 3)
         self.assertIn(f"{base.JOB_ID_LABEL}=job-a", cmd)
         self.assertIn(f"{base.TASK_ID_LABEL}=t1", cmd)
+        self.assertIn(f"{base.JOB_DIR_LABEL}={JOB_DIR}", cmd)
         self.assertLess(cmd.index("--label"), cmd.index("-v"))
         self.assertEqual(cmd[-3:], ["-w", JOB_DIR, "pcm:1"])
 
@@ -294,9 +294,11 @@ class TestContainerLabels(unittest.TestCase):
             app.conf.get.side_effect = lambda k, d=None: d
             from hysds.containers.podman import Podman
 
-            cmd = Podman().create_base_cmd(self.params({base.JOB_ID_LABEL: "job-a"}))
+            cmd = Podman().create_base_cmd(self.params({base.JOB_DIR_LABEL: JOB_DIR}))
         self.assertIn("--label", cmd)
-        self.assertEqual(cmd[cmd.index("--label") + 1], f"{base.JOB_ID_LABEL}=job-a")
+        self.assertEqual(
+            cmd[cmd.index("--label") + 1], f"{base.JOB_DIR_LABEL}={JOB_DIR}"
+        )
         self.assertLess(cmd.index("--label"), cmd.index("-v"))
 
     def test_params_without_labels_still_build(self):
@@ -307,14 +309,14 @@ class TestContainerLabels(unittest.TestCase):
         cmd = Docker().create_base_cmd(params)
         self.assertNotIn("--label", cmd)
 
+    def conf_get(self, k, d=None):
+        return {"K8S": 0, "CACHE_READ_ONLY": True}.get(k, d)
+
     def test_create_container_params_records_the_labels(self):
         from hysds.containers.docker import Docker
 
         with umock.patch.object(base, "app") as app:
-            app.conf.get.side_effect = lambda k, d=None: {
-                "K8S": 0,
-                "CACHE_READ_ONLY": True,
-            }.get(k, d)
+            app.conf.get.side_effect = self.conf_get
             app.conf.__file__ = "/home/ops/verdi/etc/celeryconfig.py"
             app.conf.WORKER_MOUNT_BLACKLIST = []
             params = Docker().create_container_params(
@@ -323,20 +325,17 @@ class TestContainerLabels(unittest.TestCase):
                 {},
                 "/data/work",
                 JOB_DIR,
-                labels={base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: 42},
+                labels={base.JOB_DIR_LABEL: JOB_DIR, base.TASK_ID_LABEL: 42},
             )
         self.assertEqual(
-            params["labels"], {base.JOB_ID_LABEL: "job-a", base.TASK_ID_LABEL: "42"}
+            params["labels"], {base.JOB_DIR_LABEL: JOB_DIR, base.TASK_ID_LABEL: "42"}
         )
 
     def test_create_container_params_defaults_to_no_labels(self):
         from hysds.containers.docker import Docker
 
         with umock.patch.object(base, "app") as app:
-            app.conf.get.side_effect = lambda k, d=None: {
-                "K8S": 0,
-                "CACHE_READ_ONLY": True,
-            }.get(k, d)
+            app.conf.get.side_effect = self.conf_get
             app.conf.__file__ = "/home/ops/verdi/etc/celeryconfig.py"
             app.conf.WORKER_MOUNT_BLACKLIST = []
             params = Docker().create_container_params(

@@ -26,8 +26,14 @@ from hysds.utils import datetime_iso_naive
 # start their own containers (a PGE through the engine socket) get the same
 # labels in _docker_params.json and may pass them on; those that do not are
 # still found by the job dir they mount.
+#
+# The job dir label is what matching uses: it identifies one execution. The
+# job and task ids do not -- a redelivered task keeps both, and on a host that
+# runs several workers on one queue two executions of the same task can run
+# side by side, each with its own job dir.
 JOB_ID_LABEL = "hysds.job_id"
 TASK_ID_LABEL = "hysds.task_id"
+JOB_DIR_LABEL = "hysds.job_dir"
 
 # container states that still have a process to stop
 LIVE_STATES = ("running", "paused", "created", "restarting")
@@ -100,16 +106,16 @@ class Base(ABC):
         root = os.path.normpath(root)
         return path == root or path.startswith(root + os.sep)
 
-    def find_job_containers(self, job_dir, job_id=None, task_id=None):
+    def find_job_containers(self, job_dir):
         """
-        Containers that belong to a job and still have a process to stop: the
-        one HySDS started for it (found by label, or by its working dir) and any
-        the job started itself with part of the job dir mounted, which is how a
-        PGE launched through the engine socket looks. The verdi container and
-        anything else mounting the jobs root above the job dir do not match.
+        Containers that belong to one execution of a job and still have a
+        process to stop: the one HySDS started for it (found by its job dir
+        label, or by its working dir) and any the job started itself with part
+        of the job dir mounted, which is how a PGE launched through the engine
+        socket looks. The verdi container and anything else mounting the jobs
+        root above the job dir do not match, and neither does a container
+        labelled for another job dir, even one of the same job and task.
         :param job_dir: str; the job's work dir, as mounted on the host
-        :param job_id: str
-        :param task_id: str; the attempt; another attempt's containers are left
         :return: List[dict]; inspect records
         """
         found = []
@@ -119,13 +125,10 @@ class Base(ABC):
                 continue
             cfg = c.get("Config") or {}
             labels = cfg.get("Labels") or {}
-            label_task = labels.get(TASK_ID_LABEL)
-            if task_id and label_task and label_task != task_id:
-                continue  # a different attempt of this or another job
-            if (task_id and label_task == task_id) or (
-                job_id and labels.get(JOB_ID_LABEL) == job_id
-            ):
-                found.append(c)
+            label_dir = labels.get(JOB_DIR_LABEL)
+            if label_dir:
+                if os.path.normpath(label_dir) == os.path.normpath(job_dir):
+                    found.append(c)
                 continue
             if self._under(cfg.get("WorkingDir"), job_dir):
                 found.append(c)
@@ -137,13 +140,11 @@ class Base(ABC):
                 found.append(c)
         return found
 
-    def kill_job_containers(self, job_dir, job_id=None, task_id=None, grace=None):
+    def kill_job_containers(self, job_dir, grace=None):
         """
-        Stop a job's containers: TERM through `stop`, then KILL any that ignore
-        it. Safe to call when nothing is running.
+        Stop the containers of one execution of a job: TERM through `stop`,
+        then KILL any that ignore it. Safe to call when nothing is running.
         :param job_dir: str
-        :param job_id: str
-        :param task_id: str
         :param grace: int; seconds between TERM and KILL
             (default app.conf CONTAINER_KILL_GRACE, else 30)
         :return: List[str]; ids of the containers that were stopped
@@ -151,7 +152,7 @@ class Base(ABC):
         if grace is None:
             grace = app.conf.get("CONTAINER_KILL_GRACE", 30)
         grace = int(grace)
-        containers = self.find_job_containers(job_dir, job_id, task_id)
+        containers = self.find_job_containers(job_dir)
         if not containers:
             return []
         ids = [c["Id"] for c in containers]
@@ -165,9 +166,7 @@ class Base(ABC):
         )
         # -t: docker deprecated --time for --timeout; both engines take -t
         self.run_cli(["stop", "-t", grace] + ids, timeout=grace + CLI_TIMEOUT)
-        survivors = [
-            c["Id"] for c in self.find_job_containers(job_dir, job_id, task_id)
-        ]
+        survivors = [c["Id"] for c in self.find_job_containers(job_dir)]
         if survivors:
             logger.warning(
                 f"Killing {len(survivors)} container(s) that survived stop: "

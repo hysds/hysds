@@ -11,14 +11,20 @@ All notable changes to this project will be documented in this file.
   the host daemon, and any PGE container the job launched through the engine
   socket is a sibling there, so both kept running after the job was gone --
   next to the next job's containers once the worker moved on. Every container
-  HySDS starts now carries `hysds.job_id` and `hysds.task_id` labels (also
-  under `labels` in `_docker_params.json`, for jobs that launch their own),
-  and `Base.kill_job_containers()` finds a job's containers by those labels,
-  by their working dir, or by a mount under the job dir, then `stop`s them
-  (TERM, then KILL after `CONTAINER_KILL_GRACE` seconds, default 30) and
-  `kill`s any that survive. It runs from `run_job`'s failure path once the
-  command has started, from `task_revoked_handler`, and from the new
-  `task_failure` handler, in each case before `.done` is written.
+  HySDS starts now carries `hysds.job_id`, `hysds.task_id` and
+  `hysds.job_dir` labels (also under `labels` in `_docker_params.json`, for
+  jobs that launch their own), and `Base.kill_job_containers()` finds one
+  execution's containers by the job dir label, by their working dir, or by a
+  mount under the job dir, then `stop`s them (TERM, then KILL after
+  `CONTAINER_KILL_GRACE` seconds, default 30) and `kill`s any that survive.
+  It runs from `run_job`'s failure path once the command has started, from
+  `task_revoked_handler`, and from the new `task_failure` handler, in each
+  case before `.done` is written. Everything is scoped to one execution, not
+  to the job or task id: a redelivery keeps both, and a host that runs
+  several workers on one queue (NISAR's GPU hosts) can run two executions of
+  the same task side by side. `.running` now records the owning worker's
+  node name on its second line; the main process finishes only dirs it owns,
+  and the process that ran the job finishes exactly its own dir.
 - HC-658: a worker whose job was killed at the hard time limit never
   self-terminated. The `.running` -> `.done` transition lived only in
   `run_job`'s close-out and in the revoke handler, so when billiard SIGKILLed

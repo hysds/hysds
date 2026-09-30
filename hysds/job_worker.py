@@ -17,11 +17,11 @@ from subprocess import CalledProcessError, check_output
 
 import requests
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import task_failure, task_revoked
+from celery.signals import celeryd_init, task_failure, task_revoked
 
 import hysds  # fixes some cyclical import issues
 from hysds.celery import app
-from hysds.containers.base import JOB_ID_LABEL, TASK_ID_LABEL
+from hysds.containers.base import JOB_DIR_LABEL, JOB_ID_LABEL, TASK_ID_LABEL
 from hysds.containers.factory import container_engine_factory
 from hysds.lock import JobLock, LockNotAcquiredException
 from hysds.log_utils import (
@@ -510,6 +510,9 @@ def run_job(job, queue_when_finished=True):
     job["task_id"] = run_job.request.id
     job["delivery_info"] = run_job.request.delivery_info
 
+    # no dir for this execution yet; see CURRENT_EXECUTION
+    CURRENT_EXECUTION.clear()
+
     # get context
     context = job.get("context", {})
 
@@ -975,11 +978,16 @@ def run_job(job, queue_when_finished=True):
             }
             fail_job(job_status_json, jd_file)
 
+        # the failure handlers in this process finish exactly this dir
+        CURRENT_EXECUTION.update(task_id=job["task_id"], job_dir=job_dir)
+
         # write job's running file to reserve space for job's done file later
         job_running_file = os.path.join(job_dir, ".running")
         try:
             with open(job_running_file, "w") as f:
                 f.write(f"{datetime_iso_naive()}Z\n")
+                # the worker that owns this execution; see teardown_job
+                f.write(f"{run_job.request.hostname}\n")
         except Exception as e:
             error = str(e)
             job_status_json = {
@@ -1270,7 +1278,11 @@ def run_job(job, queue_when_finished=True):
             container_params = {}
             # stamp the job's containers so they can be found and stopped
             # after the process that started them is gone
-            container_labels = {JOB_ID_LABEL: job_id, TASK_ID_LABEL: job["task_id"]}
+            container_labels = {
+                JOB_ID_LABEL: job_id,
+                TASK_ID_LABEL: job["task_id"],
+                JOB_DIR_LABEL: job_dir,
+            }
             if image_name is not None:
                 print(f"HOST_HOME={os.environ.get('HOST_HOME', '/home/ops')}")
                 container_params[image_name] = container_engine.create_container_params(
@@ -1513,7 +1525,7 @@ def run_job(job, queue_when_finished=True):
             # sibling there that never sees it. Stop them before triage reads
             # the dir and before .done lets the worker move on.
             if cmd_start is not None:
-                kill_job_containers(job_dir, job_id, job["task_id"])
+                kill_job_containers(job_dir)
 
             # if cmd_end not set and cmd_start was, do it now
             if cmd_end is None and cmd_start is not None:
@@ -1756,14 +1768,35 @@ def run_job(job, queue_when_finished=True):
             logger.info(f"Released job lock for payload {payload_id}")
 
 
-def kill_job_containers(job_dir, job_id=None, task_id=None):
-    """Stop every container still running for a job. Never raises: this runs
-    while a job is being torn down, and the engine being unreachable must not
-    keep .done from being written."""
+# this worker's celery node name, e.g. celery@job_worker-foo.10.0.0.1; set in
+# the main process at startup and inherited by the pool children it forks
+WORKER_HOSTNAME = None
+
+# the execution run_job is running in this process, once its dir exists:
+# {"task_id": ..., "job_dir": ...}. A failure handler in the same process (the
+# pool child, or the worker itself with the solo pool) finishes exactly that
+# dir. The prefork main process never runs run_job, so there it stays empty
+# and the handlers go by the owner recorded in .running.
+CURRENT_EXECUTION = {}
+
+
+@celeryd_init.connect
+def record_worker_hostname(sender=None, **kwargs):
+    """Remember the node name. task_failure does not carry it, and the main
+    process needs it to tell its own job dirs from a sibling worker's."""
+
+    global WORKER_HOSTNAME
+    WORKER_HOSTNAME = sender
+
+
+def kill_job_containers(job_dir):
+    """Stop every container still running for one execution of a job. Never
+    raises: this runs while a job is being torn down, and the engine being
+    unreachable must not keep .done from being written."""
 
     try:
         engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
-        return engine.kill_job_containers(job_dir, job_id=job_id, task_id=task_id)
+        return engine.kill_job_containers(job_dir)
     except Exception as e:
         logger.warning(
             f"Could not stop containers for {job_dir}: {e}\n{traceback.format_exc()}"
@@ -1780,6 +1813,20 @@ def find_job_dirs(root_work, job_id):
 
     pattern = os.path.join(root_work, "jobs", "*", "*", "*", "*", "*", job_id)
     return sorted(d for d in glob.glob(pattern) if os.path.isdir(d))
+
+
+def job_dir_owner(job_dir):
+    """The worker node name run_job wrote on the second line of .running, or
+    None (no .running yet, or written by an older release)."""
+
+    try:
+        with open(os.path.join(job_dir, ".running")) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    if len(lines) < 2:
+        return None
+    return lines[1].strip() or None
 
 
 def job_dir_task_id(job_dir):
@@ -1809,38 +1856,52 @@ def mark_job_done(job_dir):
     return True
 
 
-def teardown_job(root_work, job_id, task_id=None, kill_containers=True):
+def teardown_job(
+    root_work, job_id, task_id=None, hostname=None, job_dir=None, kill_containers=True
+):
     """Finish a job on behalf of a pool child that cannot: stop its containers,
     then mark its work dir done.
 
     Called from the worker main process when the child was revoked, hit the
     hard time limit or was lost, and from the child itself on an ordinary
-    failure. Everything here is idempotent: a dir that already has .done is
-    left alone, and with task_id given, a dir whose _job.json names another
-    attempt of the same job is left alone too, so a late signal for an old
-    attempt cannot mark a live retry done.
+    failure. It must touch only the execution that ended. A retry keeps the job
+    id, and a redelivery keeps the task id too, so on a host running several
+    workers on one queue another execution of the same job can be live in a
+    sibling dir. So:
+
+    - job_dir, when the caller knows it (the child does), is the only dir;
+    - otherwise every dir of the job id is a candidate, minus those whose
+      _job.json names another task and, with hostname given, those whose
+      .running names another worker.
+
+    A dir that already has .done is left alone, so every caller is idempotent.
 
     :return: the dirs that were marked done
     """
 
-    dirs = find_job_dirs(root_work, job_id)
+    dirs = [job_dir] if job_dir else find_job_dirs(root_work, job_id)
+    dirs = [d for d in dirs if os.path.isdir(d)]
     if not dirs:
         logger.info(f"No work directory found for job_id {job_id}.")
         return []
     finished = []
-    for job_dir in dirs:
-        if os.path.exists(os.path.join(job_dir, ".done")):
+    for d in dirs:
+        if os.path.exists(os.path.join(d, ".done")):
             continue
-        owner = job_dir_task_id(job_dir)
-        if task_id and owner and owner != task_id:
+        owner_task = job_dir_task_id(d)
+        if task_id and owner_task and owner_task != task_id:
             logger.info(
-                f"Leaving {job_dir} alone: it belongs to task {owner}, not {task_id}."
+                f"Leaving {d} alone: it belongs to task {owner_task}, not {task_id}."
             )
             continue
+        owner = job_dir_owner(d)
+        if hostname and owner and owner != hostname:
+            logger.info(f"Leaving {d} alone: it belongs to {owner}, not {hostname}.")
+            continue
         if kill_containers:
-            kill_job_containers(job_dir, job_id, task_id)
-        mark_job_done(job_dir)
-        finished.append(job_dir)
+            kill_job_containers(d)
+        mark_job_done(d)
+        finished.append(d)
     return finished
 
 
@@ -1868,9 +1929,19 @@ def task_failure_handler(
     job = args[0] if args else None
     if not isinstance(job, dict) or not job.get("job_id"):
         return
+    task_id = task_id or job.get("task_id")
+    # not job_info.job_dir from the message: a resubmitted job doc can carry
+    # the previous attempt's dir
+    job_dir = None
+    if CURRENT_EXECUTION.get("task_id") == task_id:
+        job_dir = CURRENT_EXECUTION.get("job_dir")
     try:
         teardown_job(
-            app.conf.ROOT_WORK_DIR, job["job_id"], task_id=task_id or job.get("task_id")
+            app.conf.ROOT_WORK_DIR,
+            job["job_id"],
+            task_id=task_id,
+            hostname=WORKER_HOSTNAME,
+            job_dir=job_dir,
         )
     except Exception as e:
         logger.error(
@@ -1932,4 +2003,9 @@ def task_revoked_handler(*args, **kwargs):
         )
     # the revoke only ever reached the pool child; its containers are still
     # running on the host daemon
-    teardown_job(app.conf.ROOT_WORK_DIR, job["job_id"], task_id=job["task_id"])
+    teardown_job(
+        app.conf.ROOT_WORK_DIR,
+        job["job_id"],
+        task_id=job["task_id"],
+        hostname=request.hostname,
+    )
