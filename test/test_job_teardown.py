@@ -1,4 +1,4 @@
-"""Finishing a job on behalf of a pool child that cannot (HC-654).
+"""Finishing a job on behalf of a pool child that cannot (HC-654, HC-658).
 
 The hard time limit SIGKILLs the child that would have stopped the job's
 containers and written .done. These tests pin the main-process side: where a
@@ -220,9 +220,34 @@ class TestSignalHandlers(unittest.TestCase):
             },
         }
 
-    def test_the_signals_are_connected_to_run_job(self):
-        from celery.signals import task_revoked
+    def test_task_failure_tears_the_job_down(self):
+        """celery sends this from the main process for TimeLimitExceeded and a
+        lost child; the child itself can no longer write .done."""
+        jw.task_failure_handler(
+            sender=jw.run_job,
+            task_id="t1",
+            exception=RuntimeError("TimeLimitExceeded(129900)"),
+            args=[self.job()],
+            kwargs={},
+        )
+        self.teardown.assert_called_once_with("/data/work", "job-1", task_id="t1")
 
+    def test_task_failure_without_a_job_payload_is_ignored(self):
+        jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=None)
+        jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=["not a job"])
+        jw.task_failure_handler(
+            sender=jw.run_job, task_id="t1", args=[{"no": "job_id"}]
+        )
+        self.teardown.assert_not_called()
+
+    def test_task_failure_swallows_teardown_errors(self):
+        self.teardown.side_effect = OSError("disk")
+        jw.task_failure_handler(sender=jw.run_job, task_id="t1", args=[self.job()])
+
+    def test_the_signals_are_connected_to_run_job(self):
+        from celery.signals import task_failure, task_revoked
+
+        self.assertTrue(task_failure.has_listeners(jw.run_job))
         self.assertTrue(task_revoked.has_listeners(jw.run_job))
 
     def test_revoke_tears_the_job_down_for_its_own_task(self):

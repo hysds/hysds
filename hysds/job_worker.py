@@ -17,7 +17,7 @@ from subprocess import CalledProcessError, check_output
 
 import requests
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import task_revoked
+from celery.signals import task_failure, task_revoked
 
 import hysds  # fixes some cyclical import issues
 from hysds.celery import app
@@ -1848,6 +1848,34 @@ def set_revoked_job_done(root_work, job_id):
     """Kept for callers of the old name; see teardown_job."""
 
     return teardown_job(root_work, job_id, kill_containers=False)
+
+
+@task_failure.connect(sender=run_job)
+def task_failure_handler(
+    sender=None, task_id=None, exception=None, args=None, **kwargs
+):
+    """Finish the job dir when the pool child could not.
+
+    celery sends this from the worker main process for the failures the child
+    never gets to handle: the hard time limit (TimeLimitExceeded) and a lost
+    child (WorkerLostError, unless the task is requeued). Nothing else touches
+    the job dir then, so .running would outlive the job and harikiri would
+    never let the instance go. It also fires inside the child for an ordinary
+    failure; there the close-out has already written .done and this is a
+    no-op, except for the early fail_job exits that happen before it.
+    """
+
+    job = args[0] if args else None
+    if not isinstance(job, dict) or not job.get("job_id"):
+        return
+    try:
+        teardown_job(
+            app.conf.ROOT_WORK_DIR, job["job_id"], task_id=task_id or job.get("task_id")
+        )
+    except Exception as e:
+        logger.error(
+            f"task_failure_handler - {job.get('job_id')}: {e}\n{traceback.format_exc()}"
+        )
 
 
 @task_revoked.connect(sender=run_job)
