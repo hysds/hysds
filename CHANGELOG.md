@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- HC-654: a job's containers are now stopped when the job is cancelled or
+  dies. A revoke, and the hard time limit, only ever signalled the celery pool
+  child. The job container is held by a separate runner process talking to
+  the host daemon, and any PGE container the job launched through the engine
+  socket is a sibling there, so both kept running after the job was gone --
+  next to the next job's containers once the worker moved on. Every container
+  HySDS starts now carries `hysds.job_id` and `hysds.task_id` labels (also
+  under `labels` in `_docker_params.json`, for jobs that launch their own),
+  and `Base.kill_job_containers()` finds a job's containers by those labels,
+  by their working dir, or by a mount under the job dir, then `stop`s them
+  (TERM, then KILL after `CONTAINER_KILL_GRACE` seconds, default 30) and
+  `kill`s any that survive. It runs from `run_job`'s failure path once the
+  command has started, from `task_revoked_handler`, and from the new
+  `task_failure` handler, in each case before `.done` is written.
 - HC-651: `scripts/reap_orphaned_job_failed.py` gains a second scan, for the
   pair celery redelivery leaves behind. A worker shut down mid-job writes
   `job-failed` and is killed before it acks, so the broker delivers the same

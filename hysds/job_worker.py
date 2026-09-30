@@ -1,6 +1,7 @@
 from future import standard_library
 
 standard_library.install_aliases()
+import glob
 import json
 import os
 import re
@@ -20,6 +21,7 @@ from celery.signals import task_revoked
 
 import hysds  # fixes some cyclical import issues
 from hysds.celery import app
+from hysds.containers.base import JOB_ID_LABEL, TASK_ID_LABEL
 from hysds.containers.factory import container_engine_factory
 from hysds.lock import JobLock, LockNotAcquiredException
 from hysds.log_utils import (
@@ -1266,6 +1268,9 @@ def run_job(job, queue_when_finished=True):
             logger.info(f"environment keys: {dict(os.environ).keys()}")
             # check if job needs to run in a container
             container_params = {}
+            # stamp the job's containers so they can be found and stopped
+            # after the process that started them is gone
+            container_labels = {JOB_ID_LABEL: job_id, TASK_ID_LABEL: job["task_id"]}
             if image_name is not None:
                 print(f"HOST_HOME={os.environ.get('HOST_HOME', '/home/ops')}")
                 container_params[image_name] = container_engine.create_container_params(
@@ -1277,6 +1282,7 @@ def run_job(job, queue_when_finished=True):
                     runtime_options=runtime_options,
                     verdi_home=app.conf.get("VERDI_HOME", "/root"),
                     host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
+                    labels=container_labels,
                 )
 
                 # get command-line list
@@ -1298,6 +1304,7 @@ def run_job(job, queue_when_finished=True):
                         runtime_options=dep_img.get("runtime_options", {}),
                         verdi_home=app.conf.get("VERDI_HOME", "/root"),
                         host_verdi_home=os.environ.get("HOST_VERDI_HOME", "/home/ops"),
+                        labels=container_labels,
                     )
                 )
 
@@ -1498,6 +1505,15 @@ def run_job(job, queue_when_finished=True):
                         "\nSoft time limit (%ds) exceeded for %s.\n"
                         % (job["job_info"]["soft_time_limit"], job["job_id"])
                     )
+
+            # Whatever ended the command, nothing of the job's may keep
+            # running. The signal above only reaches the client process the
+            # runner started; the job's containers live on the host daemon,
+            # and a PGE the job launched through the engine socket is a
+            # sibling there that never sees it. Stop them before triage reads
+            # the dir and before .done lets the worker move on.
+            if cmd_start is not None:
+                kill_job_containers(job_dir, job_id, job["task_id"])
 
             # if cmd_end not set and cmd_start was, do it now
             if cmd_end is None and cmd_start is not None:
@@ -1740,26 +1756,98 @@ def run_job(job, queue_when_finished=True):
             logger.info(f"Released job lock for payload {payload_id}")
 
 
-def set_revoked_job_done(root_work, job_id):
-    """Find job work dir by job id."""
+def kill_job_containers(job_dir, job_id=None, task_id=None):
+    """Stop every container still running for a job. Never raises: this runs
+    while a job is being torn down, and the engine being unreachable must not
+    keep .done from being written."""
 
-    for root, dirs, files in os.walk(root_work, followlinks=True):
-        if job_id in dirs:
-            job_dir = os.path.join(root, job_id)
-            job_running_file = os.path.join(job_dir, ".running")
-            job_done_file = os.path.join(job_dir, ".done")
-            if not os.path.exists(job_done_file):
-                logger.info(f"No job done file found: {job_done_file}")
-                if os.path.exists(job_running_file):
-                    os.rename(job_running_file, job_done_file)
-                    logger.info(f"Renamed {job_running_file} to {job_done_file}.")
-                with open(job_done_file, "w") as f:
-                    f.write(f"{datetime_iso_naive()}Z\n")
-                logger.info(f"Wrote timestamp to {job_done_file}.")
-            return
-        else:
+    try:
+        engine = container_engine_factory(app.conf.get("CONTAINER_ENGINE", "docker"))
+        return engine.kill_job_containers(job_dir, job_id=job_id, task_id=task_id)
+    except Exception as e:
+        logger.warning(
+            f"Could not stop containers for {job_dir}: {e}\n{traceback.format_exc()}"
+        )
+        return []
+
+
+def find_job_dirs(root_work, job_id):
+    """Work dirs run_job created for a job id, oldest first.
+
+    run_job lays them out as <root>/jobs/YYYY/MM/DD/HH/MM/<job_id>, so a glob
+    finds them without descending into every job's tree.
+    """
+
+    pattern = os.path.join(root_work, "jobs", "*", "*", "*", "*", "*", job_id)
+    return sorted(d for d in glob.glob(pattern) if os.path.isdir(d))
+
+
+def job_dir_task_id(job_dir):
+    """The task uuid recorded in a job dir's _job.json, or None."""
+
+    try:
+        with open(os.path.join(job_dir, "_job.json")) as f:
+            return json.load(f).get("task_id")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def mark_job_done(job_dir):
+    """Turn .running into .done. A no-op when .done exists; returns whether it
+    was written."""
+
+    job_running_file = os.path.join(job_dir, ".running")
+    job_done_file = os.path.join(job_dir, ".done")
+    if os.path.exists(job_done_file):
+        return False
+    if os.path.exists(job_running_file):
+        os.rename(job_running_file, job_done_file)
+        logger.info(f"Renamed {job_running_file} to {job_done_file}.")
+    with open(job_done_file, "w") as f:
+        f.write(f"{datetime_iso_naive()}Z\n")
+    logger.info(f"Wrote timestamp to {job_done_file}.")
+    return True
+
+
+def teardown_job(root_work, job_id, task_id=None, kill_containers=True):
+    """Finish a job on behalf of a pool child that cannot: stop its containers,
+    then mark its work dir done.
+
+    Called from the worker main process when the child was revoked, hit the
+    hard time limit or was lost, and from the child itself on an ordinary
+    failure. Everything here is idempotent: a dir that already has .done is
+    left alone, and with task_id given, a dir whose _job.json names another
+    attempt of the same job is left alone too, so a late signal for an old
+    attempt cannot mark a live retry done.
+
+    :return: the dirs that were marked done
+    """
+
+    dirs = find_job_dirs(root_work, job_id)
+    if not dirs:
+        logger.info(f"No work directory found for job_id {job_id}.")
+        return []
+    finished = []
+    for job_dir in dirs:
+        if os.path.exists(os.path.join(job_dir, ".done")):
             continue
-    logger.info(f"No work directory found for job_id {job_id}.")
+        owner = job_dir_task_id(job_dir)
+        if task_id and owner and owner != task_id:
+            logger.info(
+                f"Leaving {job_dir} alone: it belongs to task {owner}, not {task_id}."
+            )
+            continue
+        if kill_containers:
+            kill_job_containers(job_dir, job_id, task_id)
+        mark_job_done(job_dir)
+        finished.append(job_dir)
+    return finished
+
+
+def set_revoked_job_done(root_work, job_id):
+    """Kept for callers of the old name; see teardown_job."""
+
+    return teardown_job(root_work, job_id, kill_containers=False)
 
 
 @task_revoked.connect(sender=run_job)
@@ -1814,4 +1902,6 @@ def task_revoked_handler(*args, **kwargs):
             f"task_revoked_handler - {payload_id}: {state}; not writing "
             f"job-revoked over it."
         )
-    set_revoked_job_done(app.conf.ROOT_WORK_DIR, job["job_id"])
+    # the revoke only ever reached the pool child; its containers are still
+    # running on the host daemon
+    teardown_job(app.conf.ROOT_WORK_DIR, job["job_id"], task_id=job["task_id"])
