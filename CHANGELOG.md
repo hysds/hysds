@@ -46,7 +46,13 @@ All notable changes to this project will be documented in this file.
   `stale_default_time_limit` is set. `set_revoked_job_done()` remains as a
   wrapper; `find_job_dirs()` now locates a job dir by its known
   `jobs/YYYY/MM/DD/HH/MM/<job_id>` layout instead of walking every job's
-  tree. Version bumped to 3.3.5.
+  tree. In the worker main process, which runs the revoke and hard-limit
+  handlers, the teardown runs in a daemon thread (`start_teardown()`): that
+  process's event loop also sends the task acks and the broker heartbeats,
+  and stopping containers on a busy docker daemon took ~90 s in testing,
+  long enough for the broker to drop the connection and redeliver the task
+  being torn down. In a pool child it still runs in line. Version bumped to
+  3.3.5.
 - HC-651: `scripts/reap_orphaned_job_failed.py` gains a second scan, for the
   pair celery redelivery leaves behind. A worker shut down mid-job writes
   `job-failed` and is killed before it acks, so the broker delivers the same

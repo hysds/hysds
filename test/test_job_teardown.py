@@ -18,6 +18,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import unittest.mock as umock
 
@@ -276,7 +278,7 @@ class TestKillJobContainersHelper(unittest.TestCase):
 
 class TestSignalHandlers(unittest.TestCase):
     def setUp(self):
-        self.teardown = umock.patch.object(jw, "teardown_job", return_value=[]).start()
+        self.teardown = umock.patch.object(jw, "start_teardown").start()
         umock.patch.object(jw, "WORKER_HOSTNAME", "celery@gpu-0.h").start()
         self.addCleanup(umock.patch.stopall)
         jw.app.conf.ROOT_WORK_DIR = "/data/work"
@@ -349,9 +351,17 @@ class TestSignalHandlers(unittest.TestCase):
     def test_the_signals_are_connected_to_run_job(self):
         from celery.signals import celeryd_init, task_failure, task_revoked
 
+        from celery.signals import worker_process_init
+
         self.assertTrue(task_failure.has_listeners(jw.run_job))
         self.assertTrue(task_revoked.has_listeners(jw.run_job))
         self.assertTrue(celeryd_init.has_listeners())
+        self.assertTrue(worker_process_init.has_listeners())
+
+    def test_a_pool_child_knows_it_is_one(self):
+        umock.patch.object(jw, "IN_POOL_CHILD", False).start()
+        jw.record_pool_child(sender=None)
+        self.assertTrue(jw.IN_POOL_CHILD)
 
     def test_the_node_name_is_recorded_at_startup(self):
         """celery imports task modules before it sends celeryd_init, whose
@@ -368,6 +378,82 @@ class TestSignalHandlers(unittest.TestCase):
         jw.task_revoked_handler(sender=jw.run_job, request=request, signum=15)
         self.teardown.assert_called_once_with(
             "/data/work", "job-1", task_id="t1", hostname="celery@worker-1"
+        )
+
+
+class TestStartTeardown(unittest.TestCase):
+    """The worker main process runs the revoke and hard-limit handlers on the
+    event loop that also sends the task acks and the broker heartbeats. Live,
+    a teardown that waited ~90 s on a busy docker daemon there dropped the
+    broker connection, and the broker redelivered the task, which ran again."""
+
+    def setUp(self):
+        self.release = threading.Event()
+        self.calls = []
+
+        def slow_teardown(*args, **kwargs):
+            self.calls.append((threading.current_thread(), args, kwargs))
+            self.release.wait(10)
+            return []
+
+        self.teardown = umock.patch.object(
+            jw, "teardown_job", side_effect=slow_teardown
+        ).start()
+        self.addCleanup(umock.patch.stopall)
+        self.addCleanup(self.release.set)
+
+    def test_in_the_main_process_it_returns_before_the_teardown_ends(self):
+        umock.patch.object(jw, "IN_POOL_CHILD", False).start()
+        t0 = time.monotonic()
+        thread = jw.start_teardown("/data/work", "job-1", task_id="t1", hostname="w")
+        self.assertLess(time.monotonic() - t0, 1)
+        self.assertIsNotNone(thread)
+        self.assertTrue(thread.daemon)
+        self.assertEqual(thread.name, "teardown-job-1")
+        self.assertTrue(thread.is_alive())
+        self.release.set()
+        thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.teardown.assert_called_once_with(
+            "/data/work", "job-1", task_id="t1", hostname="w"
+        )
+        self.assertIs(self.calls[0][0], thread)
+
+    def test_in_a_pool_child_it_runs_in_line(self):
+        """The child is finishing its own task; nothing waits on it."""
+        umock.patch.object(jw, "IN_POOL_CHILD", True).start()
+        self.release.set()
+        self.assertIsNone(jw.start_teardown("/data/work", "job-1", job_dir="/d"))
+        self.assertIs(self.calls[0][0], threading.current_thread())
+
+    def test_a_failed_background_teardown_is_logged(self):
+        umock.patch.object(jw, "IN_POOL_CHILD", False).start()
+        self.teardown.side_effect = OSError("disk")
+        logger = umock.patch.object(jw, "logger").start()
+        jw.start_teardown("/data/work", "job-1").join(5)
+        self.assertIn("Teardown of job-1 failed: disk", logger.error.call_args.args[0])
+
+    def test_the_hard_limit_handler_does_not_wait_for_the_engine(self):
+        """task_failure as celery sends it from the main process on a hard
+        limit, with the engine stuck: the handler must return at once."""
+        umock.patch.object(jw, "IN_POOL_CHILD", False).start()
+        umock.patch.object(jw, "WORKER_HOSTNAME", "celery@w").start()
+        jw.app.conf.ROOT_WORK_DIR = "/data/work"
+        job = {"task_id": "t1", "job_id": "job-1", "job_info": {}}
+        t0 = time.monotonic()
+        jw.task_failure_handler(
+            sender=jw.run_job,
+            task_id="t1",
+            exception=RuntimeError("TimeLimitExceeded(129900)"),
+            args=[job],
+        )
+        self.assertLess(time.monotonic() - t0, 1)
+        self.release.set()
+        for t in threading.enumerate():
+            if t.name == "teardown-job-1":
+                t.join(5)
+        self.teardown.assert_called_once_with(
+            "/data/work", "job-1", task_id="t1", hostname="celery@w", job_dir=None
         )
 
 

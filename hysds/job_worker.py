@@ -9,6 +9,7 @@ import shlex
 import shutil
 import signal
 import socket
+import threading
 import time
 import traceback
 from datetime import timezone, datetime
@@ -17,7 +18,12 @@ from subprocess import CalledProcessError, check_output
 
 import requests
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import celeryd_init, task_failure, task_revoked
+from celery.signals import (
+    celeryd_init,
+    task_failure,
+    task_revoked,
+    worker_process_init,
+)
 
 import hysds  # fixes some cyclical import issues
 from hysds.celery import app
@@ -1789,6 +1795,17 @@ def record_worker_hostname(sender=None, **kwargs):
     WORKER_HOSTNAME = sender
 
 
+# True in a prefork pool child. Anywhere else this is the worker main process,
+# whose event loop also sends the task acks and the broker heartbeats.
+IN_POOL_CHILD = False
+
+
+@worker_process_init.connect
+def record_pool_child(**kwargs):
+    global IN_POOL_CHILD
+    IN_POOL_CHILD = True
+
+
 def kill_job_containers(job_dir):
     """Stop every container still running for one execution of a job. Never
     raises: this runs while a job is being torn down, and the engine being
@@ -1905,6 +1922,37 @@ def teardown_job(
     return finished
 
 
+def start_teardown(root_work, job_id, **kwargs):
+    """Run teardown_job where it cannot hold up the worker.
+
+    In a pool child it runs in line: the child is finishing its own task. In
+    the worker main process it runs in a daemon thread. The main process runs
+    the revoke and hard-limit handlers on the event loop that also sends the
+    task acks and the broker heartbeats, and stopping containers can take
+    minutes when the engine is busy. Blocking that long drops the broker
+    connection, and the broker then redelivers the task being torn down, which
+    runs it again. If the worker exits before the thread is done, .running is
+    left behind and harikiri's stale-dir rule finishes the dir.
+
+    :return: the thread, or None when the teardown ran in line
+    """
+
+    if IN_POOL_CHILD:
+        teardown_job(root_work, job_id, **kwargs)
+        return None
+
+    def run():
+        try:
+            teardown_job(root_work, job_id, **kwargs)
+        except Exception as e:
+            logger.error(f"Teardown of {job_id} failed: {e}\n{traceback.format_exc()}")
+
+    thread = threading.Thread(target=run, name=f"teardown-{job_id}", daemon=True)
+    thread.start()
+    logger.info(f"Tearing down {job_id} in the background ({thread.name}).")
+    return thread
+
+
 def set_revoked_job_done(root_work, job_id):
     """Kept for callers of the old name; see teardown_job."""
 
@@ -1936,7 +1984,7 @@ def task_failure_handler(
     if CURRENT_EXECUTION.get("task_id") == task_id:
         job_dir = CURRENT_EXECUTION.get("job_dir")
     try:
-        teardown_job(
+        start_teardown(
             app.conf.ROOT_WORK_DIR,
             job["job_id"],
             task_id=task_id,
@@ -2003,7 +2051,7 @@ def task_revoked_handler(*args, **kwargs):
         )
     # the revoke only ever reached the pool child; its containers are still
     # running on the host daemon
-    teardown_job(
+    start_teardown(
         app.conf.ROOT_WORK_DIR,
         job["job_id"],
         task_id=job["task_id"],
