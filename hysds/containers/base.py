@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from tempfile import mkdtemp
@@ -20,6 +21,27 @@ from hysds.celery import app
 from hysds.log_utils import logger
 from hysds.utils import datetime_iso_naive
 
+# Labels stamped on every container HySDS starts, so a job's containers can be
+# found and stopped after the process that started them is gone. Jobs that
+# start their own containers (a PGE through the engine socket) get the same
+# labels in _docker_params.json and may pass them on; those that do not are
+# still found by the job dir they mount.
+#
+# The job dir label is what matching uses: it identifies one execution. The
+# job and task ids do not -- a redelivered task keeps both, and on a host that
+# runs several workers on one queue two executions of the same task can run
+# side by side, each with its own job dir.
+JOB_ID_LABEL = "hysds.job_id"
+TASK_ID_LABEL = "hysds.task_id"
+JOB_DIR_LABEL = "hysds.job_dir"
+
+# container states that still have a process to stop ("stopping" is podman's
+# word for a container mid-stop)
+LIVE_STATES = ("running", "paused", "created", "restarting", "stopping")
+
+# seconds to wait on an engine CLI call before giving up on it
+CLI_TIMEOUT = 120
+
 
 class Base(ABC):
     IMAGE_LOAD_TIME_MAX = 600
@@ -28,6 +50,151 @@ class Base(ABC):
         self._uid = os.getuid()
         self._gid = os.getgid()
         self._user = getpass.getuser()
+
+    def container_cli(self):
+        """
+        The engine's CLI prefix for container commands,
+            ex. ["docker"] or ["podman", "--remote", "--url", "unix:..."]
+        Finding and stopping a job's containers through it assumes a daemon
+        that owns them; an engine without one needs its own
+        kill_job_containers().
+        :return: List[str]
+        """
+        raise RuntimeError(
+            "method 'container_cli' must be defined in the derived class"
+        )
+
+    def run_cli(self, args, timeout=CLI_TIMEOUT):
+        """
+        Run an engine CLI command and return its stdout. A failing or hanging
+        call is logged and yields an empty string; the callers here run while
+        a job is being torn down and must not raise over the engine.
+        :param args: List[str]; the command after the CLI prefix
+        :param timeout: int; seconds
+        :return: str
+        """
+        cmd = self.container_cli() + [str(a) for a in args]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.warning(f"{' '.join(cmd)}: {e}")
+            return ""
+        if proc.returncode != 0:
+            logger.warning(
+                f"{' '.join(cmd[:2])} exited {proc.returncode}: {proc.stderr.strip()}"
+            )
+        return proc.stdout
+
+    def list_containers(self):
+        """
+        Inspect every container the engine knows about.
+        :return: List[dict]; the engine's inspect records
+        """
+        ids = self.run_cli(["ps", "-aq", "--no-trunc"]).split()
+        if not ids:
+            return []
+        records = self._inspect(ids)
+        if len(records) < len(ids):
+            # One container the engine cannot read fails the whole batch on
+            # podman (a layer it has lost), and docker leaves out one removed
+            # since the ps. Inspect the missing ones one at a time so the job's
+            # healthy containers are still found.
+            seen = {r.get("Id") for r in records}
+            for i in ids:
+                if i not in seen:
+                    records.extend(self._inspect([i]))
+        return records
+
+    def _inspect(self, ids):
+        """Inspect records for these container ids, or [] when the engine's
+        output does not parse."""
+        out = self.run_cli(["inspect", "--type", "container"] + ids)
+        try:
+            records = json.loads(out) if out.strip() else []
+        except ValueError as e:
+            logger.warning(f"Could not parse container inspect output: {e}")
+            return []
+        if not isinstance(records, list):
+            return []
+        return [r for r in records if isinstance(r, dict)]
+
+    @staticmethod
+    def _under(path, root):
+        """True when path is root or lies below it."""
+        if not path or not root:
+            return False
+        path = os.path.normpath(path)
+        root = os.path.normpath(root)
+        return path == root or path.startswith(root + os.sep)
+
+    def find_job_containers(self, job_dir):
+        """
+        Containers that belong to one execution of a job and still have a
+        process to stop: the one HySDS started for it (found by its job dir
+        label, or by its working dir) and any the job started itself with part
+        of the job dir mounted, which is how a PGE launched through the engine
+        socket looks. The verdi container and anything else mounting the jobs
+        root above the job dir do not match, and neither does a container
+        labelled for another job dir, even one of the same job and task.
+        :param job_dir: str; the job's work dir, as mounted on the host
+        :return: List[dict]; inspect records
+        """
+        found = []
+        for c in self.list_containers():
+            state = (c.get("State") or {}).get("Status", "")
+            if state not in LIVE_STATES:
+                continue
+            cfg = c.get("Config") or {}
+            labels = cfg.get("Labels") or {}
+            label_dir = labels.get(JOB_DIR_LABEL)
+            if label_dir:
+                if os.path.normpath(label_dir) == os.path.normpath(job_dir):
+                    found.append(c)
+                continue
+            if self._under(cfg.get("WorkingDir"), job_dir):
+                found.append(c)
+                continue
+            if any(
+                self._under((m or {}).get("Source"), job_dir)
+                for m in (c.get("Mounts") or [])
+            ):
+                found.append(c)
+        return found
+
+    def kill_job_containers(self, job_dir, grace=None):
+        """
+        Stop the containers of one execution of a job: TERM through `stop`,
+        then KILL any that ignore it. Safe to call when nothing is running.
+        :param job_dir: str
+        :param grace: int; seconds between TERM and KILL
+            (default app.conf CONTAINER_KILL_GRACE, else 30)
+        :return: List[str]; ids of the containers that were stopped
+        """
+        if grace is None:
+            grace = app.conf.get("CONTAINER_KILL_GRACE", 30)
+        grace = int(grace)
+        containers = self.find_job_containers(job_dir)
+        if not containers:
+            return []
+        ids = [c["Id"] for c in containers]
+        desc = ", ".join(
+            f"{c.get('Name', '').lstrip('/') or c['Id'][:12]} "
+            f"({(c.get('Config') or {}).get('Image', '?')})"
+            for c in containers
+        )
+        logger.warning(
+            f"Stopping {len(ids)} container(s) still running for {job_dir}: {desc}"
+        )
+        # -t: docker deprecated --time for --timeout; both engines take -t
+        self.run_cli(["stop", "-t", grace] + ids, timeout=grace + CLI_TIMEOUT)
+        survivors = [c["Id"] for c in self.find_job_containers(job_dir)]
+        if survivors:
+            logger.warning(
+                f"Killing {len(survivors)} container(s) that survived stop: "
+                f"{' '.join(i[:12] for i in survivors)}"
+            )
+            self.run_cli(["kill"] + survivors)
+        return ids
 
     @abstractmethod
     def inspect_image(self, image):
@@ -145,6 +312,7 @@ class Base(ABC):
         runtime_options=None,
         verdi_home=None,
         host_verdi_home=None,
+        labels=None,
     ):
         """
         Build container params for runtime.
@@ -156,6 +324,7 @@ class Base(ABC):
         :param runtime_options: None/dict
         :param verdi_home: str
         :param host_verdi_home: str
+        :param labels: None/dict; labels to stamp on the container
         :return:
         """
         root_jobs_dir = os.path.join(root_work_dir, "jobs")
@@ -170,6 +339,7 @@ class Base(ABC):
             "gid": self._gid,
             "user_name": self._user,
             "working_dir": job_dir,
+            "labels": {str(k): str(v) for k, v in (labels or {}).items()},
             "volumes": [
                 (root_jobs_dir, root_jobs_dir),
                 (root_tasks_dir, root_tasks_dir),

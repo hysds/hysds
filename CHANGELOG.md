@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- HC-654: a job's containers are now stopped when the job is cancelled or
+  dies. A revoke, and the hard time limit, only ever signalled the celery pool
+  child. The job container is held by a separate runner process talking to
+  the host daemon, and any PGE container the job launched through the engine
+  socket is a sibling there, so both kept running after the job was gone --
+  next to the next job's containers once the worker moved on. Every container
+  HySDS starts now carries `hysds.job_id`, `hysds.task_id` and
+  `hysds.job_dir` labels (also under `labels` in `_docker_params.json`, for
+  jobs that launch their own), and `Base.kill_job_containers()` finds one
+  execution's containers by the job dir label, by their working dir, or by a
+  mount under the job dir, then `stop`s them (TERM, then KILL after
+  `CONTAINER_KILL_GRACE` seconds, default 30) and `kill`s any that survive.
+  It runs from `run_job`'s failure path once the command has started, from
+  `task_revoked_handler`, and from the new `task_failure` handler, in each
+  case before `.done` is written. Everything is scoped to one execution, not
+  to the job or task id: a redelivery keeps both, and a host that runs
+  several workers on one queue (NISAR's GPU hosts) can run two executions of
+  the same task side by side. `.running` now records the owning worker's
+  node name on its second line; the main process finishes only dirs it owns,
+  and the process that ran the job finishes exactly its own dir. Lookups
+  inspect containers only (`--type container`), count podman's `stopping` as
+  still live, and inspect one container at a time when the engine cannot
+  read one of them: podman fails a whole inspect batch over one lost layer,
+  which would otherwise hide every healthy container. `find_job_dirs()` treats
+  the job id as a literal name (`glob.escape`).
+- HC-658: a worker whose job was killed at the hard time limit never
+  self-terminated. The `.running` -> `.done` transition lived only in
+  `run_job`'s close-out and in the revoke handler, so when billiard SIGKILLed
+  the pool child at the hard limit (or the child was lost, or verdi restarted
+  mid-job) `.running` stayed for the life of the instance, harikiri reported
+  `no .done file found. Not jobless yet.` forever, and `cleanup_old_jobs`
+  never reclaimed the dir either. Eight OPERA workers sat idle for six weeks
+  this way. Two fixes: `job_worker` connects celery's `task_failure` signal,
+  which the worker main process sends for exactly these deaths
+  (`TimeLimitExceeded`, and `WorkerLostError` when the task is not requeued),
+  to a `teardown_job()` that stops the job's containers and writes `.done`;
+  and harikiri (both scripts, through the new `scripts/harikiri_utils.py`)
+  treats a dir without `.done` as finished once `.running` is older than the
+  job's own `job_info.time_limit` from `_job.json` plus a grace
+  (`stale_grace`, default 600 s), writes `.done` so the dir can be cleaned
+  up, and posts a `harikiri` / `stale_job_dir` event. That second part is
+  what covers a requeued `WorkerLostError` and a worker restart, which send
+  no signal at all. A dir with no time limit still blocks unless
+  `stale_default_time_limit` is set. `set_revoked_job_done()` remains as a
+  wrapper; `find_job_dirs()` now locates a job dir by its known
+  `jobs/YYYY/MM/DD/HH/MM/<job_id>` layout instead of walking every job's
+  tree. In the worker main process, which runs the revoke and hard-limit
+  handlers, the teardown runs in a daemon thread (`start_teardown()`): that
+  process's event loop also sends the task acks and the broker heartbeats,
+  and stopping containers on a busy docker daemon took ~90 s in testing,
+  long enough for the broker to drop the connection and redeliver the task
+  being torn down. In a pool child it still runs in line. Version bumped to
+  3.3.5.
 - HC-651: `scripts/reap_orphaned_job_failed.py` gains a second scan, for the
   pair celery redelivery leaves behind. A worker shut down mid-job writes
   `job-failed` and is killed before it acks, so the broker delivers the same

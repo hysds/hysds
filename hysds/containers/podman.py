@@ -30,6 +30,13 @@ class Podman(Base):
         podman_socket_cmd = ["podman", "--remote", "--url", f"unix:{self.podman_sock}"]
         return podman_socket_cmd
 
+    def container_cli(self):
+        """
+        The podman CLI prefix, talking to the host socket
+        :return: List[str]
+        """
+        return self.__create_podman_socket_cmd()
+
     def inspect_image(self, image):
         """
         inspect the container image; ex. podman inspect <image>
@@ -119,6 +126,10 @@ class Podman(Base):
             else:
                 podman_cmd_base.extend([f"--{k}", v])
 
+        # label the container so it can be found once this process is gone
+        for k, v in params.get("labels", {}).items():
+            podman_cmd_base.extend(["--label", f"{k}={v}"])
+
         # add runtime options
         for k, v in params["runtime_options"].items():
             if isinstance(v, str):
@@ -144,6 +155,7 @@ class Podman(Base):
         runtime_options=None,
         verdi_home=None,
         host_verdi_home=None,
+        labels=None,
     ):
         """
         Builds podman params
@@ -155,6 +167,7 @@ class Podman(Base):
         :param runtime_options: THe specific flags to run with
         :param verdi_home: The verdi home
         :param host_verdi_home: The home dir on the host
+        :param labels: None/dict; labels to stamp on the container
         :return:
         """
         params = super().create_container_params(
@@ -166,6 +179,7 @@ class Podman(Base):
             runtime_options,
             verdi_home,
             host_verdi_home,
+            labels=labels,
         )
         params["podman_sock"] = self.podman_sock
         params["volumes"].insert(
