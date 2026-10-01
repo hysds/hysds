@@ -24,7 +24,12 @@ All notable changes to this project will be documented in this file.
   several workers on one queue (NISAR's GPU hosts) can run two executions of
   the same task side by side. `.running` now records the owning worker's
   node name on its second line; the main process finishes only dirs it owns,
-  and the process that ran the job finishes exactly its own dir.
+  and the process that ran the job finishes exactly its own dir. Lookups
+  inspect containers only (`--type container`), count podman's `stopping` as
+  still live, and inspect one container at a time when the engine cannot
+  read one of them: podman fails a whole inspect batch over one lost layer,
+  which would otherwise hide every healthy container. `find_job_dirs()` treats
+  the job id as a literal name (`glob.escape`).
 - HC-658: a worker whose job was killed at the hard time limit never
   self-terminated. The `.running` -> `.done` transition lived only in
   `run_job`'s close-out and in the revoke handler, so when billiard SIGKILLed

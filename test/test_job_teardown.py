@@ -81,6 +81,14 @@ class TestFindJobDirs(unittest.TestCase):
         open(os.path.join(d, "job-1"), "w").close()
         self.assertEqual(jw.find_job_dirs(self.dirs.root, "job-1"), [])
 
+    def test_a_job_id_is_matched_as_a_literal_name(self):
+        """A job id is not a glob pattern: [x] or * in it must not widen the
+        match to other jobs' dirs."""
+        ours = self.dirs.job(job_id="job-[x]*", minute="25")
+        self.dirs.job(job_id="job-x", minute="26")
+        self.dirs.job(job_id="job-x1", minute="27")
+        self.assertEqual(jw.find_job_dirs(self.dirs.root, "job-[x]*"), [ours])
+
     def test_the_lookup_does_not_walk_into_job_dirs(self):
         """A job dir holds a PGE's whole output tree; the old os.walk descended
         into every one of them before reaching the next sibling."""

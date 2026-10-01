@@ -1828,7 +1828,9 @@ def find_job_dirs(root_work, job_id):
     finds them without descending into every job's tree.
     """
 
-    pattern = os.path.join(root_work, "jobs", "*", "*", "*", "*", "*", job_id)
+    pattern = os.path.join(
+        root_work, "jobs", "*", "*", "*", "*", "*", glob.escape(job_id)
+    )
     return sorted(d for d in glob.glob(pattern) if os.path.isdir(d))
 
 

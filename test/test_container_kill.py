@@ -46,23 +46,46 @@ def record(cid, status="running", labels=None, workdir="/", mounts=(), image="im
 
 class FakeCli:
     """Stands in for Base.run_cli: serves ps/inspect from a record list and
-    records stop/kill calls; stop ends every named container, kill too."""
+    records stop/kill calls; stop ends every named container, kill too.
 
-    def __init__(self, records, survive_stop=()):
+    broken: ids the engine cannot read; like podman with a lost layer, any
+        inspect that names one fails as a whole (empty stdout).
+    vanished: ids ps still lists that inspect no longer finds; like docker,
+        inspect leaves them out of an otherwise good answer.
+    survivor_state: the state stop leaves a survive_stop container in.
+    """
+
+    def __init__(
+        self,
+        records,
+        survive_stop=(),
+        broken=(),
+        vanished=(),
+        survivor_state="running",
+    ):
         self.records = {r["Id"]: r for r in records}
         self.survive_stop = set(survive_stop)
+        self.broken = set(broken)
+        self.vanished = list(vanished)
+        self.survivor_state = survivor_state
         self.calls = []
 
     def __call__(self, args, timeout=None):
         args = [str(a) for a in args]
         self.calls.append(args)
         if args[0] == "ps":
-            return "\n".join(self.records) + "\n"
+            return "\n".join(list(self.records) + self.vanished) + "\n"
         if args[0] == "inspect":
-            return json.dumps([self.records[i] for i in args[1:] if i in self.records])
+            assert args[1:3] == ["--type", "container"], args
+            ids = args[3:]
+            if self.broken.intersection(ids):
+                return ""
+            return json.dumps([self.records[i] for i in ids if i in self.records])
         if args[0] == "stop":
             for i in args[3:]:  # stop -t N ids...
-                if i not in self.survive_stop:
+                if i in self.survive_stop:
+                    self.records[i]["State"]["Status"] = self.survivor_state
+                else:
                     self.records[i]["State"]["Status"] = "exited"
             return ""
         if args[0] == "kill":
@@ -171,6 +194,49 @@ class TestFindJobContainers(unittest.TestCase):
         self.assertEqual(self.find([]), [])
         self.assertEqual(self.engine.run_cli.calls, [["ps", "-aq", "--no-trunc"]])
 
+    def test_inspect_asks_for_containers_only(self):
+        """inspect also resolves images and volumes; --type pins it."""
+        self.find([record("pcm", workdir=JOB_DIR)])
+        self.assertEqual(
+            self.engine.run_cli.calls[1], ["inspect", "--type", "container", "pcm"]
+        )
+
+    def test_a_stopping_container_still_counts_as_live(self):
+        """podman reports a container mid-stop as stopping."""
+        self.assertEqual(
+            self.find([record("pcm", "stopping", workdir=JOB_DIR)]), ["pcm"]
+        )
+
+    def test_a_complete_batch_needs_no_second_inspect(self):
+        self.find([record("pcm", workdir=JOB_DIR), record("verdi")])
+        self.assertEqual([c[0] for c in self.engine.run_cli.calls], ["ps", "inspect"])
+
+    def test_one_unreadable_container_does_not_hide_the_job_containers(self):
+        """podman fails a whole inspect batch when it cannot read one
+        container's storage; the job's healthy containers must still be
+        found, one inspect at a time."""
+        records = [
+            record("pcm", labels=labels(JOB_DIR)),
+            record("pge", mounts=[JOB_DIR + "/pge_output_dir"]),
+            record("corrupt", workdir="/"),
+        ]
+        self.engine.run_cli = FakeCli(records, broken={"corrupt"})
+        found = [c["Id"] for c in self.engine.find_job_containers(JOB_DIR)]
+        self.assertEqual(sorted(found), ["pcm", "pge"])
+        singles = [c[3:] for c in self.engine.run_cli.calls if c[0] == "inspect"][1:]
+        self.assertEqual(sorted(singles), [["corrupt"], ["pcm"], ["pge"]])
+
+    def test_a_container_gone_since_the_ps_is_skipped(self):
+        """docker leaves a container removed after the ps out of the answer;
+        only that one is asked about again."""
+        self.engine.run_cli = FakeCli(
+            [record("pcm", workdir=JOB_DIR)], vanished=["gone"]
+        )
+        found = [c["Id"] for c in self.engine.find_job_containers(JOB_DIR)]
+        self.assertEqual(found, ["pcm"])
+        inspects = [c[3:] for c in self.engine.run_cli.calls if c[0] == "inspect"]
+        self.assertEqual(inspects, [["pcm", "gone"], ["gone"]])
+
     def test_engine_output_that_is_not_json_yields_nothing(self):
         self.engine.run_cli = lambda args, timeout=None: (
             "abc\n" if args[0] == "ps" else "Error: No such object: abc\n"
@@ -208,6 +274,16 @@ class TestKillJobContainers(unittest.TestCase):
         self.assertEqual(kill, ["kill", "pge"])
         self.assertEqual(cli.records["verdi"]["State"]["Status"], "running")
         self.assertEqual(cli.records["sibling"]["State"]["Status"], "running")
+
+    def test_a_container_still_stopping_after_stop_is_killed(self):
+        cli = FakeCli(
+            [record("pge", mounts=[JOB_DIR + "/pge_output_dir"])],
+            survive_stop={"pge"},
+            survivor_state="stopping",
+        )
+        self.engine.run_cli = cli
+        self.engine.kill_job_containers(JOB_DIR, grace=1)
+        self.assertEqual(next(c for c in cli.calls if c[0] == "kill"), ["kill", "pge"])
 
     def test_nothing_running_means_no_stop_call(self):
         cli = FakeCli([record("verdi", mounts=["/data/work/jobs"])])

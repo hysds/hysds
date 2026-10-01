@@ -35,8 +35,9 @@ JOB_ID_LABEL = "hysds.job_id"
 TASK_ID_LABEL = "hysds.task_id"
 JOB_DIR_LABEL = "hysds.job_dir"
 
-# container states that still have a process to stop
-LIVE_STATES = ("running", "paused", "created", "restarting")
+# container states that still have a process to stop ("stopping" is podman's
+# word for a container mid-stop)
+LIVE_STATES = ("running", "paused", "created", "restarting", "stopping")
 
 # seconds to wait on an engine CLI call before giving up on it
 CLI_TIMEOUT = 120
@@ -54,6 +55,9 @@ class Base(ABC):
         """
         The engine's CLI prefix for container commands,
             ex. ["docker"] or ["podman", "--remote", "--url", "unix:..."]
+        Finding and stopping a job's containers through it assumes a daemon
+        that owns them; an engine without one needs its own
+        kill_job_containers().
         :return: List[str]
         """
         raise RuntimeError(
@@ -89,11 +93,28 @@ class Base(ABC):
         ids = self.run_cli(["ps", "-aq", "--no-trunc"]).split()
         if not ids:
             return []
-        out = self.run_cli(["inspect"] + ids)
+        records = self._inspect(ids)
+        if len(records) < len(ids):
+            # One container the engine cannot read fails the whole batch on
+            # podman (a layer it has lost), and docker leaves out one removed
+            # since the ps. Inspect the missing ones one at a time so the job's
+            # healthy containers are still found.
+            seen = {r.get("Id") for r in records}
+            for i in ids:
+                if i not in seen:
+                    records.extend(self._inspect([i]))
+        return records
+
+    def _inspect(self, ids):
+        """Inspect records for these container ids, or [] when the engine's
+        output does not parse."""
+        out = self.run_cli(["inspect", "--type", "container"] + ids)
         try:
             records = json.loads(out) if out.strip() else []
         except ValueError as e:
             logger.warning(f"Could not parse container inspect output: {e}")
+            return []
+        if not isinstance(records, list):
             return []
         return [r for r in records if isinstance(r, dict)]
 
