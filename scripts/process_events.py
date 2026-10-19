@@ -14,7 +14,7 @@ from redis import ConnectionPool, StrictRedis
 
 import hysds
 from hysds.celery import app
-from hysds.event_processors import queue_fail_job, queue_offline_jobs
+from hysds.event_processors import TASK_FAILED_RE, queue_fail_job, queue_offline_jobs
 from hysds.log_utils import (
     WORKER_STATUS_KEY_TMPL,
     backoff_max_tries,
@@ -36,9 +36,8 @@ POOL = None
 ORCH_HOST_RE = re.compile(r"^celery@orchestrator")
 ORCH_NAME_RE = re.compile(r"^hysds.orchestrator.submit_job")
 
-# regex for task-failed errors that won't be updated in ES because
-# worker had no chance to send update
-TASK_FAILED_RE = re.compile(r"(WorkerLostError|TimeLimitExceeded|ConnectionError)")
+# TASK_FAILED_RE now lives in hysds.event_processors so it is importable
+# and unit-testable
 
 # regex for extracting type and hostname from worker
 TYPE_RE = re.compile(r"'type': '(.+?)',")

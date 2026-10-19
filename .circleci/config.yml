@@ -34,6 +34,12 @@ jobs:
           name: Test
           command: |
             source $HOME/verdi/bin/activate
+            # hysds_commons is not published to PyPI (the verdi venv carries a
+            # source install), so pip cannot resolve the hysds_commons version
+            # floor in setup.py from an index; pre-install it from the matching
+            # hysds_commons branch, falling back to develop.
+            pip install --upgrade "hysds_commons @ git+https://github.com/hysds/hysds_commons.git@${CIRCLE_BRANCH}" \
+              || pip install --upgrade "hysds_commons @ git+https://github.com/hysds/hysds_commons.git@develop"
             pip install -e .[test]
             pip install junitparser
             cp configs/celery/celeryconfig.py.tmpl celeryconfig.py

@@ -4,6 +4,11 @@ HySDS inactivity daemon to perform scale down of auto scaling group/spot fleet
 request and perform self-termination (harikiri) of the instance. If a keep-alive
 signal file exists at <root_work_dir>/.harikiri, then self-termination is bypassed
 until it is removed.
+
+A job dir without a .done file holds the instance up, but not forever: once its
+.running is older than the job's own time_limit (from _job.json) plus a grace
+period, no process of that job can still be running, so the dir is marked done
+and ages out like any other. See harikiri_utils.
 """
 import argparse
 import json
@@ -11,6 +16,7 @@ import logging
 import os
 import re
 import socket
+import sys
 import time
 import traceback
 from datetime import datetime, timezone
@@ -27,6 +33,15 @@ from future import standard_library
 
 standard_library.install_aliases()
 
+# scripts/ is not a package; find the sibling module by this file's real path so
+# the symlinked verdi/bin/harikiri.py works too
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from harikiri_utils import (  # noqa: E402
+    DEFAULT_STALE_GRACE,
+    mark_stale_job_done,
+    stale_job_deadline,
+)
+
 log_format = "[%(asctime)s: %(levelname)s/%(funcName)s] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
 
@@ -36,6 +51,12 @@ DAY_DIR_RE = re.compile(r"jobs/\d{4}/\d{2}/\d{2}/\d{2}/\d{2}$")
 NO_JOBS_TIMER = None
 
 KEEP_ALIVE = False
+
+# a job dir without .done is treated as finished once .running is older than the
+# job's time_limit plus this grace; a job without a time limit blocks as before
+# unless STALE_DEFAULT_TIME_LIMIT is set (see harikiri_utils)
+STALE_GRACE = DEFAULT_STALE_GRACE
+STALE_DEFAULT_TIME_LIMIT = None
 
 # have yaml parse regular expressions
 yaml.SafeLoader.add_constructor(
@@ -114,9 +135,29 @@ def is_jobless(root_work, inactivity_secs, logger=None):
             job_dir = os.path.join(root, d)
             done_file = os.path.join(job_dir, ".done")
             if not os.path.exists(done_file):
-                logging.info(f"{job_dir}: no .done file found. Not jobless yet.")
-                NO_JOBS_TIMER = None
-                return False
+                deadline = stale_job_deadline(
+                    job_dir, STALE_GRACE, STALE_DEFAULT_TIME_LIMIT
+                )
+                if deadline is None:
+                    logging.info(f"{job_dir}: no .done file found. Not jobless yet.")
+                    NO_JOBS_TIMER = None
+                    return False
+                # the pool child that would have written .done is gone (hard
+                # time limit, lost child, worker restart); finish it here
+                event = mark_stale_job_done(job_dir, deadline)
+                logging.warning(
+                    f"{job_dir}: no .done file, but .running is older than the "
+                    f"job's time limit plus {STALE_GRACE}s grace "
+                    f"(deadline {event['deadline']}). Marked done."
+                )
+                if logger is not None:
+                    try:
+                        print(log_event(logger, "harikiri", "stale_job_dir", event, []))
+                    except Exception as e:
+                        logging.warning(
+                            "Exception occurred while logging harikiri "
+                            f"stale_job_dir: {str(e)}"
+                        )
             t = os.path.getmtime(done_file)
             done_dt = datetime.utcfromtimestamp(t)
             age = (datetime.now(timezone.utc).replace(tzinfo=None) - done_dt).total_seconds()
@@ -341,6 +382,8 @@ if __name__ == "__main__":
     logger = None
     inactivity = None
     check = None
+    stale_grace = None
+    stale_default_time_limit = None
 
     # Parse the configuration file if there was one
     conf_parser = argparse.ArgumentParser(description=__doc__, add_help=False)
@@ -360,6 +403,10 @@ if __name__ == "__main__":
             logger = config_params.get("logger", None)
             inactivity = config_params.get("inactivity", None)
             check = config_params.get("check", None)
+            stale_grace = config_params.get("stale_grace", None)
+            stale_default_time_limit = config_params.get(
+                "stale_default_time_limit", None
+            )
 
     # Parse the rest of the arguments
     parser = argparse.ArgumentParser(description=__doc__)
@@ -391,6 +438,20 @@ if __name__ == "__main__":
         help="enable event logging; specify Mozart REST API,"
         + " e.g. https://192.168.0.1/mozart/api/v0.1",
     )
+    parser.add_argument(
+        "--stale-grace",
+        type=int,
+        default=None,
+        help="seconds past a job's time_limit before a job dir without .done is"
+        + f" treated as finished. Default is {DEFAULT_STALE_GRACE}.",
+    )
+    parser.add_argument(
+        "--stale-default-time-limit",
+        type=int,
+        default=None,
+        help="time limit in seconds to assume for a job dir whose _job.json has"
+        + " none. Default is to keep waiting on such a dir.",
+    )
     args = parser.parse_args(remaining_argv)
     if args.root_work_dir:
         root_work_dir = args.root_work_dir
@@ -400,11 +461,19 @@ if __name__ == "__main__":
         inactivity = args.inactivity
     if args.check:
         check = args.check
+    if args.stale_grace is not None:
+        stale_grace = args.stale_grace
+    if args.stale_default_time_limit is not None:
+        stale_default_time_limit = args.stale_default_time_limit
 
     # Set the default values for inactivity and check here
     if inactivity is None:
         inactivity = 600
     if check is None:
         check = 60
+    if stale_grace is not None:
+        STALE_GRACE = int(stale_grace)
+    if stale_default_time_limit is not None:
+        STALE_DEFAULT_TIME_LIMIT = int(stale_default_time_limit)
 
     harikiri(root_work_dir, inactivity, check, logger)

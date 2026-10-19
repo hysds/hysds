@@ -8,7 +8,7 @@ import re
 import socket
 import traceback
 import types
-from datetime import timezone, datetime
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import backoff
@@ -226,6 +226,193 @@ def get_job_status(task_id):
     return res.decode() if hasattr(res, "decode") else res
 
 
+# statuses after which an authoritative terminal doc has been logged.
+# job-offline is included: a job never leaves it on its own, so any
+# supervisory rewrite over it is destructive.
+TERMINAL_JOB_STATUSES = frozenset(
+    {"job-completed", "job-failed", "job-deduped", "job-offline", "job-revoked"}
+)
+
+
+def is_job_finalized(task_id):
+    """Return True if a terminal status was already logged for this task.
+
+    Reads the synchronous redis key set by log_job_status(), authoritative
+    while the ES doc is still in flight (redis list -> logstash -> ES).
+    Supervisory writers must check this before rewriting a job doc. Fails
+    open (False) on a missing key or redis error.
+    """
+    try:
+        status = get_job_status(task_id)
+    except Exception as e:
+        logger.warning(f"is_job_finalized({task_id}): redis check failed: {e}")
+        return False
+    if status is None:
+        logger.warning(
+            f"is_job_finalized({task_id}): no redis job-status key (missing or expired)"
+        )
+        return False
+    return status in TERMINAL_JOB_STATUSES
+
+
+# job_supersession() outcomes
+SUPERSEDED = "superseded"   # a later attempt demonstrably owns this payload
+OWNED = "owned"             # a live doc exists and it is ours or older
+ABSENT = "absent"           # asked every home, no live doc: the payload is mid-move
+UNKNOWN = "unknown"         # could not ask: a probe failed and nothing was found
+
+_DAILY_RE = re.compile(r"^job_status-(\d{4})\.(\d{2})\.(\d{2})$")
+MAX_DAILY_HOMES = 62   # two months; older than that is not a retry race
+
+
+def job_status_homes(index=None, today=None):
+    """The concrete indices a job doc can live in: job_failed, then every
+    daily from the caller's date to today, oldest first.
+
+    The home only moves forward. A retry rewrites job_info.index to the
+    current daily, so an attempt started on D1 and retried on D3 has its live
+    doc in D3 while the caller may still be holding D1 -- probing only D1 and
+    today misses it, and probing D1 finds the caller's own leftover and calls
+    the payload OWNED. A doc-ID read cannot be aimed at the alias itself
+    (OpenSearch rejects a single-index op on a multi-index alias), so the
+    members are enumerated here instead.
+    """
+    today = today or datetime.now(timezone.utc).date()
+    homes = ["job_failed"]
+    start = None
+    if index:
+        m = _DAILY_RE.match(index)
+        if m:
+            try:
+                start = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                start = None
+    if start is None or start > today:
+        start = today
+    if (today - start).days > MAX_DAILY_HOMES:
+        start = today - timedelta(days=MAX_DAILY_HOMES)
+    d = start
+    while d <= today:
+        homes.append(f"job_status-{d.strftime('%Y.%m.%d')}")
+        d += timedelta(days=1)
+    if index and index not in homes:
+        # The caller's own index is always asked, whatever the walk covered:
+        # a daily older than the window (sdscli's default ISM keeps dailies
+        # 104 days and aliases them all), a future-dated one from clock skew,
+        # or a name that is not a daily at all.
+        homes.insert(1, index)
+    return homes
+
+
+def job_supersession(payload_id, uuid, retry_count=0, index=None, es=None):
+    """Who owns this payload's status doc right now, relative to attempt `uuid`.
+
+    A retry keeps the payload_id (which is the doc _id), mints a new task
+    uuid, and increments job.retry_count. So "someone newer owns this payload"
+    means a live doc with a different uuid AND a higher retry_count. A
+    different uuid alone is not enough: an older attempt's leftover -- an
+    orphaned job_failed doc, an unswept job-revoked doc -- also carries a uuid
+    that is not ours, and declining to write because of one drops a
+    legitimate failure. retry_count makes the comparison directional; a
+    missing key counts as 0 on both sides, so a tie does not supersede.
+
+    One realtime mget across every home the doc can be in (see
+    job_status_homes), never a refresh-bound search: searching for a doc that
+    is moving between indices is the defect class being guarded.
+
+    Returns:
+      SUPERSEDED  a live doc with a different uuid at a higher retry_count
+      OWNED       a live doc exists and none is newer than us
+      ABSENT      every home answered and none holds a live doc. Not
+                  ambiguous: it is the signature of retry.py having just
+                  deleted the doc while the replacement is still in the
+                  pipeline. Writing then re-creates the old attempt AND, via
+                  logstash's paired delete on job_info.index, destroys the
+                  retried attempt's fresh doc, which the reaper cannot repair.
+      UNKNOWN     at least one home could not be asked and none was found.
+                  Not evidence of anything; callers must not read it as
+                  "safe to write" OR as "deleted". A missing daily is a clean
+                  miss, not an error -- indices that never had a job that
+                  day do not exist.
+
+    A home that could not be asked is reported only when no home held a
+    doc. Once any doc is found the verdict is taken from the docs seen,
+    even if another home errored; promoting that to UNKNOWN would send
+    every writer to UNKNOWN during a rolling restart, which is the
+    mass-record-loss case the ABSENT/UNKNOWN split exists to avoid.
+    """
+    homes = job_status_homes(index)
+    try:
+        mine = int(retry_count or 0)
+    except (TypeError, ValueError):
+        mine = 0
+    try:
+        if es is None:
+            # deferred import: hysds.es_util imports this module at load time
+            from hysds.es_util import get_mozart_es
+
+            es = get_mozart_es()
+        res = es.es.mget(
+            body={"docs": [{"_index": h, "_id": payload_id} for h in homes]},
+            _source=["uuid", "job.retry_count"],
+        )
+    except Exception as e:
+        logger.warning(f"job_supersession({payload_id}): probe failed: {e}")
+        return UNKNOWN
+
+    found, errored = [], 0
+    for doc in (res.get("docs") or []) if isinstance(res, dict) else []:
+        if not isinstance(doc, dict):
+            errored += 1
+            continue
+        err = doc.get("error")
+        if err:
+            # a daily that was never created is a clean miss; anything else
+            # (closed, shard unavailable) means this home could not be asked
+            if (err.get("type") if isinstance(err, dict) else str(err)) != \
+                    "index_not_found_exception":
+                errored += 1
+            continue
+        if doc.get("found"):
+            found.append(doc)
+    if not found:
+        if errored:
+            logger.warning(
+                f"job_supersession({payload_id}): {errored} of {len(homes)} homes "
+                f"could not be probed and none held a doc; cannot judge"
+            )
+            return UNKNOWN
+        logger.warning(
+            f"job_supersession({payload_id}): no live doc in {homes}; the "
+            f"payload is mid-move, so this attempt cannot be judged"
+        )
+        return ABSENT
+    for doc in found:
+        src = doc.get("_source") or {}
+        live_uuid = src.get("uuid")
+        if not live_uuid or live_uuid == uuid:
+            continue
+        try:
+            theirs = int((src.get("job") or {}).get("retry_count") or 0)
+        except (TypeError, ValueError):
+            theirs = 0
+        if theirs > mine:
+            logger.info(
+                f"job_supersession({payload_id}): doc in {doc.get('_index')} "
+                f"belongs to {live_uuid} at retry_count {theirs}, ours is {uuid} "
+                f"at {mine}; a later attempt owns this payload"
+            )
+            return SUPERSEDED
+        logger.info(
+            f"job_supersession({payload_id}): doc in {doc.get('_index')} belongs "
+            f"to {live_uuid} at retry_count {theirs}, not newer than ours ({mine}); "
+            f"treating it as an older leftover"
+        )
+    return OWNED
+
+
+
+
 @backoff.on_exception(
     backoff.expo, RedisError, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
@@ -255,9 +442,19 @@ def log_job_status(job):
     # send update to redis
     r = StrictRedis(connection_pool=JOB_STATUS_POOL,
                     ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"))
+    # derive the key TTL from the job's own time_limit: a fixed TTL expires
+    # mid-run for any job that outlives it, silently disabling
+    # is_job_finalized() for exactly the jobs most likely to soft-limit
+    ttl = app.conf.HYSDS_JOB_STATUS_EXPIRES
+    time_limit = job.get("job", {}).get("job_info", {}).get("time_limit")
+    # accept int or float, but not bool (an int subclass); mirrors the
+    # watchdog's check so a float time_limit never leaves the TTL unextended.
+    # int() the value so the setex TTL stays an integer number of seconds.
+    if isinstance(time_limit, (int, float)) and not isinstance(time_limit, bool):
+        ttl = max(ttl, int(time_limit) + 2 * hard_time_limit_gap())
     r.setex(
         JOB_STATUS_KEY_TMPL % job["uuid"],
-        app.conf.HYSDS_JOB_STATUS_EXPIRES,
+        ttl,
         job["status"],
     )
     r.rpush(app.conf.REDIS_JOB_STATUS_KEY, msgpack.dumps(job_for_indexing))  # for ES

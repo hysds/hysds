@@ -22,6 +22,13 @@ class Docker(Base):
         # Fallback to rootful Docker
         return '/var/run/docker.sock'
     
+    def container_cli(self):
+        """
+        The docker CLI prefix
+        :return: List[str]
+        """
+        return ["docker"]
+
     def inspect_image(self, image):
         """
         inspect the container image; ex. docker inspect <image>
@@ -79,6 +86,10 @@ class Docker(Base):
             f"{params['uid']}:{params['gid']}",
         ]
 
+        # label the container so it can be found once this process is gone
+        for k, v in params.get("labels", {}).items():
+            docker_cmd_base.extend(["--label", f"{k}={v}"])
+
         # add runtime options
         for k, v in params["runtime_options"].items():
             if isinstance(v, str):
@@ -104,6 +115,7 @@ class Docker(Base):
         runtime_options=None,
         verdi_home=None,
         host_verdi_home=None,
+        labels=None,
     ):
         """
         Builds docker params
@@ -115,6 +127,7 @@ class Docker(Base):
         :param runtime_options:
         :param verdi_home:
         :param host_verdi_home:
+        :param labels: None/dict; labels to stamp on the container
         :return:
         """
         params = super().create_container_params(
@@ -126,6 +139,7 @@ class Docker(Base):
             runtime_options,
             verdi_home,
             host_verdi_home,
+            labels=labels,
         )
         docker_sock = "/var/run/docker.sock"
         host_docker_sock = Docker.get_docker_socket_path()
