@@ -127,8 +127,10 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
             umock.patch.object(urd, "get_mozart_es", return_value=self.mozart_es),
             umock.patch.object(urd, "queue_dataset_trigger", self.trigger),
             umock.patch.object(urd, "validate_index_pattern", lambda p: True),
-            # ensure_dataset_indexed is covered by TestAssertDocSettled; no-op here
-            umock.patch.object(urd, "ensure_dataset_indexed"),
+            # ensure_dataset_indexed is covered by TestEnsureDatasetIndexed and
+            # TestAssertDocSettled; no-op here. None = the probe ran alias-wide
+            # (a MagicMock return would be taken for a pinned index).
+            umock.patch.object(urd, "ensure_dataset_indexed", return_value=None),
         ]
         for p in patches:
             p.start()
@@ -271,6 +273,211 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
         self.trigger.assert_not_called()
 
 
+class TestEvaluateUserRulesDatasetIndexPinning(unittest.TestCase):
+    """HC-664: a re-ingested dataset can share its _id with a document in another
+    index behind the alias. When the probe settled on the index the ingest wrote,
+    every non-query_all rule is bound to that index as well as to the _id."""
+
+    PINNED = "grq_1_l1_s1_slc-2026.10"
+
+    def setUp(self):
+        self.grq_es = umock.MagicMock()
+        self.mozart_es = umock.MagicMock()
+        self.trigger = umock.MagicMock()
+        self.ensure = umock.MagicMock(return_value=self.PINNED)
+        patches = [
+            umock.patch.object(urd, "get_grq_es", return_value=self.grq_es),
+            umock.patch.object(urd, "get_mozart_es", return_value=self.mozart_es),
+            umock.patch.object(urd, "queue_dataset_trigger", self.trigger),
+            umock.patch.object(urd, "validate_index_pattern", lambda p: True),
+            umock.patch.object(urd, "ensure_dataset_indexed", self.ensure),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_rules_bound_to_pinned_index(self):
+        self.mozart_es.query.return_value = [
+            make_rule("reproc", index_pattern="grq_*_l1_s1_slc-*"),
+            make_rule("everything", query_all=True),
+        ]
+        self.grq_es.msearch.return_value = [hit("ds1"), miss()]
+
+        urd.evaluate_user_rules_dataset("ds1", "1", alias="grq", index=self.PINNED)
+
+        # the producer's index reaches the probe
+        self.assertEqual(self.ensure.call_args.kwargs["index"], self.PINNED)
+        searches = self.grq_es.msearch.call_args.args[0]
+        reproc_musts = searches[0][1]["query"]["bool"]["must"]
+        self.assertIn({"term": {"_index": self.PINNED}}, reproc_musts)
+        self.assertIn({"term": {"_id": "ds1"}}, reproc_musts)
+        # the rule's own index_pattern is kept: a rule whose pattern does not
+        # cover the pinned index still cannot fire
+        self.assertEqual(searches[0][0]["index"], "grq_*_l1_s1_slc-*")
+        # query_all rules are not bound to the dataset, so not to its index either
+        all_musts = searches[1][1]["query"]["bool"]["must"]
+        self.assertNotIn({"term": {"_index": self.PINNED}}, all_musts)
+        self.assertEqual(self.trigger.call_count, 1)
+
+    def test_no_index_binding_when_probe_fell_back(self):
+        self.ensure.return_value = None
+        self.mozart_es.query.return_value = [make_rule("reproc")]
+        self.grq_es.msearch.return_value = [hit("ds1")]
+
+        urd.evaluate_user_rules_dataset("ds1", "1", alias="grq", index="grq_wrong")
+
+        body = json.dumps(self.grq_es.msearch.call_args.args[0][0][1])
+        self.assertNotIn("_index", body)
+        self.assertEqual(self.trigger.call_count, 1)
+
+    def test_legacy_call_without_index(self):
+        """Positional-only task payloads (older producers) keep working."""
+        self.ensure.return_value = None
+        self.mozart_es.query.return_value = [make_rule("reproc")]
+        self.grq_es.msearch.return_value = [hit("ds1")]
+
+        urd.evaluate_user_rules_dataset("ds1", "1")
+
+        self.assertIsNone(self.ensure.call_args.kwargs["index"])
+        self.assertEqual(self.trigger.call_count, 1)
+
+
+class TestResolveDatasetIndex(unittest.TestCase):
+    """The concrete index the ingest wrote, mirrored from grq2's naming."""
+
+    def test_single_ingest_uses_grq2_answer(self):
+        info = {
+            "grq_index_result": {
+                "success": True, "objectid": "x", "index": "grq_1_l1_s1_slc-2026.10",
+            },
+            "index": {"suffix": "IGNORED"},
+        }
+        self.assertEqual(urd.resolve_dataset_index(info), "grq_1_l1_s1_slc-2026.10")
+
+    def test_bulk_ingest_with_suffix(self):
+        # bulk path: grq_index_result holds the dataset config's raw setting
+        info = {
+            "grq_index_result": {"index": None},
+            "index": {"suffix": "1_L1_S1_SLC-2026.10"},
+            "version": "1",
+            "dataset": "L1_S1_SLC",
+        }
+        self.assertEqual(urd.resolve_dataset_index(info), "grq_1_l1_s1_slc-2026.10")
+
+    def test_bulk_ingest_raw_string_index_is_not_trusted(self):
+        # a recognizer-configured raw value is not a grq2 answer
+        info = {
+            "grq_index_result": {"index": "something"},
+            "version": "v1.0",
+            "dataset": "L3_DISP_S1",
+        }
+        self.assertEqual(urd.resolve_dataset_index(info), "grq_v1.0_l3_disp_s1")
+
+    def test_default_naming(self):
+        info = {"version": "v1.0", "dataset": "L3_DISP_S1"}
+        self.assertEqual(urd.resolve_dataset_index(info), "grq_v1.0_l3_disp_s1")
+
+    def test_unresolvable(self):
+        self.assertIsNone(urd.resolve_dataset_index({"id": "x", "system_version": "1"}))
+        self.assertIsNone(urd.resolve_dataset_index({"index": {"aliases": ["a"]}}))
+
+    def test_resolver_never_raises(self):
+        class Broken(dict):
+            def get(self, *a, **k):
+                raise RuntimeError("boom")
+        self.assertIsNone(urd.resolve_dataset_index(Broken(id="x")))
+
+    def test_prefix_override(self):
+        with umock.patch.object(urd.app.conf, "get", return_value="mygrq"):
+            info = {"index": {"suffix": "1_X-2026.10"}}
+            self.assertEqual(urd.resolve_dataset_index(info), "mygrq_1_x-2026.10")
+
+
+class TestQueueDatasetEvaluation(unittest.TestCase):
+    def setUp(self):
+        self.task_worker = umock.MagicMock()
+        p = umock.patch.object(urd.hysds, "task_worker", self.task_worker, create=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def payload(self):
+        return self.task_worker.run_task.apply_async.call_args.args[0][0]
+
+    def test_index_passed_when_resolvable(self):
+        urd.queue_dataset_evaluation({
+            "id": "ds1", "system_version": "1", "version": "1", "dataset": "L1_S1_SLC",
+            "index": {"suffix": "1_L1_S1_SLC-2026.10"},
+            "grq_index_result": {"index": None},
+        })
+        payload = self.payload()
+        self.assertEqual(payload["args"], ["ds1", "1"])
+        self.assertEqual(payload["kwargs"], {"index": "grq_1_l1_s1_slc-2026.10"})
+        self.assertEqual(payload["function"],
+                         "hysds.user_rules_dataset.evaluate_user_rules_dataset")
+
+    def test_legacy_payload_when_unresolvable(self):
+        urd.queue_dataset_evaluation({"id": "ds1", "system_version": "1"})
+        self.assertNotIn("kwargs", self.payload())
+
+
+class TestEnsureDatasetIndexed(unittest.TestCase):
+    """HC-664: the probe runs on the index the ingest wrote, confirmed by a
+    realtime GET, so the old copy of a re-ingested _id cannot satisfy it."""
+
+    def setUp(self):
+        self.grq_es = umock.MagicMock()
+        self.settled = umock.MagicMock()
+        for p in (
+            umock.patch.object(urd, "get_grq_es", return_value=self.grq_es),
+            umock.patch.object(urd, "assert_doc_settled", self.settled),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+        # the undecorated function: the backoff wrapper reads its limits from
+        # celeryconfig, which is mocked out in this suite
+        self.ensure = urd.ensure_dataset_indexed.__wrapped__
+
+    def test_pinned_when_doc_is_in_named_index(self):
+        self.grq_es.es.get.return_value = {"found": True, "_seq_no": 3}
+
+        pinned = self.ensure("ds1", "1", "grq", index="grq_1_x-2026.10")
+
+        self.assertEqual(pinned, "grq_1_x-2026.10")
+        self.assertEqual(
+            self.grq_es.es.get.call_args.kwargs["index"], "grq_1_x-2026.10"
+        )
+        self.assertEqual(self.settled.call_args.args[1], "grq_1_x-2026.10")
+
+    def test_pins_the_concrete_index_the_get_answers_with(self):
+        # a realtime GET through an alias answers with the concrete index
+        self.grq_es.es.get.return_value = {"found": True, "_index": "grq_1_x-2026.10"}
+
+        pinned = self.ensure("ds1", "1", "grq", index="some_alias")
+
+        self.assertEqual(pinned, "grq_1_x-2026.10")
+        self.assertEqual(self.settled.call_args.args[1], "grq_1_x-2026.10")
+
+    def test_falls_back_to_alias_when_doc_not_found(self):
+        for answer in (
+            {"found": False},
+            {"error": {"type": "index_not_found_exception"}, "status": 404},
+        ):
+            self.grq_es.es.get.return_value = answer
+            with self.assertLogs(urd.logger, level="WARNING") as logs:
+                pinned = self.ensure("ds1", "1", "grq", index="grq_1_x-1999.01")
+            self.assertIsNone(pinned)
+            self.assertEqual(self.settled.call_args.args[1], "grq")
+            self.assertIn("not in index grq_1_x-1999.01", "\n".join(logs.output))
+
+    def test_alias_probe_without_index(self):
+        pinned = self.ensure("ds1", "1", "grq")
+        self.assertIsNone(pinned)
+        self.grq_es.es.get.assert_not_called()
+        self.assertEqual(self.settled.call_args.args[1], "grq")
+        musts = self.settled.call_args.kwargs["extra_must"]
+        self.assertIn({"term": {"system_version.keyword": "1"}}, musts)
+
+
 class TestEvaluateUserRulesJob(unittest.TestCase):
     def setUp(self):
         self.mozart_es = umock.MagicMock()
@@ -393,6 +600,35 @@ class TestAssertDocSettled(unittest.TestCase):
         es = self._es(7, 7)
         self._settled()(es, "grq", "csc-20180302")
         self.assertEqual(es.search.call_args.kwargs["preference"], "csc-20180302")
+
+    def test_multiple_copies_settle_on_newest_and_warn(self):
+        # HC-664: the same _id in two monthly indices behind the alias. The probe
+        # must see both, check the newest write, and say that it saw two.
+        from hysds.es_util import logger as es_logger
+        es = umock.MagicMock()
+        es.search.return_value = {"hits": {"hits": [
+            {"_index": "grq_1_slc-2026.08", "_seq_no": 4,
+             "_source": {"@timestamp": "2026-08-22T03:10:00Z"}},
+            {"_index": "grq_1_slc-2026.10", "_seq_no": 1,
+             "_source": {"@timestamp": "2026-10-21T21:41:30Z"}},
+        ]}}
+        es.es.get.return_value = {"_seq_no": 1}
+        with self.assertLogs(es_logger, level="WARNING") as logs:
+            self._settled()(es, "grq", "slc-35DB-r2")
+        self.assertEqual(es.es.get.call_args.kwargs["index"], "grq_1_slc-2026.10")
+        out = "\n".join(logs.output)
+        self.assertIn("2 documents share this _id", out)
+        self.assertIn("grq_1_slc-2026.08", out)
+        body = es.search.call_args.kwargs["body"]
+        self.assertEqual(body["size"], 10)
+        self.assertEqual(body["_source"], ["@timestamp"])
+
+    def test_single_copy_does_not_warn(self):
+        from hysds.es_util import logger as es_logger
+        es = self._es(7, 7)
+        with umock.patch.object(es_logger, "warning") as warn:
+            self._settled()(es, "grq", "d1")
+        warn.assert_not_called()
 
 
 class TestClientPreferenceSignature(unittest.TestCase):

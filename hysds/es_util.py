@@ -50,6 +50,13 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     `preference=doc_id`; the caller MUST pass the same `preference=doc_id` on its
     rule query so both bind to the same copy. (Opaque routing key: same string ->
     same copy; spreads load across copies by doc, unlike `_primary`.)
+
+    Index copies: behind an alias or pattern the same _id can live in several
+    indices (monthly or rolling indices with stable ids). This probe then sees
+    every visible copy, settles on the newest write (@timestamp, stamped at index
+    time by grq2 and logstash) and logs a warning naming the indices. It cannot
+    see a copy that is not refreshed yet, so a caller that knows which index it
+    means should pass that index, not the alias (HC-664).
     """
     must = [{"term": {"_id": doc_id}}]
     if extra_must:
@@ -57,11 +64,23 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     body = {
         "query": {"bool": {"must": must}},
         "seq_no_primary_term": True,
-        "size": 1,
+        "size": 10,
+        "_source": ["@timestamp"],
     }
     hits = es_util.search(index=index, body=body, preference=doc_id)["hits"]["hits"]
     if not hits:
         raise RuntimeError(f"doc not yet search-visible: {doc_id}")
+    if len(hits) > 1:
+        hits = sorted(
+            hits,
+            key=lambda h: str((h.get("_source") or {}).get("@timestamp") or ""),
+            reverse=True,
+        )
+        logger.warning(
+            f"{doc_id}: {len(hits)} documents share this _id in {index} "
+            f"({[h.get('_index') for h in hits]}); settling on "
+            f"{hits[0].get('_index')}, the newest by @timestamp"
+        )
     hit = hits[0]
     searchable_seq_no = hit.get("_seq_no")
     # ignore=[404]: the doc can be deleted between the search and this GET --
