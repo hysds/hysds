@@ -103,6 +103,53 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
         )
 
 
+def search_hits_total(result):
+    """hits.total of a search response as an int (a dict on ES 7+/OpenSearch, an
+    int on older engines); 0 when absent."""
+    total = (result.get("hits") or {}).get("total")
+    if isinstance(total, dict):
+        total = total.get("value")
+    return total if isinstance(total, int) else 0
+
+
+def is_partial_search_response(result, index=None):
+    """True when a 200 search response with NO hits cannot be trusted to mean
+    "no match".
+
+    That is the case when the engine says the result is incomplete (timed_out,
+    or failed shards) or contradicts itself: a hit count above zero with an
+    empty hits list, which a shard whose fetch phase failed or timed out
+    produces under load (HC-665). A response WITH a hit is trusted: a rule query
+    bound to the triggering _id has found its document.
+
+    index: the concrete index the query was bound to (a term on _index). Failed
+    shards that all belong to other indices cannot hide its document, so those
+    do not make the response partial. Failures without an index name do.
+    """
+    hits = result.get("hits") or {}
+    if hits.get("hits"):
+        return False
+    if result.get("timed_out"):
+        return True
+    if search_hits_total(result) > 0:
+        return True
+    shards = result.get("_shards") or {}
+    if (shards.get("failed") or 0) > 0:
+        failures = shards.get("failures")
+        if (
+            index
+            and isinstance(failures, list)
+            and failures
+            and all(
+                isinstance(f, dict) and f.get("index") and f["index"] != index
+                for f in failures
+            )
+        ):
+            return False
+        return True
+    return False
+
+
 def get_mozart_es_engine():
     return app.conf.get("JOBS_ES_ENGINE", "elasticsearch")
 

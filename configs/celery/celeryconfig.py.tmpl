@@ -53,6 +53,12 @@ HYSDS_JOB_STATUS_EXPIRES = 86400
 BACKOFF_MAX_VALUE = 64
 BACKOFF_MAX_TRIES = 10
 
+# User rule evaluation (HC-664, HC-665); the defaults apply when these are unset.
+# DATASET_INDEX_PREFIX = "grq"        # grq2's GRQ_INDEX, if a deployment changed it
+# USER_RULES_MAX_ATTEMPTS = 3         # evaluations per dataset or job, the first included
+# USER_RULES_REQUEUE_DELAY = 60       # seconds before the 2nd evaluation; doubles after
+# USER_RULES_REQUEUE_MAX_DELAY = 600  # keep well under the broker's consumer timeout
+
 # Job lock settings for distributed locking
 
 # set to true to enable the job locking feature
