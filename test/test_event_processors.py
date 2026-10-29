@@ -15,13 +15,16 @@ import pytest
 # raises AttributeError for attributes starting with "assert". Snapshot and
 # restore afterwards so this does not pollute later test files (test_user_rules,
 # test_triage) that need the real modules.
-# restore es_util and the two modules that bind it at import, so the mock does
-# not leak into later test files. celery stays mocked (test_job_worker does the
+# restore es_util and the modules that bind it at import, so the mock does
+# not leak into later test files. user_rules_dataset is imported on the way
+# (task_worker -> orchestrator) and binds es_util helpers that test_user_rules
+# calls unpatched. celery stays mocked (test_job_worker does the
 # same). event_processors stays cached on purpose -- the regex-provenance test
 # below relies on `pe.TASK_FAILED_RE is ep.TASK_FAILED_RE`, which requires the
 # script to import this exact module object.
 _saved = {k: sys.modules.get(k) for k in
-          ("hysds.es_util", "hysds.user_rules_job", "hysds.task_worker")}
+          ("hysds.es_util", "hysds.user_rules_job", "hysds.user_rules_dataset",
+           "hysds.task_worker")}
 sys.modules["hysds.celery"] = umock.MagicMock()
 sys.modules["hysds.es_util"] = umock.MagicMock(unsafe=True)
 

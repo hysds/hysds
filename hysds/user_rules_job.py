@@ -11,8 +11,13 @@ import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.es_util import assert_doc_settled, get_mozart_es
-from hysds.log_utils import backoff_max_tries, backoff_max_value, logger
+from hysds.es_util import assert_doc_settled, get_mozart_es, is_partial_search_response
+from hysds.log_utils import (
+    backoff_max_tries,
+    backoff_max_value,
+    log_custom_event,
+    logger,
+)
 
 JOBS_ES_URL = app.conf.JOBS_ES_URL  # ES
 USER_RULES_JOB_INDEX = app.conf.USER_RULES_JOB_INDEX
@@ -156,11 +161,12 @@ def _is_retryable_item_error(item):
 def _fallback_search(header, body, preference):
     """Run one rule's search individually (search_es retries transient errors
     with bounded backoff and gives up on 400s); package a persistent failure
-    as a per-item style error so only that rule is skipped."""
+    as a per-item style error so only that rule is skipped. `transient` tells
+    the caller whether a later attempt could succeed: a 400 cannot (HC-665)."""
     try:
         return search_es(index=header["index"], body=body, preference=preference)
     except Exception as e:
-        return {"error": {"reason": str(e)}}
+        return {"error": {"reason": str(e)}, "transient": not _is_request_error(e)}
 
 
 def msearch_es(searches, preference):
@@ -208,120 +214,275 @@ def msearch_es(searches, preference):
     return responses
 
 
-def evaluate_user_rules_job(job_id, index=None, uuid=None):
+def evaluate_user_rules_job(job_id, index=None, uuid=None, rule_names=None, attempt=0):
     """
     Process all user rules in ES database and check if this job ID matches.
     If so, submit jobs. Otherwise do nothing.
+
+    rule_names, attempt: set on a re-queued evaluation (HC-665). A rule whose
+    search failed transiently or came back partial (timed out, failed shards,
+    or a hit count with no hits), or whose handling raised, is unresolved: it
+    neither matched nor provably missed. Unresolved rules are re-queued with a
+    growing countdown and re-evaluated alone, so rules that already fired never
+    fire twice, up to USER_RULES_MAX_ATTEMPTS evaluations in all; the last
+    failure is logged as "GAVE UP" and posted as a user_rules_evaluation event.
+    A rule whose query does not parse is a deterministic error and is not
+    retried.
     """
-
-    ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS, uuid=uuid)
-
-    # get all enabled user rules
-    query = {"query": {"term": {"enabled": True}}}
-    mozart_es = get_mozart_es()
-    rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
-    logger.info(f"Total {len(rules)} enabled rules to check.")
-
-    # build a single multi search request with one search per rule
-    candidates = []
-    searches = []
-    for rule in rules:
-        rule = rule["_source"]  # extracting _source from the rule itself
-        logger.info(f"rule: {json.dumps(rule, indent=2)}")
-
-        try:
-            updated_query = update_query(job_id, rule)  # check for matching rules
-            rule["query"] = updated_query
-            rule["query_string"] = json.dumps(updated_query)
-        except (RuntimeError, Exception) as e:
-            logger.error("unable to update user_rule's query, skipping")
-            logger.error(e)
-            continue
-
-        final_qs = rule["query_string"]
-        logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
-
-        searches.append(
-            ({"index": index or JOB_STATUS_ALIAS}, {**updated_query, "size": 1})
+    if attempt:
+        logger.info(
+            f"evaluate_user_rules_job: {job_id} attempt={attempt} "
+            f"rule_names={rule_names}"
         )
-        candidates.append(rule)
+    try:
+        ensure_job_indexed(job_id, alias=index or JOB_STATUS_ALIAS, uuid=uuid)
 
-    if not searches:
-        return True
+        # get all enabled user rules
+        query = {"query": {"term": {"enabled": True}}}
+        mozart_es = get_mozart_es()
+        rules = mozart_es.query(index=USER_RULES_JOB_INDEX, body=query)
+        logger.info(f"Total {len(rules)} enabled rules to check.")
+        if rule_names is not None:
+            rules = [d for d in rules if d["_source"].get("rule_name") in rule_names]
+            logger.info(f"Re-evaluating {len(rules)} of them: {rule_names}")
 
-    # check all rules for matches in a single round trip; preference=job_id pins
-    # the same shard copy ensure_job_indexed validated (HC-633 replica-lag fix)
-    responses = msearch_es(searches, job_id)
+        # build a single multi search request with one search per rule
+        candidates = []
+        searches = []
+        for rule in rules:
+            rule = rule["_source"]  # extracting _source from the rule itself
+            logger.info(f"rule: {json.dumps(rule, indent=2)}")
+
+            try:
+                updated_query = update_query(job_id, rule)  # check for matching rules
+                rule["query"] = updated_query
+                rule["query_string"] = json.dumps(updated_query)
+            except (RuntimeError, Exception) as e:
+                logger.error("unable to update user_rule's query, skipping")
+                logger.error(e)
+                continue
+
+            final_qs = rule["query_string"]
+            logger.info(f"updated query: {json.dumps(final_qs, indent=2)}")
+
+            searches.append(
+                ({"index": index or JOB_STATUS_ALIAS}, {**updated_query, "size": 1})
+            )
+            candidates.append(rule)
+
+        if not searches:
+            return True
+
+        # check all rules for matches in a single round trip; preference=job_id
+        # pins the same shard copy ensure_job_indexed validated (HC-633)
+        responses = msearch_es(searches, job_id)
+    except Exception as e:
+        # Nothing has been submitted yet. A transient fault here (the probe or
+        # the rule listing out of retries, the msearch failing) must not end as
+        # a dead task with every trigger of this job lost (HC-665).
+        logger.exception(
+            f"Evaluation of {job_id} failed before any rule was decided: {e!r}"
+        )
+        if requeue_job_evaluation(
+            job_id, rule_names, attempt, index=index, uuid=uuid, reason=repr(e)
+        ):
+            return True
+        raise
+
+    if len(responses) < len(searches):
+        missing = {
+            "error": {"reason": "no msearch response for this rule"},
+            "transient": True,
+        }
+        responses = list(responses) + [missing] * (len(searches) - len(responses))
 
     matched = []
     errored = []
-    for rule, result in zip(candidates, responses):
+    unresolved = []
+    for (header, body), rule, result in zip(searches, candidates, responses):
         rule_name = rule["rule_name"]
+        try:
+            if not result.get("error") and is_partial_search_response(result):
+                logger.warning(
+                    f"Rule '{rule_name}' got a partial response for {job_id}: "
+                    f"timed_out={result.get('timed_out')} "
+                    f"_shards={json.dumps(result.get('_shards'))} "
+                    f"hits.total={json.dumps((result.get('hits') or {}).get('total'))} "
+                    f"with no hits; re-running it individually"
+                )
+                result = _fallback_search(header, body, job_id)
+                if not result.get("error") and is_partial_search_response(result):
+                    logger.error(
+                        f"Rule '{rule_name}' still got a partial response for "
+                        f"{job_id} after the re-run"
+                    )
+                    unresolved.append(rule_name)
+                    continue
 
-        if result.get("error"):
-            logger.error(
-                f"Rule '{rule_name}' query failed for {job_id}: "
-                f"{json.dumps(result['error'])}"
-            )
-            errored.append(rule_name)
-            continue
+            if result.get("error"):
+                logger.error(
+                    f"Rule '{rule_name}' query failed for {job_id}: "
+                    f"{json.dumps(result['error'])}"
+                )
+                if result.get("transient"):
+                    unresolved.append(rule_name)
+                else:
+                    errored.append(rule_name)
+                continue
 
-        if result["hits"]["total"]["value"] == 0:
-            logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
-            continue
+            hits = (result.get("hits") or {}).get("hits") or []
+            if not hits:
+                logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
+                continue
 
-        doc_res = result["hits"]["hits"][0]
-        logger.info(f"Rule '{rule_name}' successfully matched for {job_id}")
+            doc_res = hits[0]
+            logger.info(f"Rule '{rule_name}' successfully matched for {job_id}")
 
-        # Create a more specific job name based on persist_job_name flag
-        job_type = rule.get("job_type", "")
-        if job_type.startswith("hysds-io-"):
-            job_type = job_type.replace("hysds-io-", "", 1)
+            # Create a more specific job name based on persist_job_name flag
+            job_type = rule.get("job_type", "")
+            if job_type.startswith("hysds-io-"):
+                job_type = job_type.replace("hysds-io-", "", 1)
 
-        # Check if we should persist the original job's name
-        job_name_path = rule.get("job_name_path", "")
-        if job_name_path:
-            # Extract the original job's name from the matched document
-            job_name_value = process_xpath(job_name_path, doc_res)
-        else:
-            job_name_value = ""
+            # Check if we should persist the original job's name
+            job_name_path = rule.get("job_name_path", "")
+            if job_name_path:
+                # Extract the original job's name from the matched document
+                job_name_value = process_xpath(job_name_path, doc_res)
+            else:
+                job_name_value = ""
 
-        if job_name_value:
-            job_name = f"{job_type}-{job_name_value}"
-        else:
-            # Use the generic job_id (default behavior)
-            job_name = f"{job_type}-{job_id}"
+            if job_name_value:
+                job_name = f"{job_type}-{job_name_value}"
+            else:
+                # Use the generic job_id (default behavior)
+                job_name = f"{job_type}-{job_id}"
 
-        # submit trigger task
-        queue_job_trigger(doc_res, rule, job_name)
-        logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
-        matched.append(rule_name)
+            # submit trigger task
+            queue_job_trigger(doc_res, rule, job_name)
+            logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
+            matched.append(rule_name)
+        except Exception as e:
+            # one rule's failure must not take the remaining rules with it (HC-665)
+            logger.exception(f"Rule '{rule_name}' raised for {job_id}: {e!r}")
+            unresolved.append(rule_name)
 
     logger.info(
         f"Evaluated {len(candidates)} rules for {job_id}: "
-        f"matched={matched} errored={errored}"
+        f"matched={matched} errored={errored} unresolved={unresolved} "
+        f"attempt={attempt}"
     )
+    if unresolved:
+        requeue_job_evaluation(
+            job_id,
+            unresolved,
+            attempt,
+            index=index,
+            uuid=uuid,
+            reason="partial or failed rule responses",
+        )
     return True
+
+
+def _conf_int(name, default):
+    """Integer celeryconfig setting, or `default` when unset or not an int."""
+    value = app.conf.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
+
+
+def requeue_countdown(attempt):
+    """Seconds before re-evaluation `attempt + 1`: USER_RULES_REQUEUE_DELAY
+    doubling per attempt, capped at USER_RULES_REQUEUE_MAX_DELAY. Keep the cap
+    well under the broker's consumer timeout (RabbitMQ: 30 min): a worker holds
+    a countdown message unacked until it runs."""
+    base = _conf_int("USER_RULES_REQUEUE_DELAY", 60)
+    cap = _conf_int("USER_RULES_REQUEUE_MAX_DELAY", 600)
+    return min(base * (2**attempt), cap)
+
+
+def requeue_job_evaluation(
+    job_id, rule_names, attempt, index=None, uuid=None, reason=""
+):
+    """Re-enqueue a job evaluation that left rules unresolved (HC-665).
+
+    rule_names: the rules to re-evaluate; None re-evaluates every rule (the
+    evaluation failed before any rule was decided). Returns True when queued.
+    Once USER_RULES_MAX_ATTEMPTS evaluations (default 3) have run, or when the
+    re-enqueue itself fails, logs "GAVE UP", posts a user_rules_evaluation
+    event and returns False.
+    """
+    next_attempt = attempt + 1
+    if next_attempt < _conf_int("USER_RULES_MAX_ATTEMPTS", 3):
+        countdown = requeue_countdown(attempt)
+        try:
+            queue_finished_job(
+                job_id,
+                index=index,
+                uuid=uuid,
+                rule_names=rule_names,
+                attempt=next_attempt,
+                countdown=countdown,
+            )
+            logger.warning(
+                f"user_rules_job: requeued {job_id} as attempt {next_attempt} in "
+                f"{countdown} s; rules: {rule_names or 'all'}; reason: {reason}"
+            )
+            return True
+        except Exception as e:
+            reason = f"{reason}; requeue failed: {e!r}"
+    logger.error(
+        f"user_rules_job GAVE UP on {job_id} after {next_attempt} attempt(s); "
+        f"rules left undecided: {rule_names or 'all'}; last reason: {reason}"
+    )
+    try:
+        log_custom_event(
+            "user_rules_evaluation",
+            "gave_up",
+            {
+                "evaluator": "user_rules_job",
+                "job_id": job_id,
+                "index": index,
+                "uuid": uuid,
+                "rules": rule_names,
+                "attempts": next_attempt,
+                "reason": reason,
+            },
+            tags=["user_rules_job", "gave_up"],
+        )
+    except Exception as e:
+        logger.error(f"could not post the gave_up event for {job_id}: {e!r}")
+    return False
 
 
 @backoff.on_exception(
     backoff.expo, socket.error, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
-def queue_finished_job(_id, index=None, uuid=None):
+def queue_finished_job(
+    _id, index=None, uuid=None, rule_names=None, attempt=0, countdown=None
+):
     """Queue job id for user_rules_job evaluation.
 
     `uuid` identifies which attempt the evaluation is about, so the settle
     probe does not pass on an older attempt's doc under the same _id.
+
+    `rule_names`, `attempt` and `countdown` are for a re-queued evaluation
+    (HC-665, see requeue_job_evaluation); a first evaluation's payload is
+    unchanged.
     """
+    kwargs = {"index": index, "uuid": uuid}
+    if attempt:
+        kwargs.update(rule_names=rule_names, attempt=attempt)
     payload = {
         "type": "user_rules_job",
         "function": "hysds.user_rules_job.evaluate_user_rules_job",
         "args": [_id],
-        "kwargs": {"index": index, "uuid": uuid},
+        "kwargs": kwargs,
     }
-    hysds.task_worker.run_task.apply_async(
-        (payload,), queue=USER_RULES_JOB_QUEUE
-    )  # noqa
+    options = {"queue": USER_RULES_JOB_QUEUE}
+    if countdown:
+        options["countdown"] = countdown
+    hysds.task_worker.run_task.apply_async((payload,), **options)  # noqa
 
 
 @backoff.on_exception(
