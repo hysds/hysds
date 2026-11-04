@@ -11,7 +11,12 @@ import opensearchpy.exceptions
 
 import hysds  # avoids cyclical import
 from hysds.celery import app
-from hysds.es_util import assert_doc_settled, get_mozart_es, is_partial_search_response
+from hysds.es_util import (
+    assert_doc_settled,
+    get_mozart_es,
+    is_partial_search_response,
+    shard_failure_summary,
+)
 from hysds.log_utils import (
     backoff_max_tries,
     backoff_max_value,
@@ -332,7 +337,13 @@ def evaluate_user_rules_job(job_id, index=None, uuid=None, rule_names=None, atte
 
             hits = (result.get("hits") or {}).get("hits") or []
             if not hits:
-                logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
+                failures = shard_failure_summary(result)
+                if failures:
+                    logger.warning(
+                        f"Rule '{rule_name}' didn't match for {job_id}; {failures}"
+                    )
+                else:
+                    logger.info(f"Rule '{rule_name}' didn't match for {job_id}")
                 continue
 
             doc_res = hits[0]
@@ -391,14 +402,19 @@ def _conf_int(name, default):
     return value
 
 
+# A worker holds a countdown message unacked until it runs, and RabbitMQ closes
+# the channel of a consumer that holds a message longer than its consumer
+# timeout (30 min by default). No countdown may come near that.
+REQUEUE_DELAY_CEILING = 1500
+
+
 def requeue_countdown(attempt):
     """Seconds before re-evaluation `attempt + 1`: USER_RULES_REQUEUE_DELAY
-    doubling per attempt, capped at USER_RULES_REQUEUE_MAX_DELAY. Keep the cap
-    well under the broker's consumer timeout (RabbitMQ: 30 min): a worker holds
-    a countdown message unacked until it runs."""
+    doubling per attempt, capped at USER_RULES_REQUEUE_MAX_DELAY and, whatever
+    that is set to, at REQUEUE_DELAY_CEILING (25 min)."""
     base = _conf_int("USER_RULES_REQUEUE_DELAY", 60)
     cap = _conf_int("USER_RULES_REQUEUE_MAX_DELAY", 600)
-    return min(base * (2**attempt), cap)
+    return max(0, min(base * (2**attempt), cap, REQUEUE_DELAY_CEILING))
 
 
 def requeue_job_evaluation(

@@ -16,6 +16,7 @@ from hysds.es_util import (
     get_grq_es,
     get_mozart_es,
     is_partial_search_response,
+    shard_failure_summary,
 )
 from hysds.log_utils import (
     backoff_max_tries,
@@ -67,18 +68,25 @@ def ensure_dataset_indexed(objectid, system_version, alias, index=None):
         grq_es = get_grq_es()
         probe_index, pinned = alias, None
         if index:
-            # ignore=[404]: a missing doc AND a missing index both answer 404;
-            # neither has "found": true, so both fall back to the alias.
-            latest = grq_es.es.get(index=index, id=objectid, ignore=[404])
+            # ignore=[400, 404]: a missing doc and a missing index answer 404; an
+            # alias over several indices and a closed index answer 400. None of
+            # them has "found": true, so all fall back to the alias.
+            latest = grq_es.es.get(index=index, id=objectid, ignore=[400, 404])
             if isinstance(latest, dict) and latest.get("found") is True:
                 # the GET answers with the concrete index even when `index`
                 # names an alias; bind everything to that
                 pinned = latest.get("_index") or index
                 probe_index = pinned
             else:
+                error = latest.get("error") if isinstance(latest, dict) else None
+                detail = ""
+                if isinstance(error, dict) and error.get("type"):
+                    detail = f" ({error['type']})"
+                elif isinstance(error, str):
+                    detail = f" ({error})"
                 logger.warning(
                     f"{objectid} ({system_version}) is not in index {index} named by "
-                    f"the producer; probing {alias} instead"
+                    f"the producer{detail}; probing {alias} instead"
                 )
         assert_doc_settled(
             grq_es,
@@ -350,12 +358,8 @@ def evaluate_user_rules_dataset(
     unresolved = []
     for (header, body), rule, result in zip(searches, candidates, responses):
         rule_name = rule["rule_name"]
-        # a non-query_all rule is bound to the pinned index
-        bound_index = pinned if rule.get("query_all", False) is False else None
         try:
-            if not result.get("error") and is_partial_search_response(
-                result, bound_index
-            ):
+            if not result.get("error") and is_partial_search_response(result):
                 logger.warning(
                     f"Rule '{rule_name}' got a partial response for {objectid} "
                     f"({system_version}): timed_out={result.get('timed_out')} "
@@ -364,9 +368,7 @@ def evaluate_user_rules_dataset(
                     f"with no hits; re-running it individually"
                 )
                 result = _fallback_search(header, body, objectid)
-                if not result.get("error") and is_partial_search_response(
-                    result, bound_index
-                ):
+                if not result.get("error") and is_partial_search_response(result):
                     logger.error(
                         f"Rule '{rule_name}' still got a partial response for "
                         f"{objectid} ({system_version}) after the re-run"
@@ -388,9 +390,17 @@ def evaluate_user_rules_dataset(
 
             hits = (result.get("hits") or {}).get("hits") or []
             if not hits:
-                logger.info(
-                    f"Rule '{rule_name}' didn't match for {objectid} ({system_version})"
-                )
+                failures = shard_failure_summary(result)
+                if failures:
+                    logger.warning(
+                        f"Rule '{rule_name}' didn't match for {objectid} "
+                        f"({system_version}); {failures}"
+                    )
+                else:
+                    logger.info(
+                        f"Rule '{rule_name}' didn't match for {objectid} "
+                        f"({system_version})"
+                    )
                 continue
             doc_res = hits[0]
             logger.info(
@@ -440,14 +450,24 @@ def _conf_int(name, default):
     return value
 
 
+def _conf_true(name):
+    """Boolean celeryconfig setting: True only when set to True."""
+    return app.conf.get(name, False) is True
+
+
+# A worker holds a countdown message unacked until it runs, and RabbitMQ closes
+# the channel of a consumer that holds a message longer than its consumer
+# timeout (30 min by default). No countdown may come near that.
+REQUEUE_DELAY_CEILING = 1500
+
+
 def requeue_countdown(attempt):
     """Seconds before re-evaluation `attempt + 1`: USER_RULES_REQUEUE_DELAY
-    doubling per attempt, capped at USER_RULES_REQUEUE_MAX_DELAY. Keep the cap
-    well under the broker's consumer timeout (RabbitMQ: 30 min): a worker holds
-    a countdown message unacked until it runs."""
+    doubling per attempt, capped at USER_RULES_REQUEUE_MAX_DELAY and, whatever
+    that is set to, at REQUEUE_DELAY_CEILING (25 min)."""
     base = _conf_int("USER_RULES_REQUEUE_DELAY", 60)
     cap = _conf_int("USER_RULES_REQUEUE_MAX_DELAY", 600)
-    return min(base * (2**attempt), cap)
+    return max(0, min(base * (2**attempt), cap, REQUEUE_DELAY_CEILING))
 
 
 @backoff.on_exception(
@@ -569,16 +589,20 @@ def resolve_dataset_index(info):
 def queue_dataset_evaluation(info):
     """Queue dataset id for user_rules_dataset evaluation.
 
-    The concrete index the ingest wrote to rides along as the `index` kwarg when
-    it can be resolved. Consumers must run hysds >= 3.3.6 before a
-    producer sends it: an older evaluate_user_rules_dataset rejects the kwarg.
+    With USER_RULES_SEND_INDEX = True, the concrete index the ingest wrote to
+    rides along as the `index` kwarg when it can be resolved, and the
+    evaluation is pinned to it. Off by default: hysds 3.3.5's
+    evaluate_user_rules_dataset rejects the kwarg with a TypeError and the
+    dataset's triggers are lost, so turn it on only once every consumer of the
+    user_rules_dataset queue runs hysds >= 3.3.6. Without it the payload is the
+    one 3.3.5 sent, and the evaluation probes the alias as before.
     """
     payload = {
         "type": "user_rules_dataset",
         "function": "hysds.user_rules_dataset.evaluate_user_rules_dataset",
         "args": [info["id"], info["system_version"]],
     }
-    index = resolve_dataset_index(info)
+    index = resolve_dataset_index(info) if _conf_true("USER_RULES_SEND_INDEX") else None
     if index:
         payload["kwargs"] = {"index": index}
     logger.info(

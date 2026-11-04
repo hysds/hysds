@@ -410,12 +410,21 @@ class TestQueueDatasetEvaluation(unittest.TestCase):
     def payload(self):
         return self.task_worker.run_task.apply_async.call_args.args[0][0]
 
-    def test_index_passed_when_resolvable(self):
-        urd.queue_dataset_evaluation({
-            "id": "ds1", "system_version": "1", "version": "1", "dataset": "L1_S1_SLC",
-            "index": {"suffix": "1_L1_S1_SLC-2026.10"},
-            "grq_index_result": {"index": None},
-        })
+    INFO = {
+        "id": "ds1", "system_version": "1", "version": "1", "dataset": "L1_S1_SLC",
+        "index": {"suffix": "1_L1_S1_SLC-2026.10"},
+        "grq_index_result": {"index": None},
+    }
+
+    def queue(self, info, send_index):
+        settings = {"USER_RULES_SEND_INDEX": send_index}
+        with umock.patch.object(
+            urd.app.conf, "get", side_effect=lambda k, d=None: settings.get(k, d)
+        ):
+            urd.queue_dataset_evaluation(info)
+
+    def test_index_passed_when_enabled_and_resolvable(self):
+        self.queue(self.INFO, True)
         payload = self.payload()
         self.assertEqual(payload["args"], ["ds1", "1"])
         self.assertEqual(payload["kwargs"], {"index": "grq_1_l1_s1_slc-2026.10"})
@@ -423,8 +432,17 @@ class TestQueueDatasetEvaluation(unittest.TestCase):
                          "hysds.user_rules_dataset.evaluate_user_rules_dataset")
 
     def test_legacy_payload_when_unresolvable(self):
-        urd.queue_dataset_evaluation({"id": "ds1", "system_version": "1"})
+        self.queue({"id": "ds1", "system_version": "1"}, True)
         self.assertNotIn("kwargs", self.payload())
+
+    def test_legacy_payload_unless_enabled(self):
+        """Off by default: a 3.3.5 consumer rejects the kwarg with a TypeError."""
+        for value in (False, None, "true", 1, umock.MagicMock()):
+            self.task_worker.reset_mock()
+            self.queue(self.INFO, value)
+            payload = self.payload()
+            self.assertNotIn("kwargs", payload)
+            self.assertEqual(payload["args"], ["ds1", "1"])
 
 
 class TestEnsureDatasetIndexed(unittest.TestCase):
@@ -465,16 +483,26 @@ class TestEnsureDatasetIndexed(unittest.TestCase):
         self.assertEqual(self.settled.call_args.args[1], "grq_1_x-2026.10")
 
     def test_falls_back_to_alias_when_doc_not_found(self):
-        for answer in (
-            {"found": False},
-            {"error": {"type": "index_not_found_exception"}, "status": 404},
+        for answer, detail in (
+            ({"found": False}, ""),
+            ({"error": {"type": "index_not_found_exception"}, "status": 404},
+             " (index_not_found_exception)"),
+            # an alias over several indices, or a closed index, answers 400
+            ({"error": {"type": "illegal_argument_exception"}, "status": 400},
+             " (illegal_argument_exception)"),
+            ({"error": {"type": "index_closed_exception"}, "status": 400},
+             " (index_closed_exception)"),
         ):
             self.grq_es.es.get.return_value = answer
             with self.assertLogs(urd.logger, level="WARNING") as logs:
                 pinned = self.ensure("ds1", "1", "grq", index="grq_1_x-1999.01")
             self.assertIsNone(pinned)
             self.assertEqual(self.settled.call_args.args[1], "grq")
-            self.assertIn("not in index grq_1_x-1999.01", "\n".join(logs.output))
+            self.assertIn(
+                f"not in index grq_1_x-1999.01 named by the producer{detail};",
+                "\n".join(logs.output),
+            )
+        self.assertEqual(self.grq_es.es.get.call_args.kwargs["ignore"], [400, 404])
 
     def test_alias_probe_without_index(self):
         pinned = self.ensure("ds1", "1", "grq")
@@ -506,21 +534,34 @@ class TestIsPartialSearchResponse(unittest.TestCase):
     def test_timed_out_without_hits_is_partial(self):
         self.assertTrue(self.partial({**miss(), "timed_out": True}))
 
-    def test_failed_shards_without_hits_are_partial(self):
-        self.assertTrue(self.partial({**miss(), "_shards": {"total": 8, "failed": 1}}))
+    def test_failed_shards_alone_are_not_partial(self):
+        """A shard failure is usually permanent for the query (a field mapped
+        differently in one index): retrying cannot change it, so it stays a
+        miss, as before 3.3.6."""
+        self.assertFalse(self.partial({**miss(), "_shards": {"total": 8, "failed": 1}}))
+        # a hit count with no hits is partial whatever the shards say
+        self.assertTrue(self.partial({**partial(1), "_shards": {"failed": 0}}))
 
-    def test_failures_on_other_indices_cannot_hide_the_bound_index(self):
-        result = {**miss(), "_shards": {"total": 16, "failed": 1, "failures": [
-            {"index": "grq_1_slc-2026.08", "shard": 3, "reason": {}}]}}
-        self.assertFalse(self.partial(result, "grq_1_slc-2026.10"))
-        # unbound query: any failed shard could have held the document
-        self.assertTrue(self.partial(result))
-        # a failure on the bound index, or one without an index name, counts
-        on_bound = {**miss(), "_shards": {"failed": 1, "failures": [
-            {"index": "grq_1_slc-2026.10"}]}}
-        self.assertTrue(self.partial(on_bound, "grq_1_slc-2026.10"))
-        unnamed = {**miss(), "_shards": {"failed": 1, "failures": [{"shard": 0}]}}
-        self.assertTrue(self.partial(unnamed, "grq_1_slc-2026.10"))
+    def test_shard_failure_summary(self):
+        from hysds.es_util import shard_failure_summary
+        self.assertIsNone(shard_failure_summary(miss()))
+        self.assertIsNone(shard_failure_summary({"_shards": {"failed": 0}}))
+        result = {"_shards": {"total": 16, "failed": 2, "failures": [
+            {"index": "grq_1_x-2026.08", "reason": {
+                "type": "query_shard_exception",
+                "caused_by": {"type": "number_format_exception"}}},
+            {"index": "grq_1_x-2026.09", "reason": {"type": "query_shard_exception"}},
+            "not a dict",
+        ]}}
+        self.assertEqual(
+            shard_failure_summary(result),
+            "2 of 16 shard(s) failed: grq_1_x-2026.08 number_format_exception, "
+            "grq_1_x-2026.09 query_shard_exception",
+        )
+        self.assertEqual(
+            shard_failure_summary({"_shards": {"total": 4, "failed": 1}}),
+            "1 of 4 shard(s) failed",
+        )
 
     def test_hits_total_shapes(self):
         self.assertEqual(self.total(hit("x")), 1)
@@ -608,31 +649,38 @@ class TestDatasetUnresolvedRules(unittest.TestCase):
         )
         self.assertEqual(countdown, 60)
 
-    def test_timed_out_and_failed_shards_are_rerun(self):
-        self.mozart_es.query.return_value = [make_rule("a"), make_rule("b")]
-        self.grq_es.msearch.return_value = [
-            {**miss(), "timed_out": True},
-            {**miss(), "_shards": {"total": 8, "failed": 1}},
-        ]
-        self.grq_es.search.side_effect = [hit("ds1"), miss()]
+    def test_timed_out_is_rerun(self):
+        self.mozart_es.query.return_value = [make_rule("a")]
+        self.grq_es.msearch.return_value = [{**miss(), "timed_out": True}]
+        self.grq_es.search.return_value = hit("ds1")
 
         self.evaluate()
 
-        self.assertEqual(self.grq_es.search.call_count, 2)
+        self.assertEqual(self.grq_es.search.call_count, 1)
         self.assertEqual(self.triggered(), ["a"])
         self.send.assert_not_called()
 
-    def test_failed_shards_elsewhere_do_not_rerun_a_pinned_rule(self):
-        self.ensure.return_value = "grq_1_slc-2026.10"
-        self.mozart_es.query.return_value = [make_rule("reproc")]
-        self.grq_es.msearch.return_value = [{**miss(), "_shards": {
-            "total": 16, "failed": 1, "failures": [{"index": "grq_1_slc-2026.08"}]}}]
+    def test_failed_shards_are_a_miss_with_a_warning(self):
+        """No re-run, no re-queue, no GAVE UP: a permanent shard failure would
+        fail every attempt the same way."""
+        self.mozart_es.query.return_value = [make_rule("reproc"), make_rule("all")]
+        self.grq_es.msearch.return_value = [
+            {**miss(), "_shards": {"total": 16, "failed": 1, "failures": [
+                {"index": "grq_1_slc-2026.08",
+                 "reason": {"type": "query_shard_exception"}}]}},
+            hit("ds1"),
+        ]
 
-        self.evaluate(index="grq_1_slc-2026.10")
+        with self.assertLogs(urd.logger, level="WARNING") as logs:
+            self.evaluate()
 
         self.grq_es.search.assert_not_called()
-        self.trigger.assert_not_called()
+        self.assertEqual(self.triggered(), ["all"])
         self.send.assert_not_called()
+        self.event.assert_not_called()
+        self.assertTrue(any(
+            "Rule 'reproc' didn't match for ds1 (v1.1); 1 of 16 shard(s) failed: "
+            "grq_1_slc-2026.08 query_shard_exception" in m for m in logs.output))
 
     def test_transient_failure_after_fallback_is_requeued(self):
         """A 429 whose individual re-run also fails transiently used to be a
@@ -706,6 +754,19 @@ class TestDatasetUnresolvedRules(unittest.TestCase):
             self.evaluate(rule_names=["notify"], attempt=3)
         _, countdown = self.requeued()
         self.assertEqual(countdown, 600)
+
+    def test_countdown_stays_under_the_broker_consumer_timeout(self):
+        settings = {
+            "USER_RULES_REQUEUE_DELAY": 900,
+            "USER_RULES_REQUEUE_MAX_DELAY": 7200,
+        }
+        for mod in (urd, urj):
+            with umock.patch.object(
+                mod.app.conf, "get", side_effect=lambda k, d=None: settings.get(k, d)
+            ):
+                self.assertEqual(mod.requeue_countdown(0), 900)
+                self.assertEqual(mod.requeue_countdown(3), mod.REQUEUE_DELAY_CEILING)
+        self.assertLess(urd.REQUEUE_DELAY_CEILING, 30 * 60)
 
     def test_gives_up_loudly_after_the_last_attempt(self):
         self.mozart_es.query.return_value = [make_rule("notify")]
@@ -816,6 +877,19 @@ class TestJobUnresolvedRules(unittest.TestCase):
             "job1", index="job_failed", uuid="u1", rule_names=["retry"],
             attempt=1, countdown=60,
         )
+
+    def test_failed_shards_are_a_miss(self):
+        self.mozart_es.query.return_value = [make_rule("retry")]
+        self.mozart_es.msearch.return_value = [
+            {**miss(), "_shards": {"total": 47, "failed": 1}}]
+
+        with self.assertLogs(urj.logger, level="WARNING") as logs:
+            self.assertTrue(urj.evaluate_user_rules_job("job1", index="job_failed"))
+
+        self.mozart_es.search.assert_not_called()
+        self.trigger.assert_not_called()
+        self.requeue.assert_not_called()
+        self.assertTrue(any("1 of 47 shard(s) failed" in m for m in logs.output))
 
     def test_failure_before_any_rule_requeues_everything(self):
         self.ensure.side_effect = RuntimeError("doc not yet search-visible: job1")

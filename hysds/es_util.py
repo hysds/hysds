@@ -112,42 +112,51 @@ def search_hits_total(result):
     return total if isinstance(total, int) else 0
 
 
-def is_partial_search_response(result, index=None):
+def is_partial_search_response(result):
     """True when a 200 search response with NO hits cannot be trusted to mean
     "no match".
 
-    That is the case when the engine says the result is incomplete (timed_out,
-    or failed shards) or contradicts itself: a hit count above zero with an
-    empty hits list, which a shard whose fetch phase failed or timed out
-    produces under load. A response WITH a hit is trusted: a rule query
-    bound to the triggering _id has found its document.
+    That is the case when the engine says the search timed out, or when the
+    response contradicts itself: a hit count above zero with an empty hits
+    list, which a shard whose fetch phase failed or timed out produces under
+    load. A response WITH a hit is trusted: a rule query bound to the
+    triggering _id has found its document.
 
-    index: the concrete index the query was bound to (a term on _index). Failed
-    shards that all belong to other indices cannot hide its document, so those
-    do not make the response partial. Failures without an index name do.
+    Failed shards alone do not make a response partial. Most shard failures
+    are permanent for a given query (e.g. a query_shard_exception from a field
+    mapped differently in one index behind the alias) and would fail every
+    retry the same way; they mean "didn't match", as they always have.
+    See shard_failure_summary for the WARNING the evaluators log instead.
     """
     hits = result.get("hits") or {}
     if hits.get("hits"):
         return False
     if result.get("timed_out"):
         return True
-    if search_hits_total(result) > 0:
-        return True
+    return search_hits_total(result) > 0
+
+
+def shard_failure_summary(result):
+    """'<failed> of <total> shard(s) failed: <index> <reason type>, ...' for a
+    response with failed shards, or None when no shard failed."""
     shards = result.get("_shards") or {}
-    if (shards.get("failed") or 0) > 0:
-        failures = shards.get("failures")
-        if (
-            index
-            and isinstance(failures, list)
-            and failures
-            and all(
-                isinstance(f, dict) and f.get("index") and f["index"] != index
-                for f in failures
-            )
-        ):
-            return False
-        return True
-    return False
+    failed = shards.get("failed") or 0
+    if not isinstance(failed, int) or failed <= 0:
+        return None
+    seen = []
+    for f in shards.get("failures") or []:
+        if not isinstance(f, dict):
+            continue
+        reason = f.get("reason")
+        reason = reason if isinstance(reason, dict) else {}
+        cause = reason.get("caused_by")
+        cause = cause if isinstance(cause, dict) else {}
+        kind = cause.get("type") or reason.get("type") or "?"
+        item = f"{f.get('index', '?')} {kind}"
+        if item not in seen:
+            seen.append(item)
+    detail = f": {', '.join(seen[:5])}" if seen else ""
+    return f"{failed} of {shards.get('total', '?')} shard(s) failed{detail}"
 
 
 def get_mozart_es_engine():

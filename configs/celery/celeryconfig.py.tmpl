@@ -54,6 +54,9 @@ BACKOFF_MAX_VALUE = 64
 BACKOFF_MAX_TRIES = 10
 
 # User rule evaluation; the defaults apply when these are unset.
+# USER_RULES_SEND_INDEX = False       # mozart: pin dataset evaluations to the ingest's
+#                                     # index; True only once every user_rules_dataset
+#                                     # consumer runs hysds >= 3.3.6
 # DATASET_INDEX_PREFIX = "grq"        # grq2's GRQ_INDEX, if a deployment changed it
 # USER_RULES_MAX_ATTEMPTS = 3         # evaluations per dataset or job, the first included
 # USER_RULES_REQUEUE_DELAY = 60       # seconds before the 2nd evaluation; doubles after
