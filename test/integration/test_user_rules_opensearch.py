@@ -1,4 +1,5 @@
-"""HC-664 / HC-665 against a real OpenSearch.
+"""User rule evaluation against a real OpenSearch: same-_id re-ingests and
+partial search responses.
 
 Skipped unless HYSDS_TEST_OS_URL points at a disposable single-node cluster
 without auth, for example:
@@ -10,7 +11,7 @@ without auth, for example:
       opensearchproject/opensearch:3.6.0
     HYSDS_TEST_OS_URL=http://localhost:19200 pytest -s test/integration
 
-The race behind HC-664 is held open deterministically: the index the
+The same-_id re-ingest race is held open deterministically: the index the
 re-ingest writes to has refresh disabled until the test refreshes it. Only
 indices, a template and an alias named hysds_it_<random>* are created, and
 they are deleted afterwards.
@@ -268,7 +269,7 @@ def test_wrong_index_name_falls_back_to_the_alias(same_id_reingest, evaluator):
 
 
 def _strip_hits(response):
-    """HC-665: keep the hit count, drop the hits (a failed fetch phase)."""
+    """Keep the hit count, drop the hits (a failed fetch phase)."""
     if (response.get("hits") or {}).get("hits"):
         response["hits"]["hits"] = []
     return response

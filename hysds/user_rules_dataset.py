@@ -48,7 +48,7 @@ def ensure_dataset_indexed(objectid, system_version, alias, index=None):
     latest write (realtime GET for the authoritative _seq_no), bounded by the
     existing exponential backoff -- no fixed sleep, no per-eval _refresh.
 
-    index: the concrete index the ingest wrote this dataset to (HC-664). Two docs
+    index: the concrete index the ingest wrote this dataset to. Two docs
     can share an _id across the indices behind the alias -- monthly or rolling
     indices with stable product ids, e.g. a re-ingest of an aged-out product --
     and an alias-wide probe is then satisfied at once by the OLD copy while the
@@ -106,7 +106,7 @@ def update_query(_id, system_version, rule, index=None):
     :param system_version: string/int, system_version field in ES document
     :param rule: dict
     :param index: concrete index the triggering document was written to; when given,
-        a non-query_all rule is bound to that index as well as to the _id (HC-664)
+        a non-query_all rule is bound to that index as well as to the _id
     :return: dict
     """
     updated_query = json.loads(rule["query_string"])
@@ -119,7 +119,7 @@ def update_query(_id, system_version, rule, index=None):
             # Another document with this _id can sit in another index matched by
             # the rule's index_pattern (monthly indices, stable product ids). Bind
             # the rule to the copy the ingest wrote, so the other copy can neither
-            # satisfy the rule nor stand in for the new one (HC-664).
+            # satisfy the rule nor stand in for the new one.
             filts.append({"term": {"_index": index}})
 
     final_query = {"query": {"bool": {"must": filts}}}
@@ -183,7 +183,7 @@ def _fallback_search(header, body, preference):
     """Run one rule's search individually (search_es retries transient errors
     with bounded backoff and gives up on 400s); package a persistent failure
     as a per-item style error so only that rule is skipped. `transient` tells
-    the caller whether a later attempt could succeed: a 400 cannot (HC-665)."""
+    the caller whether a later attempt could succeed: a 400 cannot."""
     try:
         return search_es(index=header["index"], body=body, preference=preference)
     except Exception as e:
@@ -249,13 +249,13 @@ def evaluate_user_rules_dataset(
     If so, submit jobs. Otherwise do nothing.
 
     index: the concrete index the ingest wrote the dataset to, passed by
-    queue_dataset_evaluation when it can tell (HC-664). The settled-probe and
+    queue_dataset_evaluation when it can tell. The settled-probe and
     every non-query_all rule query are bound to it, so a document with the same
     _id in another index behind the alias cannot decide the outcome. Without it
     (older producers, direct task submissions) evaluation runs alias-wide as
     before.
 
-    rule_names, attempt: set on a re-queued evaluation (HC-665). A rule whose
+    rule_names, attempt: set on a re-queued evaluation. A rule whose
     search failed transiently or came back partial (timed out, failed shards,
     or a hit count with no hits), or whose handling raised, is unresolved: it
     neither matched nor provably missed. Unresolved rules are re-queued with a
@@ -322,12 +322,12 @@ def evaluate_user_rules_dataset(
             return True
 
         # check all rules for matches in a single round trip; preference=objectid
-        # pins the same shard copy ensure_dataset_indexed validated (HC-633)
+        # pins the same shard copy ensure_dataset_indexed validated
         responses = msearch_es(searches, objectid)
     except Exception as e:
         # Nothing has been submitted yet. A transient fault here (the probe or
         # the rule listing out of retries, the msearch failing) must not end as
-        # a dead task with every trigger of this dataset lost (HC-665).
+        # a dead task with every trigger of this dataset lost.
         logger.exception(
             f"Evaluation of {objectid} ({system_version}) failed before any rule "
             f"was decided: {e!r}"
@@ -350,7 +350,7 @@ def evaluate_user_rules_dataset(
     unresolved = []
     for (header, body), rule, result in zip(searches, candidates, responses):
         rule_name = rule["rule_name"]
-        # a non-query_all rule is bound to the pinned index (HC-664)
+        # a non-query_all rule is bound to the pinned index
         bound_index = pinned if rule.get("query_all", False) is False else None
         try:
             if not result.get("error") and is_partial_search_response(
@@ -409,7 +409,7 @@ def evaluate_user_rules_dataset(
             )
             matched.append(rule_name)
         except Exception as e:
-            # one rule's failure must not take the remaining rules with it (HC-665)
+            # one rule's failure must not take the remaining rules with it
             logger.exception(
                 f"Rule '{rule_name}' raised for {objectid} ({system_version}): {e!r}"
             )
@@ -462,7 +462,7 @@ def _send_evaluation_task(payload, countdown):
 def requeue_dataset_evaluation(
     objectid, system_version, rule_names, attempt, index=None, reason=""
 ):
-    """Re-enqueue an evaluation that left rules unresolved (HC-665).
+    """Re-enqueue an evaluation that left rules unresolved.
 
     rule_names: the rules to re-evaluate; None re-evaluates every rule (the
     evaluation failed before any rule was decided). Returns True when queued.
@@ -570,7 +570,7 @@ def queue_dataset_evaluation(info):
     """Queue dataset id for user_rules_dataset evaluation.
 
     The concrete index the ingest wrote to rides along as the `index` kwarg when
-    it can be resolved (HC-664). Consumers must run hysds >= 3.3.6 before a
+    it can be resolved. Consumers must run hysds >= 3.3.6 before a
     producer sends it: an older evaluate_user_rules_dataset rejects the kwarg.
     """
     payload = {

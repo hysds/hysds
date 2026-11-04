@@ -28,7 +28,7 @@ def miss():
 
 
 def partial(total=1, **extra):
-    """The HC-665 shape: a 200 msearch item whose hit count is above zero but
+    """A partial response: a 200 msearch item whose hit count is above zero but
     whose hits list is empty (a shard's fetch phase failed or timed out)."""
     return {"hits": {"total": {"value": total}, "hits": []}, **extra}
 
@@ -281,7 +281,7 @@ class TestEvaluateUserRulesDataset(unittest.TestCase):
 
 
 class TestEvaluateUserRulesDatasetIndexPinning(unittest.TestCase):
-    """HC-664: a re-ingested dataset can share its _id with a document in another
+    """A re-ingested dataset can share its _id with a document in another
     index behind the alias. When the probe settled on the index the ingest wrote,
     every non-query_all rule is bound to that index as well as to the _id."""
 
@@ -428,7 +428,7 @@ class TestQueueDatasetEvaluation(unittest.TestCase):
 
 
 class TestEnsureDatasetIndexed(unittest.TestCase):
-    """HC-664: the probe runs on the index the ingest wrote, confirmed by a
+    """The probe runs on the index the ingest wrote, confirmed by a
     realtime GET, so the old copy of a re-ingested _id cannot satisfy it."""
 
     def setUp(self):
@@ -486,7 +486,7 @@ class TestEnsureDatasetIndexed(unittest.TestCase):
 
 
 class TestIsPartialSearchResponse(unittest.TestCase):
-    """HC-665: which empty responses cannot be trusted to mean "no match"."""
+    """Which empty responses cannot be trusted to mean "no match"."""
 
     def setUp(self):
         from hysds.es_util import is_partial_search_response, search_hits_total
@@ -529,7 +529,7 @@ class TestIsPartialSearchResponse(unittest.TestCase):
 
 
 class TestDatasetUnresolvedRules(unittest.TestCase):
-    """HC-665: a partial response, a transient failure or an exception in one
+    """A partial response, a transient failure or an exception in one
     rule must neither abort the remaining rules nor silently drop that rule's
     trigger. Unresolved rules are re-run, then re-queued (only those rules),
     with a bounded number of attempts and a loud give-up."""
@@ -774,8 +774,8 @@ class TestDatasetUnresolvedRules(unittest.TestCase):
 
 
 class TestJobUnresolvedRules(unittest.TestCase):
-    """HC-665 on the job path: the same IndexError existed in
-    evaluate_user_rules_job."""
+    """Unresolved rules on the job path: the same IndexError on a partial
+    response existed in evaluate_user_rules_job."""
 
     def setUp(self):
         self.mozart_es = umock.MagicMock()
@@ -987,7 +987,7 @@ class TestAssertDocSettled(unittest.TestCase):
         self.assertEqual(es.search.call_args.kwargs["preference"], "csc-20180302")
 
     def test_multiple_copies_settle_on_newest_and_warn(self):
-        # HC-664: the same _id in two monthly indices behind the alias. The probe
+        # The same _id in two monthly indices behind the alias. The probe
         # must see both, check the newest write, and say that it saw two.
         from hysds.es_util import logger as es_logger
         es = umock.MagicMock()

@@ -56,7 +56,7 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     every visible copy, settles on the newest write (@timestamp, stamped at index
     time by grq2 and logstash) and logs a warning naming the indices. It cannot
     see a copy that is not refreshed yet, so a caller that knows which index it
-    means should pass that index, not the alias (HC-664).
+    means should pass that index, not the alias.
     """
     must = [{"term": {"_id": doc_id}}]
     if extra_must:
@@ -119,7 +119,7 @@ def is_partial_search_response(result, index=None):
     That is the case when the engine says the result is incomplete (timed_out,
     or failed shards) or contradicts itself: a hit count above zero with an
     empty hits list, which a shard whose fetch phase failed or timed out
-    produces under load (HC-665). A response WITH a hit is trusted: a rule query
+    produces under load. A response WITH a hit is trusted: a rule query
     bound to the triggering _id has found its document.
 
     index: the concrete index the query was bound to (a term on _index). Failed

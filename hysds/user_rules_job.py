@@ -162,7 +162,7 @@ def _fallback_search(header, body, preference):
     """Run one rule's search individually (search_es retries transient errors
     with bounded backoff and gives up on 400s); package a persistent failure
     as a per-item style error so only that rule is skipped. `transient` tells
-    the caller whether a later attempt could succeed: a 400 cannot (HC-665)."""
+    the caller whether a later attempt could succeed: a 400 cannot."""
     try:
         return search_es(index=header["index"], body=body, preference=preference)
     except Exception as e:
@@ -219,7 +219,7 @@ def evaluate_user_rules_job(job_id, index=None, uuid=None, rule_names=None, atte
     Process all user rules in ES database and check if this job ID matches.
     If so, submit jobs. Otherwise do nothing.
 
-    rule_names, attempt: set on a re-queued evaluation (HC-665). A rule whose
+    rule_names, attempt: set on a re-queued evaluation. A rule whose
     search failed transiently or came back partial (timed out, failed shards,
     or a hit count with no hits), or whose handling raised, is unresolved: it
     neither matched nor provably missed. Unresolved rules are re-queued with a
@@ -274,12 +274,12 @@ def evaluate_user_rules_job(job_id, index=None, uuid=None, rule_names=None, atte
             return True
 
         # check all rules for matches in a single round trip; preference=job_id
-        # pins the same shard copy ensure_job_indexed validated (HC-633)
+        # pins the same shard copy ensure_job_indexed validated
         responses = msearch_es(searches, job_id)
     except Exception as e:
         # Nothing has been submitted yet. A transient fault here (the probe or
         # the rule listing out of retries, the msearch failing) must not end as
-        # a dead task with every trigger of this job lost (HC-665).
+        # a dead task with every trigger of this job lost.
         logger.exception(
             f"Evaluation of {job_id} failed before any rule was decided: {e!r}"
         )
@@ -362,7 +362,7 @@ def evaluate_user_rules_job(job_id, index=None, uuid=None, rule_names=None, atte
             logger.info(f"Trigger task submitted for {job_id}: {rule['job_type']}")
             matched.append(rule_name)
         except Exception as e:
-            # one rule's failure must not take the remaining rules with it (HC-665)
+            # one rule's failure must not take the remaining rules with it
             logger.exception(f"Rule '{rule_name}' raised for {job_id}: {e!r}")
             unresolved.append(rule_name)
 
@@ -404,7 +404,7 @@ def requeue_countdown(attempt):
 def requeue_job_evaluation(
     job_id, rule_names, attempt, index=None, uuid=None, reason=""
 ):
-    """Re-enqueue a job evaluation that left rules unresolved (HC-665).
+    """Re-enqueue a job evaluation that left rules unresolved.
 
     rule_names: the rules to re-evaluate; None re-evaluates every rule (the
     evaluation failed before any rule was decided). Returns True when queued.
@@ -467,7 +467,7 @@ def queue_finished_job(
     probe does not pass on an older attempt's doc under the same _id.
 
     `rule_names`, `attempt` and `countdown` are for a re-queued evaluation
-    (HC-665, see requeue_job_evaluation); a first evaluation's payload is
+    (see requeue_job_evaluation); a first evaluation's payload is
     unchanged.
     """
     kwargs = {"index": index, "uuid": uuid}
