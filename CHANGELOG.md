@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- HC-664: a dataset re-ingested under an id that already exists in another
+  index behind the dataset alias could lose its trigger. Monthly or rolling
+  indices with stable product ids make that state normal: an aged-out product
+  downloaded again gets a second document, same `_id`, in the current month's
+  index. `assert_doc_settled` searched the alias and was satisfied at once by
+  the old document; the rule query, alias-wide and bound only to the `_id`,
+  then ran before the new index refreshed, saw only the old copy, which failed
+  the rule's filter, and logged a routine "didn't match". Nothing retried and
+  nothing alerted. On one production cluster 3 of 73 same-id SLC re-ingests
+  lost their trigger this way. Now, with `USER_RULES_SEND_INDEX = True` in
+  celeryconfig, `queue_dataset_evaluation` passes the
+  concrete index the ingest wrote as the `index` kwarg: grq2's answer on the
+  single-document path, and on the bulk path, whose endpoint returns no
+  per-document index, the name grq2 derives from the same fields
+  (`<prefix>_<index.suffix>`, else `<prefix>_<version>_<dataset>`,
+  lower-cased; prefix `grq`, or `DATASET_INDEX_PREFIX`).
+  `ensure_dataset_indexed` confirms the document is there with a realtime GET
+  (translog-served, refresh-independent) and runs the settled probe on that
+  index only, so only the new copy can satisfy it; non-`query_all` rule
+  queries get a `term` on `_index` for the same index. A name the GET cannot
+  confirm (not found, or a 400 for an alias over several indices or a closed
+  index) logs a WARNING and falls back to the alias, which is also what a
+  payload without the kwarg does. `assert_doc_settled` now looks at up to 10
+  copies of an `_id`, settles on the newest by `@timestamp`, and logs a
+  WARNING naming the indices when it sees more than one.
+  **Upgrade:** `USER_RULES_SEND_INDEX` defaults to False, because hysds
+  3.3.5's `evaluate_user_rules_dataset` rejects the new kwarg with a
+  TypeError and the dataset's triggers are lost. Until it is turned on the
+  payload is the one 3.3.5 sent and the probe runs on the alias, so mozart and
+  the factotum can be updated in either order. A re-queued evaluation (see
+  below) also carries new kwargs (`rule_names`, `attempt`), so update every
+  consumer of `user_rules_dataset` and `user_rules_job` together (the
+  factotum, plus any other workers on those queues) rather than one at a
+  time. Then set `USER_RULES_SEND_INDEX = True` in mozart's celeryconfig and
+  restart its orchestrators. If a deployment changed grq2's `GRQ_INDEX`, set
+  `DATASET_INDEX_PREFIX` to match; otherwise the bulk-path names miss, and
+  every evaluation logs the "not in index" WARNING and falls back to the
+  alias.
+- HC-665: `evaluate_user_rules_dataset` treated a rule as matched when
+  `hits.total.value` was above zero and then read `hits.hits[0]`. Under search
+  load an msearch item can come back with a hit count and an EMPTY hits list
+  (a shard's fetch phase failed or timed out); the IndexError killed the task,
+  the task was acked anyway, and the dataset's remaining rules, including the
+  one that had matched, never fired. Seen twice in a week on one production
+  cluster, each time losing a product's CNM-S notify. `msearch_es` only re-ran
+  items carrying an `error`, and a 429 or 5xx item whose individual re-run
+  also failed was skipped silently. Now a response with no hits that is
+  timed out or has a hit count is partial: the rule is re-run individually
+  through the existing fallback. Failed shards alone are not: they are
+  usually permanent for the query (e.g. a field mapped differently in one
+  index behind the alias), would fail every retry the same way, and still
+  mean "didn't match", now logged at WARNING with the failed indices and
+  reason types.
+  Every rule is handled under its own `try`, so one rule cannot take the
+  others down. A rule that is still partial, failed transiently, or raised is
+  unresolved; at the end of the evaluation the unresolved rules, and only
+  those, are re-queued with a countdown (`USER_RULES_REQUEUE_DELAY`, default
+  60 s, doubling, capped at `USER_RULES_REQUEUE_MAX_DELAY`, default 600 s,
+  and never above 1500 s, under RabbitMQ's 30-minute consumer timeout),
+  up to `USER_RULES_MAX_ATTEMPTS` evaluations in all (default 3). A failure
+  before any rule is decided (the settled probe out of retries, the rules
+  listing or the msearch failing) re-queues the whole evaluation the same
+  way. The last failure logs `user_rules_dataset GAVE UP on <id> ...` and
+  posts a `user_rules_evaluation` / `gave_up` event. A dataset that never
+  becomes search-visible (e.g. deleted before its evaluation ran) now runs
+  the settled-probe backoff up to `USER_RULES_MAX_ATTEMPTS` times, 60 s and
+  120 s apart, before giving up, where 3.3.5 failed the task after one; expect
+  more `user_rules_dataset` work, and GAVE UP lines, during bulk purges. A rule whose query does
+  not parse stays a terminal `errored` rule, as before. The summary line adds
+  `unresolved=[...] attempt=N`. `evaluate_user_rules_job` had the same
+  IndexError and gets the same handling; its first-evaluation payload is
+  unchanged.
 - HC-654: a job's containers are now stopped when the job is cancelled or
   dies. A revoke, and the hard time limit, only ever signalled the celery pool
   child. The job container is held by a separate runner process talking to

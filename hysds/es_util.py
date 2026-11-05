@@ -50,6 +50,13 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     `preference=doc_id`; the caller MUST pass the same `preference=doc_id` on its
     rule query so both bind to the same copy. (Opaque routing key: same string ->
     same copy; spreads load across copies by doc, unlike `_primary`.)
+
+    Index copies: behind an alias or pattern the same _id can live in several
+    indices (monthly or rolling indices with stable ids). This probe then sees
+    every visible copy, settles on the newest write (@timestamp, stamped at index
+    time by grq2 and logstash) and logs a warning naming the indices. It cannot
+    see a copy that is not refreshed yet, so a caller that knows which index it
+    means should pass that index, not the alias.
     """
     must = [{"term": {"_id": doc_id}}]
     if extra_must:
@@ -57,11 +64,23 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
     body = {
         "query": {"bool": {"must": must}},
         "seq_no_primary_term": True,
-        "size": 1,
+        "size": 10,
+        "_source": ["@timestamp"],
     }
     hits = es_util.search(index=index, body=body, preference=doc_id)["hits"]["hits"]
     if not hits:
         raise RuntimeError(f"doc not yet search-visible: {doc_id}")
+    if len(hits) > 1:
+        hits = sorted(
+            hits,
+            key=lambda h: str((h.get("_source") or {}).get("@timestamp") or ""),
+            reverse=True,
+        )
+        logger.warning(
+            f"{doc_id}: {len(hits)} documents share this _id in {index} "
+            f"({[h.get('_index') for h in hits]}); settling on "
+            f"{hits[0].get('_index')}, the newest by @timestamp"
+        )
     hit = hits[0]
     searchable_seq_no = hit.get("_seq_no")
     # ignore=[404]: the doc can be deleted between the search and this GET --
@@ -82,6 +101,62 @@ def assert_doc_settled(es_util, index, doc_id, extra_must=None):
             f"doc search copy stale: {doc_id} seq_no {searchable_seq_no} < "
             f"latest {latest_seq_no}; awaiting refresh"
         )
+
+
+def search_hits_total(result):
+    """hits.total of a search response as an int (a dict on ES 7+/OpenSearch, an
+    int on older engines); 0 when absent."""
+    total = (result.get("hits") or {}).get("total")
+    if isinstance(total, dict):
+        total = total.get("value")
+    return total if isinstance(total, int) else 0
+
+
+def is_partial_search_response(result):
+    """True when a 200 search response with NO hits cannot be trusted to mean
+    "no match".
+
+    That is the case when the engine says the search timed out, or when the
+    response contradicts itself: a hit count above zero with an empty hits
+    list, which a shard whose fetch phase failed or timed out produces under
+    load. A response WITH a hit is trusted: a rule query bound to the
+    triggering _id has found its document.
+
+    Failed shards alone do not make a response partial. Most shard failures
+    are permanent for a given query (e.g. a query_shard_exception from a field
+    mapped differently in one index behind the alias) and would fail every
+    retry the same way; they mean "didn't match", as they always have.
+    See shard_failure_summary for the WARNING the evaluators log instead.
+    """
+    hits = result.get("hits") or {}
+    if hits.get("hits"):
+        return False
+    if result.get("timed_out"):
+        return True
+    return search_hits_total(result) > 0
+
+
+def shard_failure_summary(result):
+    """'<failed> of <total> shard(s) failed: <index> <reason type>, ...' for a
+    response with failed shards, or None when no shard failed."""
+    shards = result.get("_shards") or {}
+    failed = shards.get("failed") or 0
+    if not isinstance(failed, int) or failed <= 0:
+        return None
+    seen = []
+    for f in shards.get("failures") or []:
+        if not isinstance(f, dict):
+            continue
+        reason = f.get("reason")
+        reason = reason if isinstance(reason, dict) else {}
+        cause = reason.get("caused_by")
+        cause = cause if isinstance(cause, dict) else {}
+        kind = cause.get("type") or reason.get("type") or "?"
+        item = f"{f.get('index', '?')} {kind}"
+        if item not in seen:
+            seen.append(item)
+    detail = f": {', '.join(seen[:5])}" if seen else ""
+    return f"{failed} of {shards.get('total', '?')} shard(s) failed{detail}"
 
 
 def get_mozart_es_engine():
