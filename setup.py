@@ -48,6 +48,7 @@ setup(
             'pytest>=7.2.0',
             'fakeredis>=2.20.0',
             'freezegun>=1.4.0',
+            'jinja2>=2.10',  # renders configs/celery/celeryconfig.py.tmpl as sdscli does
             'pytest-mock>=3.11.1',
             'pytest-cov>=4.1.0',
         ],

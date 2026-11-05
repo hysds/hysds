@@ -38,9 +38,12 @@ All notable changes to this project will be documented in this file.
   below) also carries new kwargs (`rule_names`, `attempt`), so update every
   consumer of `user_rules_dataset` and `user_rules_job` together (the
   factotum, plus any other workers on those queues) rather than one at a
-  time. Then set `USER_RULES_SEND_INDEX = True` in mozart's celeryconfig and
-  restart its orchestrators. If a deployment changed grq2's `GRQ_INDEX`, set
-  `DATASET_INDEX_PREFIX` to match; otherwise the bulk-path names miss, and
+  time. Then set `USER_RULES_SEND_INDEX: true` in `~/.sds/config` (the
+  celeryconfig template renders it, like `ENABLE_JOB_LOCKING`; only a YAML
+  `true` turns it on), re-render mozart's celeryconfig with `sds update
+  mozart`, and restart mozart. If a deployment changed grq2's `GRQ_INDEX`, set
+  `DATASET_INDEX_PREFIX` in `~/.sds/config` to match; otherwise the bulk-path
+  names miss, and
   every evaluation logs the "not in index" WARNING and falls back to the
   alias.
 - HC-665: `evaluate_user_rules_dataset` treated a rule as matched when
