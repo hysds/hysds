@@ -477,3 +477,52 @@ def test_shell_log_line_includes_barrier_counts(caplog):
         c.process_event(child(0))
     assert any("barrier=barrier completed=1 failed=0 expected=5 winner=False" in r.getMessage()
                for r in caplog.records)
+
+
+# ---- pluggable connectors (contract 11.4)
+
+def _with_connectors(spec, **per_node):
+    for nid, (conn, q) in per_node.items():
+        spec["nodes"][nid].update(connector=conn, connector_queue=q)
+    return spec
+
+
+def test_pluggable_connector_used_when_present_job_to_pass():
+    sp = _with_connectors(linear_spec(), pass_1=("job-m-pass:v2", "m-pass-q"))
+    [a] = decide(ev("A", workflow_outputs=typed(count=3)), sp, status_doc(A="completed"))
+    assert (a.job_type, a.queue) == ("job-m-pass:v2", "m-pass-q")
+    assert a.workflow["step_id"] == "pass_1"
+
+
+def test_pluggable_connector_job_to_scatter_and_scatter_n0_gather_and_gather_to_pass():
+    sp = _with_connectors(scatter_gather_spec(), scatter_1=("job-m-sc:v1", "m-sc-q"),
+                          gather_1=("job-m-ga:v1", "m-ga-q"), pass_2=("job-m-pass:v2", "m-pass-q"))
+    [a] = decide(ev("A", spec_id=SG_ID), sp, sg_status(A="completed"))
+    assert (a.job_type, a.queue) == ("job-m-sc:v1", "m-sc-q")
+    e = ev("scatter_1", spec_id=SG_ID, workflow_outputs=typed(n=0))
+    [a] = decide(e, sp, sg_status(scatter_1="completed", P={"state": "running", "expected": 0}))
+    assert (a.job_type, a.queue) == ("job-m-ga:v1", "m-ga-q")
+    [a] = decide(ev("gather_1", spec_id=SG_ID), sp, sg_status(gather_1="completed"))
+    assert (a.job_type, a.queue) == ("job-m-pass:v2", "m-pass-q")
+
+
+def test_pluggable_connector_barrier_winner_gather():
+    sp = _with_connectors(scatter_gather_spec(), gather_1=("job-m-ga:v1", "m-ga-q"))
+    st = sg_status(P={"state": "running", "expected": 5})
+    [a] = decide(child(4), sp, st, barrier=barrier_result(5, 0, 5))
+    assert (a.job_type, a.queue) == ("job-m-ga:v1", "m-ga-q")
+
+
+def test_pluggable_connector_pass_after_pass_chain_and_partial_fallback():
+    # only the gather carries a connector; scatter on the same spec falls back
+    sp = _with_connectors(scatter_gather_spec(), gather_1=("job-m-ga:v1", "m-ga-q"))
+    [a] = decide(ev("A", spec_id=SG_ID), sp, sg_status(A="completed"))
+    assert (a.job_type, a.queue) == ("job-workflow-scatter:v1.0.0", "workflow-connector-scatter")
+
+
+def test_finalize_and_halt_ignore_node_connector_fields():
+    sp = _with_connectors(linear_spec(), pass_1=("job-m-pass:v2", "m-pass-q"))
+    [a] = decide(ev("B", workflow_outputs=typed(result="r")), sp, status_doc(A="completed", pass_1="completed", B="completed"))
+    assert (a.job_type, a.queue) == ("job-workflow-finalize:v1.0.0", "workflow-connector-finalize")
+    [a] = decide(ev("A", status="job-failed", short_error="x"), sp, status_doc(A="running"))
+    assert (a.job_type, a.queue) == ("job-workflow-halt:v1.0.0", "workflow-connector-halt")

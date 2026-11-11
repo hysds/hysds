@@ -93,14 +93,21 @@ Action = Any  # Submit | Ignore | DeadLetter | BarrierRecord
 
 
 # ----------------------------------------------------------------------------- decide
+PLUGGABLE_KINDS = ("pass", "scatter", "gather")
+
+
 def _no_recommended_queue(job_type):
     return None
 
 
-def _connector(kind, run_id, step_id, spec_id, event):
+def _connector(kind, run_id, step_id, spec_id, event, node=None):
+    """Connector submit. For pluggable kinds (pass/scatter/gather) the spec node's resolved
+    ``connector`` / ``connector_queue`` win (contract 11.4); absent (pre-3b specs) or for
+    finalize/halt, fall back to ``CONNECTOR_JOB_TYPES`` on ``workflow-connector-<kind>``."""
+    node = node if (node and kind in PLUGGABLE_KINDS) else {}
     return Submit(
-        job_type=CONNECTOR_JOB_TYPES[kind],
-        queue=f"workflow-connector-{kind}",
+        job_type=node.get("connector") or CONNECTOR_JOB_TYPES[kind],
+        queue=node.get("connector_queue") or f"workflow-connector-{kind}",
         params=connector_params(run_id, step_id, spec_id, event),
         workflow=workflow_tag(run_id, step_id, spec_id),
     )
@@ -154,7 +161,8 @@ def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
         if _state(status, gather) != "pending":
             return [Ignore(f"pre-check: {gather} is {_state(status, gather)!r}, not pending "
                            f"(barrier winner, {counts})")]
-        return [_connector("gather", run_id, gather, spec_id, _barrier_event(event, spec_id, barrier))]
+        return [_connector("gather", run_id, gather, spec_id, _barrier_event(event, spec_id, barrier),
+                          node=nodes.get(gather))]
     return [_halt(run_id, spec_id, _synthetic_failure(
         event, step, f"scatter {step}: {k}/{n} completed < threshold {threshold}"))]
 
@@ -228,7 +236,7 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
             return [Ignore(f"job {step} successor {target} has unsupported kind {tkind!r}", loud=True)]
         if not _pending(status, target):
             return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
-        return [_connector(tkind, run_id, target, spec_id, event)]
+        return [_connector(tkind, run_id, target, spec_id, event, node=nodes[target])]
 
     if kind == "pass":
         if len(succ) != 1:
@@ -262,7 +270,7 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
         target = succ[0]
         if not _pending(status, target):
             return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
-        return [_connector("pass", run_id, target, spec_id, event)]
+        return [_connector("pass", run_id, target, spec_id, event, node=nodes[target])]
     if kind == "scatter":
         child = node.get("child")
         expected = ((status.get("nodes") or {}).get(child) or {}).get("expected")
@@ -273,7 +281,7 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
         gather = succ[0]
         if not _pending(status, gather):
             return [Ignore(f"pre-check: {gather} is not pending (duplicate event?)")]
-        return [_connector("gather", run_id, gather, spec_id, event)]
+        return [_connector("gather", run_id, gather, spec_id, event, node=nodes.get(gather))]
     return [Ignore(f"step {step} has unsupported kind {kind!r}", loud=True)]
 
 
