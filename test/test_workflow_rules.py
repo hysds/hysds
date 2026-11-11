@@ -169,8 +169,9 @@ def make_consumer(status=None, spec=None, submit=None, get_status_fn=None):
             if status is None:
                 raise WorkflowStatusNotFound(run_id)
             return status, 1, 1
+    import fakeredis
     c = WorkflowRulesConsumer(umock.MagicMock(), "workflow_queue", es=es, get_status_fn=get_status_fn,
-                              submit_fn=submit or umock.MagicMock())
+                              submit_fn=submit or umock.MagicMock(), redis_client=fakeredis.FakeStrictRedis())
     return c, es
 
 
@@ -223,3 +224,45 @@ def test_shell_bad_body_is_handled():
         m = msg(redelivered=True)
         c.on_message("garbage", m)
         m.ack.assert_called_once()
+
+
+def test_pass_completed_submits_when_successor_queued_by_pass_connector():
+    """Regression (slice 2.7 E2E): the pass connector marks its successor
+    'queued' before its own completion event; that must still be submitted."""
+    spec = linear_spec()
+    status = {"run_id": "run-1", "spec_id": "demo-linear:1.0.0", "status": "running",
+              "inputs": {"greeting": "hi"},
+              "nodes": {"A": {"state": "completed", "outputs": {"count": 3, "items": ["a"]}},
+                        "pass_1": {"state": "completed", "outputs": {"outputs": "x"}},
+                        "B": {"state": "queued"}}}
+    e = ev("pass_1", workflow_outputs=[{"name": "outputs", "value_s": "x"}])
+    actions = decide(e, spec, status, recommended_queue=lambda jt: "q")
+    assert len(actions) == 1 and isinstance(actions[0], Submit), actions
+    status["nodes"]["B"]["state"] = "completed"
+    actions = decide(e, spec, status, recommended_queue=lambda jt: "q")
+    assert isinstance(actions[0], Ignore)
+
+
+def test_duplicate_event_submits_once_via_redis_claim():
+    """Regression (slice 2.7): doubled job-failed event submitted _halt twice."""
+    st = {"run_id": "run-1", "spec_id": "demo-linear:1.0.0", "status": "running", "inputs": {"greeting": "hi"},
+          "nodes": {"A": {"state": "running"}, "pass_1": {"state": "pending"}, "B": {"state": "pending"}}}
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status=st, submit=submit)
+    e = ev("A", status="job-failed", short_error="boom")
+    c.process_event(e)
+    actions = c.process_event(dict(e, timestamp="later"))
+    assert submit.call_count == 1
+    assert "already claimed" in actions[0].summary()
+
+
+def test_claim_released_when_submit_fails():
+    st = {"run_id": "run-1", "spec_id": "demo-linear:1.0.0", "status": "running", "inputs": {"greeting": "hi"},
+          "nodes": {"A": {"state": "running"}, "pass_1": {"state": "pending"}, "B": {"state": "pending"}}}
+    submit = umock.MagicMock(side_effect=[RuntimeError("broker down"), "pid"])
+    c, _ = make_consumer(status=st, submit=submit)
+    e = ev("A", status="job-failed", short_error="boom")
+    with pytest.raises(RuntimeError):
+        c.process_event(e)
+    c.process_event(e)
+    assert submit.call_count == 2

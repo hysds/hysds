@@ -37,6 +37,8 @@ log = logging.getLogger("hysds.workflow_rules")
 TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
 FAILURE_STATUSES = ("job-failed", "job-offline")
 INTERNAL_STEPS = (FINALIZE_STEP, HALT_STEP)
+# submit-claim keys outlive any realistic run
+CLAIM_TTL_SECONDS = 30 * 24 * 3600
 PREFETCH_COUNT = 10
 
 
@@ -90,8 +92,12 @@ def _halt(run_id, spec_id, event):
     return _connector("halt", run_id, HALT_STEP, spec_id, event)
 
 
+def _state(status, node_id):
+    return ((status.get("nodes") or {}).get(node_id) or {}).get("state")
+
+
 def _pending(status, node_id):
-    return ((status.get("nodes") or {}).get(node_id) or {}).get("state") == "pending"
+    return _state(status, node_id) == "pending"
 
 
 def decide(event, spec, status, recommended_queue=_no_recommended_queue):
@@ -160,8 +166,12 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue):
         tnode = nodes[target]
         if tnode.get("kind") != "job":
             return [Ignore(f"pass {step} successor {target} is not a job", loud=True)]
-        if not _pending(status, target):
-            return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
+        # the pass connector marks its successor 'queued' (binds resolved) before
+        # its own completion event arrives; 'queued' is still submittable.
+        # Duplicate pass events re-submit and collapse onto the existing job via
+        # orchestrator dedup.
+        if _state(status, target) not in ("pending", "queued"):
+            return [Ignore(f"pre-check: {target} is {_state(status, target)!r}, not pending/queued (duplicate event?)")]
         try:
             params = resolve_inputs(tnode, build_context(status, event))
         except WorkflowRefError as e:
@@ -204,7 +214,8 @@ class WorkflowRulesConsumer(ConsumerMixin):
 
     def __init__(self, connection, queue_name, es=None, specs_index="workflow_specs",
                  status_index="workflow_status", job_specs_index="job_specs",
-                 get_status_fn=get_status, submit_fn=submit_workflow_job, prefetch=PREFETCH_COUNT):
+                 get_status_fn=get_status, submit_fn=submit_workflow_job, prefetch=PREFETCH_COUNT,
+                 redis_client=None):
         self.connection = connection
         self.queue_name = queue_name
         self._es = es
@@ -216,6 +227,7 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self.prefetch = prefetch
         self._spec_cache = {}
         self._queue_cache = {}
+        self._redis = redis_client
         exchange = Exchange(queue_name, type="direct", durable=True)
         self.queue = Queue(queue_name, exchange, routing_key=queue_name, durable=True)
 
@@ -231,6 +243,30 @@ class WorkflowRulesConsumer(ConsumerMixin):
         c = Consumer(queues=[self.queue], callbacks=[self.on_message], accept=["json"])
         c.qos(prefetch_count=self.prefetch)
         return [c]
+
+    # -- submit claims (Redis; the consumer's only store, per design)
+    @property
+    def redis(self):
+        if self._redis is None:
+            from redis import StrictRedis
+
+            from hysds.celery import app
+            self._redis = StrictRedis.from_url(app.conf.REDIS_JOB_STATUS_URL, ssl_cert_reqs="none")
+        return self._redis
+
+    @staticmethod
+    def claim_key(workflow):
+        return "wf-claim:%s:%s:%s" % (workflow.get("run_id"), workflow.get("step_id"),
+                                      workflow.get("child_index"))
+
+    def claim(self, workflow):
+        """Atomically claim the right to submit (run, step, child). Orchestrator dedup
+        reads a lagging index and can't stop near-simultaneous duplicate submits
+        (seen in the slice 2.7 E2E: a doubled job-failed event submitted _halt twice)."""
+        return bool(self.redis.set(self.claim_key(workflow), "1", nx=True, ex=CLAIM_TTL_SECONDS))
+
+    def release(self, workflow):
+        self.redis.delete(self.claim_key(workflow))
 
     # -- loaders
     def load_spec(self, spec_id):
@@ -263,9 +299,19 @@ class WorkflowRulesConsumer(ConsumerMixin):
         if status is not None:
             spec = self.load_spec(status.get("spec_id"))
         actions = decide(event, spec, status, self.recommended_queue)
+        executed = []
         for a in actions:
             if isinstance(a, Submit):
-                self.submit_fn(a.job_type, a.queue, a.params, a.workflow)
+                if not self.claim(a.workflow):
+                    executed.append(Ignore(f"already claimed: {self.claim_key(a.workflow)} (duplicate event)"))
+                    continue
+                try:
+                    self.submit_fn(a.job_type, a.queue, a.params, a.workflow)
+                except Exception:
+                    self.release(a.workflow)  # let the requeued delivery retry the submit
+                    raise
+            executed.append(a)
+        actions = executed
         self._log_event(event, status, actions)
         return actions
 
