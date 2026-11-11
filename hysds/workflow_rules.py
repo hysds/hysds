@@ -717,6 +717,20 @@ class WorkflowRulesConsumer(ConsumerMixin):
                 return f"missing or non-string {k!r}"
         return None
 
+    def on_decode_error(self, message, exc):
+        """A body kombu cannot decode (invalid JSON, wrong content type): kombu's default logs and
+        drops it. Dead-letter the raw body instead (contract 12.7), then ack."""
+        try:
+            raw = message.body
+            raw = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            self.dead_letter(raw[:8192], f"malformed event: undecodable body: {type(exc).__name__}: {exc}")
+        except Exception:
+            log.exception("DLQ publish failed for an undecodable event; requeueing")
+            self._sleep(1)
+            message.requeue()
+            return
+        message.ack()
+
     def on_message(self, body, message):
         try:
             problem = self.validate_event(body)

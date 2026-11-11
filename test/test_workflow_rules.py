@@ -1210,3 +1210,27 @@ def test_retry_stale_retry_count_does_not_wait():
     [a] = c.process_event(fail(rc=0))
     assert isinstance(a, Ignore)
     assert sleeps == []
+
+
+# -- undecodable bodies are dead-lettered, not dropped by kombu's default handler
+def test_undecodable_body_is_dead_lettered_and_acked():
+    dlq = []
+    c, _ = make_consumer(status_doc(A="completed"), dlq_publish_fn=dlq.append)
+    msg = umock.MagicMock()
+    msg.body = b"{not json"
+    c.on_decode_error(msg, ValueError("Expecting property name"))
+    msg.ack.assert_called_once()
+    [d] = dlq
+    assert d["event"] == "{not json" and d["reason"].startswith("malformed event: undecodable body")
+    assert "consumer_host" in d and "timestamp" in d
+
+
+def test_undecodable_body_requeued_if_dlq_down():
+    def boom(_):
+        raise RuntimeError("dlq down")
+    c, _ = make_consumer(status_doc(A="completed"), dlq_publish_fn=boom, sleep_fn=lambda s: None)
+    msg = umock.MagicMock()
+    msg.body = b"\xff\xfe"
+    c.on_decode_error(msg, ValueError("bad"))
+    msg.requeue.assert_called_once()
+    msg.ack.assert_not_called()
