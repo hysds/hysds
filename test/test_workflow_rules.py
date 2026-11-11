@@ -1150,3 +1150,63 @@ def test_es_job_doc_lookup_uses_payload_id_then_job_id():
     assert body["query"]["bool"]["should"][0] == {"ids": {"values": ["pid"]}}
     es.search.return_value = {"hits": {"hits": []}}
     assert c._es_job_doc({"job_id": "jid"}) is None
+
+
+# -- retry waits for the failed job's status doc to become visible (indexer lag)
+def _docs_then(docs):
+    it = iter(docs)
+    last = [None]
+
+    def fn(event):
+        try:
+            last[0] = next(it)
+        except StopIteration:
+            pass
+        return last[0]
+    return fn
+
+
+def _lag_shell(docs, wait=15):
+    submit = umock.MagicMock()
+    sleeps = []
+    c, _ = make_consumer(status_doc(A="completed", pass_1="completed", B="running"), spec=retry_spec(),
+                         submit=submit, retry_job_type=RT, job_doc_fn=_docs_then(docs),
+                         retry_visibility_wait=wait, sleep_fn=sleeps.append)
+    return c, submit, sleeps
+
+
+def test_retry_waits_until_doc_is_visible():
+    c, submit, sleeps = _lag_shell([None, None, {"status": "job-failed", "job": {}}])
+    [a] = c.process_event(fail())
+    assert isinstance(a, RetryAction)
+    submit.assert_called_once()
+    assert len(sleeps) == 2
+
+
+def test_retry_waits_until_doc_is_terminal():
+    c, submit, sleeps = _lag_shell([{"status": "job-started", "job": {}}, {"status": "job-failed", "job": {}}])
+    [a] = c.process_event(fail())
+    assert isinstance(a, RetryAction)
+    submit.assert_called_once()
+
+
+def test_retry_still_non_terminal_after_wait_is_stale():
+    c, submit, sleeps = _lag_shell([{"status": "job-started", "job": {}}], wait=3)
+    [a] = c.process_event(fail())
+    assert isinstance(a, Ignore) and "non-terminal" in a.reason
+    submit.assert_not_called()
+    assert len(sleeps) == 3
+
+
+def test_retry_never_visible_proceeds_after_wait():
+    c, submit, sleeps = _lag_shell([None], wait=2)
+    c.process_event(fail())
+    submit.assert_called_once()
+    assert len(sleeps) == 2
+
+
+def test_retry_stale_retry_count_does_not_wait():
+    c, submit, sleeps = _lag_shell([{"status": "job-failed", "job": {"retry_count": 1}}])
+    [a] = c.process_event(fail(rc=0))
+    assert isinstance(a, Ignore)
+    assert sleeps == []

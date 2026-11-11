@@ -59,6 +59,8 @@ PREFETCH_COUNT = 10
 DEFAULT_DLQ = "workflow_dead_letter"
 DEFAULT_BARRIER_TERMINAL_TTL = 86400
 DEFAULT_STALL_SECONDS = 600
+# seconds the consumer waits for a failed job's status doc to become visible/terminal before a retry (indexer lag)
+DEFAULT_RETRY_VISIBILITY_WAIT = 15
 JOB_STATUS_INDEX = "job_status-current"
 # job_status states after which an attempt is finished (anything else is still in flight)
 TERMINAL_JOB_STATUSES = ("job-completed", "job-failed", "job-offline", "job-revoked", "job-deduped")
@@ -408,7 +410,7 @@ class WorkflowRulesConsumer(ConsumerMixin):
                  redis_client=None, dlq_name=DEFAULT_DLQ, barrier_ttl=DEFAULT_BARRIER_TERMINAL_TTL,
                  dlq_publish_fn=None, retry_job_type=None, stall_seconds=DEFAULT_STALL_SECONDS,
                  retry_claim_ttl=None, job_status_index=JOB_STATUS_INDEX, job_exists_fn=None,
-                 job_doc_fn=None, clock=time.time):
+                 job_doc_fn=None, clock=time.time, retry_visibility_wait=0, sleep_fn=time.sleep):
         self.connection = connection
         self.queue_name = queue_name
         self._es = es
@@ -431,6 +433,8 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self._job_exists_fn = job_exists_fn or self._es_job_exists
         self._job_doc_fn = job_doc_fn or self._es_job_doc
         self._clock = clock
+        self.retry_visibility_wait = retry_visibility_wait
+        self._sleep = sleep_fn
         exchange = Exchange(queue_name, type="direct", durable=True)
         self.queue = Queue(queue_name, exchange, routing_key=queue_name, durable=True)
 
@@ -537,16 +541,26 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self.redis.delete(action.claim_key)
 
     def retry_is_stale(self, action, event):
-        """Contract 12.8: the job moved on (its retry_count is beyond the event's) or is not terminal."""
-        doc = self._job_doc_fn(event)
+        """Contract 12.8: the job moved on (its retry_count is beyond the event's) or is not terminal.
+
+        The event is published when the job fails, but the job_status doc reaches OpenSearch a moment
+        later (status indexer + refresh). A doc that is still missing or still non-terminal is therefore
+        re-read for up to ``retry_visibility_wait`` seconds before it is judged: without this the retry
+        job (which looks the job up by id) races the indexer and fails with "job not found"."""
+        doc = None
+        for attempt in range(int(self.retry_visibility_wait) + 1):
+            doc = self._job_doc_fn(event)
+            if doc:
+                rc = (doc.get("job") or {}).get("retry_count") or 0
+                if rc > action.retry_count:
+                    return f"job retry_count {rc} > event retry_count {action.retry_count}"
+                if doc.get("status") in TERMINAL_JOB_STATUSES:
+                    return None
+            if attempt < int(self.retry_visibility_wait):
+                self._sleep(1)
         if not doc:
-            return None
-        rc = (doc.get("job") or {}).get("retry_count") or 0
-        if rc > action.retry_count:
-            return f"job retry_count {rc} > event retry_count {action.retry_count}"
-        if doc.get("status") not in TERMINAL_JOB_STATUSES:
-            return f"job status is {doc.get('status')!r} (non-terminal)"
-        return None
+            return None  # never became visible: let the retry job report it
+        return f"job status is {doc.get('status')!r} (non-terminal)"
 
     # -- dead letters (contract 12.7)
     def _kombu_dlq_publish(self, payload):
@@ -741,6 +755,7 @@ def main():
     retry_job_type = app.conf.get("WORKFLOW_RETRY_JOB_TYPE")
     stall_seconds = int(app.conf.get("WORKFLOW_STALL_SECONDS", DEFAULT_STALL_SECONDS))
     retry_claim_ttl = int(app.conf.get("WORKFLOW_RETRY_CLAIM_TTL", 2 * stall_seconds))
+    retry_visibility_wait = int(app.conf.get("WORKFLOW_RETRY_VISIBILITY_WAIT", DEFAULT_RETRY_VISIBILITY_WAIT))
     mozart_rest_url = app.conf.MOZART_REST_URL
     # submit through mozart's REST API so workflow jobs get exactly the
     # semantics (and any policy) of a normal /job/submit
@@ -750,7 +765,8 @@ def main():
         log.info("workflow_rules consuming %s, submitting via %s/job/submit", queue_name, mozart_rest_url)
         WorkflowRulesConsumer(conn, queue_name, submit_fn=submit_fn, dlq_name=dlq_name,
                               barrier_ttl=barrier_ttl, retry_job_type=retry_job_type,
-                              stall_seconds=stall_seconds, retry_claim_ttl=retry_claim_ttl).run()
+                              stall_seconds=stall_seconds, retry_claim_ttl=retry_claim_ttl,
+                              retry_visibility_wait=retry_visibility_wait).run()
 
 
 if __name__ == "__main__":
