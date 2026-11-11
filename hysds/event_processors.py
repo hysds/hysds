@@ -27,6 +27,7 @@ from hysds.log_utils import (
     log_custom_event,
     log_job_status,
     logger,
+    set_error_class,
 )
 from hysds.utils import datetime_iso_naive
 from hysds.task_worker import run_task
@@ -148,6 +149,9 @@ def _fail_job(event, uuid, exc, short_error, written=None):
         job_status["error"] = exc
         job_status["short_error"] = short_error
         job_status["traceback"] = event.get("traceback", "")
+        # contract 12.1: a hard time limit is a timeout; any other lost/failed task is "worker"
+        set_error_class(job_status, "timeout" if re.search(
+            r"(?<![A-Za-z])TimeLimitExceeded", f"{exc} {short_error}") else "worker")
 
         time_end = datetime_iso_naive() + "Z"
         job_status.setdefault("job", {}).setdefault("job_info", {})[
@@ -230,6 +234,7 @@ def offline_jobs(event):
                     "Received worker-offline event during job execution."
                 )
                 job_status_json["short_error"] = "worker-offline"
+                set_error_class(job_status_json, "offline")  # contract 12.1
                 job_status_json.setdefault("job", {}).setdefault("job_info", {})[
                     "time_end"
                 ] = time_end

@@ -345,3 +345,48 @@ class TestLockingBranchDedup(TestCase):
         self.assertTrue(any(isinstance(n, ast.Return) for n in ast.walk(dedup)))
         self.assertFalse(self._calls(dedup, "log_job_status"))
         self.assertFalse(self._calls(dedup, "fail_job"))
+
+
+# --- slice 4.1: error classification (contract 12.1) ---
+import pytest  # noqa: E402
+
+
+def _classify(exc, job_dir=None):
+    import hysds.job_worker as jw
+    return jw.classify_error(exc, job_dir)
+
+
+def test_classify_exit_code():
+    import hysds.job_worker as jw
+    assert _classify(jw.PgeExitCodeError(3)) == "exit_code:3"
+    assert _classify(jw.PgeExitCodeError(-15)) == "exit_code:-15"
+    assert str(jw.PgeExitCodeError(7)) == "Got non-zero exit code: 7"
+
+
+def test_classify_soft_time_limit_is_timeout():
+    from celery.exceptions import SoftTimeLimitExceeded
+    assert _classify(SoftTimeLimitExceeded()) == "timeout"
+
+
+@pytest.mark.parametrize("exc", [RuntimeError("Failed to get exit status."), ValueError("x"), OSError("disk")])
+def test_classify_other_errors_are_worker(exc):
+    assert _classify(exc) == "worker"
+
+
+def test_classify_pge_token_refines_exit_code(tmp_path):
+    import hysds.job_worker as jw
+    (tmp_path / "_error_class.txt").write_text("s3_throttle\n")
+    assert _classify(jw.PgeExitCodeError(1), str(tmp_path)) == "pge:s3_throttle"
+    assert _classify(RuntimeError("x"), str(tmp_path)) == "pge:s3_throttle"
+
+
+def test_classify_invalid_pge_token_falls_back(tmp_path):
+    import hysds.job_worker as jw
+    (tmp_path / "_error_class.txt").write_text("not a valid token!")
+    assert _classify(jw.PgeExitCodeError(2), str(tmp_path)) == "exit_code:2"
+
+
+def test_classify_timeout_not_refined_by_pge(tmp_path):
+    from celery.exceptions import SoftTimeLimitExceeded
+    (tmp_path / "_error_class.txt").write_text("custom")
+    assert _classify(SoftTimeLimitExceeded(), str(tmp_path)) == "timeout"

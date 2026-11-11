@@ -427,3 +427,52 @@ def test_offline_jobs_writes_only_when_owned(monkeypatch, state):
     ep.offline_jobs({"hostname": "worker-1"})
 
     mock_log.assert_not_called()
+
+
+# --- slice 4.1: error_class (contract 12.1) set where job-failed / job-offline are written ---
+
+
+def _started_doc():
+    return {
+        "hits": {"total": {"value": 1}, "hits": [{
+            "_index": "job_status-current",
+            "_source": {"status": "job-started", "payload_id": "p1", "uuid": "uuid-1",
+                        "job": {"job_info": {}}}}]}
+    }
+
+
+@pytest.mark.parametrize("exc,short,expected", [
+    ("TimeLimitExceeded(600)", "TimeLimitExceeded", "timeout"),
+    ("WorkerLostError('Worker exited prematurely')", "WorkerLostError", "worker"),
+    ("ConnectionError", "ConnectionError", "worker"),
+])
+def test_fail_job_sets_error_class(monkeypatch, exc, short, expected):
+    monkeypatch.setattr(ep, "is_job_finalized", lambda uuid: False)
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
+    mock_es = umock.MagicMock()
+    mock_es.search.return_value = _started_doc()
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+    monkeypatch.setattr(ep, "queue_finished_job", umock.MagicMock())
+    ep.fail_job({"traceback": "tb"}, "uuid-1", exc, short)
+    written = mock_log.call_args[0][0]
+    assert written["error_class"] == expected
+    assert written["job"]["job_info"]["error_class"] == expected
+
+
+def test_offline_jobs_sets_error_class_offline(monkeypatch):
+    monkeypatch.setattr(ep, "job_supersession", lambda *a, **kw: "owned")
+    mock_es = umock.MagicMock()
+    mock_es.query.return_value = [{"_source": {"uuid": "u1", "job": {"job_info": {}}}}]
+    monkeypatch.setattr(ep, "mozart_es", mock_es)
+    monkeypatch.setattr(ep, "get_val_via_socket", lambda key: "job-started" if "status" in key.lower() else "w1")
+    monkeypatch.setattr(ep, "JOB_STATUS_KEY_TMPL", "status-%s", raising=False)
+    monkeypatch.setattr(ep, "TASK_WORKER_KEY_TMPL", "worker-%s", raising=False)
+    mock_log = umock.MagicMock()
+    monkeypatch.setattr(ep, "log_job_status", mock_log)
+    ep.offline_jobs({"hostname": "w1"})
+    written = mock_log.call_args[0][0]
+    assert written["status"] == "job-offline"
+    assert written["error_class"] == "offline"
+    assert written["job"]["job_info"]["error_class"] == "offline"

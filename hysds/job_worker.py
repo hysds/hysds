@@ -48,6 +48,8 @@ from hysds.log_utils import (
     job_supersession,
     log_task_worker,
     logger,
+    read_pge_error_class,
+    set_error_class,
 )
 from hysds.pymonitoredrunner.MonitoredRunner import MonitoredRunner
 from hysds.user_rules_job import queue_finished_job
@@ -77,6 +79,30 @@ POST_PROCESSORS = ("hysds.dataset_ingest_bulk.publish_datasets",)
 # a broker redelivery whose earlier execution already reached one of these
 # must not run again; see redelivered_terminal_dup()
 REDELIVERED_TERMINAL_STATUSES = ("job-completed", "job-deduped")
+
+
+
+class PgeExitCodeError(RuntimeError):
+    """The PGE ran and exited non-zero (error class ``exit_code:<n>``)."""
+
+    def __init__(self, exit_code):
+        super().__init__(f"Got non-zero exit code: {exit_code}")
+        self.exit_code = exit_code
+
+
+def classify_error(exc, job_dir=None):
+    """Contract 12.1 error class for a failed attempt: ``timeout`` (soft time limit),
+    ``exit_code:<n>`` (PGE non-zero exit), else ``worker``; a valid ``_error_class.txt`` in the job
+    dir refines either of the latter to ``pge:<token>`` (a timeout is never refined)."""
+    if isinstance(exc, SoftTimeLimitExceeded):
+        return "timeout"
+    pge = read_pge_error_class(job_dir) if job_dir else None
+    if pge:
+        return pge
+    if isinstance(exc, PgeExitCodeError):
+        return f"exit_code:{exc.exit_code}"
+    return "worker"
+
 
 # signal names
 SIG_NAMES = {
@@ -562,6 +588,7 @@ def run_job(job, queue_when_finished=True):
             "traceback": error,
             "celery_hostname": run_job.request.hostname,
         }
+        set_error_class(job_status_json, "signal")
         log_job_status(job_status_json)
         raise WorkerExecutionError(error, job_status_json)
 
@@ -1446,7 +1473,7 @@ def run_job(job, queue_when_finished=True):
                 if status is None:
                     raise RuntimeError("Failed to get exit status.")
                 else:
-                    raise RuntimeError(f"Got non-zero exit code: {status}")
+                    raise PgeExitCodeError(status)
 
             # bind workflow outputs (ADR-003); raises on invalid file, failing the job
             bind_workflow_outputs(job, job_dir)
@@ -1618,6 +1645,7 @@ def run_job(job, queue_when_finished=True):
                 job_status_json["error"] = error
                 job_status_json["short_error"] = get_short_error(error)
                 job_status_json["traceback"] = tb
+                set_error_class(job_status_json, classify_error(e, job_dir))
 
         # run post-processing steps
         try:

@@ -7,7 +7,7 @@ import pytest
 from hysds_commons.workflow_examples import linear_spec, scatter_gather_spec
 from hysds_commons.workflow_status import WorkflowStatusNotFound
 from hysds.workflow_rules import (
-    DeadLetter, Ignore, Submit, WorkflowRulesConsumer, decide,
+    DeadLetter, Ignore, RetryAction, Submit, WorkflowRulesConsumer, decide,
 )
 
 RUN = "run-1"
@@ -151,7 +151,7 @@ def test_unknown_step_and_missing_run_and_spec():
 
 
 # ------------------------------------------------------------------ consumer shell
-def make_consumer(status=None, spec=None, submit=None, get_status_fn=None):
+def make_consumer(status=None, spec=None, submit=None, get_status_fn=None, **kw):
     es = umock.MagicMock()
     es.get.return_value = {"found": True, "_source": spec if spec is not None else linear_spec()}
     if get_status_fn is None:
@@ -161,7 +161,8 @@ def make_consumer(status=None, spec=None, submit=None, get_status_fn=None):
             return status, 1, 1
     import fakeredis
     c = WorkflowRulesConsumer(umock.MagicMock(), "workflow_queue", es=es, get_status_fn=get_status_fn,
-                              submit_fn=submit or umock.MagicMock(), redis_client=fakeredis.FakeStrictRedis())
+                              submit_fn=submit or umock.MagicMock(), redis_client=fakeredis.FakeStrictRedis(),
+                              **kw)
     return c, es
 
 
@@ -526,3 +527,373 @@ def test_finalize_and_halt_ignore_node_connector_fields():
     assert (a.job_type, a.queue) == ("job-workflow-finalize:v1.0.0", "workflow-connector-finalize")
     [a] = decide(ev("A", status="job-failed", short_error="x"), sp, status_doc(A="running"))
     assert (a.job_type, a.queue) == ("job-workflow-halt:v1.0.0", "workflow-connector-halt")
+
+
+# ------------------------------------------------------------------ phase 4: retry (contract 12.1-12.3)
+def retry_spec(max_retries=2, retry_on=("exit_code:*",), where="B"):
+    spec = linear_spec()
+    tgt = spec["defaults"] if where == "defaults" else spec["nodes"][where]
+    tgt["max_retries"] = max_retries
+    tgt["retry_on"] = list(retry_on)
+    return spec
+
+
+def fail(step="B", ec="exit_code:1", rc=0, **kw):
+    kw.setdefault("job_id", "jid-" + step)
+    return ev(step, "job-failed", error_class=ec, retry_count=rc, **kw)
+
+
+def test_retryable_failure_yields_retry_not_halt():
+    st = status_doc(A="completed", pass_1="completed", B="running")
+    [a] = decide(fail(), retry_spec(), st)
+    assert isinstance(a, RetryAction)
+    assert (a.job_id, a.max_retries, a.retry_count, a.queue) == ("jid-B", 2, 0, "system-jobs-queue")
+    assert a.claim_key == "wf-claim:run-1:B:None:retry1"
+    assert a.params == {"retry_job_id": "jid-B", "retry_count_max": 2, "job_priority_increment": 0,
+                        "workflow_retry": True}
+
+
+def test_retry_job_offline_matches_offline_and_star():
+    st = status_doc(B="running")
+    e = ev("B", "job-offline", error_class="offline", retry_count=0, job_id="j")
+    assert isinstance(decide(e, retry_spec(retry_on=["offline"]), st)[0], RetryAction)
+    assert isinstance(decide(e, retry_spec(retry_on=["*"]), st)[0], RetryAction)
+    halt = decide(e, retry_spec(retry_on=["exit_code:*"]), st)[0]
+    assert isinstance(halt, Submit) and halt.workflow["step_id"] == "_halt"
+
+
+def test_retry_uses_defaults_and_node_overrides_defaults():
+    st = status_doc(B="running")
+    spec = retry_spec(where="defaults", max_retries=3, retry_on=["*"])
+    assert isinstance(decide(fail(), spec, st)[0], RetryAction)
+    spec["nodes"]["B"]["max_retries"] = 0  # node wins -> no retry -> halt
+    a = decide(fail(), spec, st)[0]
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "_halt"
+
+
+def test_retry_second_attempt_counts_up():
+    st = status_doc(B="running")
+    [a] = decide(fail(rc=1), retry_spec(max_retries=2), st)
+    assert isinstance(a, RetryAction) and a.claim_key.endswith(":retry2")
+
+
+def test_exhausted_retries_halt_via_existing_path():
+    st = status_doc(B="running")
+    [a] = decide(fail(rc=2), retry_spec(max_retries=2), st)
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "_halt"
+    we = json.loads(a.params["workflow_event"])
+    assert we["error_class"] == "exit_code:1"
+
+
+def test_no_policy_means_halt():
+    st = status_doc(B="running")
+    a = decide(fail(), linear_spec(), st)[0]
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "_halt"
+
+
+def test_class_not_in_retry_on_halts():
+    st = status_doc(B="running")
+    a = decide(fail(ec="timeout"), retry_spec(retry_on=["exit_code:*"]), st)[0]
+    assert isinstance(a, Submit)
+    assert isinstance(decide(fail(ec="pge:transient"), retry_spec(retry_on=["pge:transient"]), st)[0], RetryAction)
+    assert isinstance(decide(fail(ec="exit_code:7"), retry_spec(retry_on=["exit_code:7"]), st)[0], RetryAction)
+    assert isinstance(decide(fail(ec="exit_code:8"), retry_spec(retry_on=["exit_code:7"]), st)[0], Submit)
+
+
+def test_event_without_retry_fields_treated_as_count_zero_class_missing():
+    st = status_doc(B="running")
+    e = ev("B", "job-failed", job_id="j")  # old producer: no error_class / retry_count
+    assert isinstance(decide(e, retry_spec(retry_on=["*"]), st)[0], RetryAction)
+    assert isinstance(decide(e, retry_spec(retry_on=["exit_code:*"]), st)[0], Submit)
+
+
+def test_synthetic_failure_and_missing_job_id_never_retry():
+    st = status_doc(B="running")
+    spec = retry_spec(retry_on=["*"])
+    assert isinstance(decide(fail(synthetic=True), spec, st)[0], Submit)
+    assert isinstance(decide(fail(job_id=None), spec, st)[0], Submit)
+
+
+def test_connector_failure_not_retried():
+    st = status_doc(A="completed", pass_1="running")
+    spec = retry_spec(retry_on=["*"], where="defaults")
+    e = ev("pass_1", "job-failed", error_class="worker", retry_count=0)
+    assert isinstance(decide(e, spec, st)[0], Submit)
+
+
+def test_retry_on_terminal_run_ignored():
+    st = status_doc(B="running")
+    st["status"] = "failed"
+    assert isinstance(decide(fail(), retry_spec(), st)[0], Ignore)
+
+
+def test_internal_failure_not_retried():
+    st = status_doc(B="running")
+    e = ev("_halt", "job-failed", error_class="worker", retry_count=0)
+    a = decide(e, retry_spec(retry_on=["*"], where="defaults"), st)[0]
+    assert isinstance(a, Ignore) and a.loud
+
+
+def sg_retry_spec(max_retries=1, retry_on=("exit_code:*",)):
+    spec = scatter_gather_spec()
+    spec["nodes"]["P"]["max_retries"] = max_retries
+    spec["nodes"]["P"]["retry_on"] = list(retry_on)
+    return spec
+
+
+def sg_fail(i, rc=0, ec="exit_code:1", n=5):
+    return child(i, "job-failed", error_class=ec, retry_count=rc)
+
+
+def test_scatter_child_retryable_failure_not_recorded_in_barrier():
+    st = sg_status(P={"state": "running", "expected": 5})
+    [a] = decide(sg_fail(3), sg_retry_spec(), st)
+    assert isinstance(a, RetryAction)
+    assert a.child_index == 3 and a.claim_key == "wf-claim:run-1:P:3:retry1" and a.job_id == "jc-3"
+
+
+def test_scatter_child_exhausted_failure_goes_to_barrier():
+    st = sg_status(P={"state": "running", "expected": 5})
+    [a] = decide(sg_fail(3, rc=1), sg_retry_spec(), st)
+    assert isinstance(a, BarrierRecord) and a.status == "job-failed"
+
+
+def test_scatter_child_no_policy_goes_to_barrier():
+    st = sg_status(P={"state": "running", "expected": 5})
+    assert isinstance(decide(sg_fail(3), scatter_gather_spec(), st)[0], BarrierRecord)
+
+
+def test_barrier_second_pass_never_retries():
+    st = sg_status(P={"state": "running", "expected": 5})
+    a = decide(sg_fail(4), sg_retry_spec(), st, barrier=barrier_result(3, 2, 5, winner=False))
+    assert isinstance(a[0], Ignore)
+
+
+def test_decide_retry_is_pure_no_io():
+    st = status_doc(B="running")
+    spec = retry_spec()
+    e = fail()
+    before = (json.dumps(st, sort_keys=True), json.dumps(spec, sort_keys=True), json.dumps(e, sort_keys=True))
+    decide(e, spec, st)
+    assert before == (json.dumps(st, sort_keys=True), json.dumps(spec, sort_keys=True),
+                      json.dumps(e, sort_keys=True))
+
+
+# shell
+RT = "job-lw-mozart-retry:v6.1.2"
+
+
+def test_shell_retry_submits_retry_job_untagged_no_dedup_and_no_halt():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="completed", pass_1="completed", B="running"),
+                         spec=retry_spec(), submit=submit, retry_job_type=RT)
+    [a] = c.process_event(fail())
+    assert isinstance(a, RetryAction)
+    submit.assert_called_once_with(RT, "system-jobs-queue",
+                                   {"retry_job_id": "jid-B", "retry_count_max": 2,
+                                    "job_priority_increment": 0, "workflow_retry": True},
+                                   None, enable_dedup=False)
+    assert c.redis.get("wf-claim:run-1:B:None:retry1") is not None
+
+
+def test_shell_redelivered_failure_retries_once():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(B="running"), spec=retry_spec(), submit=submit, retry_job_type=RT)
+    c.process_event(fail())
+    actions = c.process_event(fail(timestamp="later"))
+    assert submit.call_count == 1
+    assert "already claimed" in actions[0].summary()
+    # the next attempt's failure is a different claim
+    c.process_event(fail(rc=1))
+    assert submit.call_count == 2
+
+
+def test_shell_retry_claim_released_on_submit_failure():
+    submit = umock.MagicMock(side_effect=[RuntimeError("mozart down"), "pid"])
+    c, _ = make_consumer(status_doc(B="running"), spec=retry_spec(), submit=submit, retry_job_type=RT)
+    with pytest.raises(RuntimeError):
+        c.process_event(fail())
+    assert c.redis.get("wf-claim:run-1:B:None:retry1") is None
+    c.process_event(fail())
+    assert submit.call_count == 2
+
+
+def test_shell_scatter_child_retry_does_not_touch_barrier():
+    submit = umock.MagicMock()
+    c, es = make_sg_consumer(sg_status(P={"state": "running", "expected": 5}), submit)
+    c._es.get.return_value = {"found": True, "_source": sg_retry_spec()}
+    c._retry_job_type = RT
+    [a] = c.process_event(sg_fail(2))
+    assert isinstance(a, RetryAction)
+    assert not wb.barrier_exists(c.redis, RUN, "P")
+    assert es.search.call_count == 0  # no rebuild either
+
+
+def test_shell_scatter_retry_then_success_counts_once():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 2}), submit)
+    c._es.get.return_value = {"found": True, "_source": sg_retry_spec()}
+    c._retry_job_type = RT
+    c.process_event(sg_fail(0, rc=0))
+    c.process_event(child(0, n=2, retry_count=1))
+    [a] = c.process_event(child(1, n=2))
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "gather_1"
+    assert wb.get_barrier(c.redis, RUN, "P")["failed"] == 0
+
+
+def test_shell_retry_job_type_lookup_and_fallback():
+    c, es = make_consumer(status_doc(), submit=umock.MagicMock())
+    es.search.return_value = {"hits": {"hits": [{"_source": {"id": "job-lw-mozart-retry:v6.1.2"}},
+                                                 {"_source": {"id": "job-lw-mozart-retry-other:v1"}}]}}
+    assert c.retry_job_type() == "job-lw-mozart-retry:v6.1.2"
+    es.search.reset_mock()
+    assert c.retry_job_type() == "job-lw-mozart-retry:v6.1.2" and es.search.call_count == 0  # cached
+    c2, es2 = make_consumer(status_doc(), submit=umock.MagicMock())
+    es2.search.side_effect = RuntimeError("es down")
+    assert c2.retry_job_type() == "job-lw-mozart-retry"  # not cached on failure
+    es2.search.side_effect = None
+    es2.search.return_value = {"hits": {"hits": []}}
+    assert c2.retry_job_type() == "job-lw-mozart-retry"
+
+
+# ------------------------------------------------------------------ phase 4.5: DLQ + barrier TTL
+def make_dlq_consumer(status=None, spec=None, submit=None, **kw):
+    dlq = []
+    c, es = make_consumer(status, spec=spec, submit=submit, dlq_publish_fn=dlq.append, **kw)
+    return c, dlq
+
+
+def test_dlq_malformed_bodies_acked_and_published_immediately():
+    c, dlq = make_dlq_consumer(status_doc())
+    for body in ("garbage", [1, 2], {"step_id": "A", "status": "job-completed"},
+                 {"run_id": "r", "step_id": "A"}, {"run_id": 5, "step_id": "A", "status": "x"}):
+        m = msg(redelivered=False)
+        c.on_message(body, m)
+        m.ack.assert_called_once()
+        m.requeue.assert_not_called()
+    assert len(dlq) == 5
+    assert all(set(d) == {"event", "reason", "consumer_host", "timestamp"} for d in dlq)
+    assert dlq[0]["event"] == "garbage" and dlq[0]["reason"].startswith("malformed event")
+    assert dlq[0]["timestamp"].endswith("Z") and dlq[0]["consumer_host"]
+
+
+def test_dlq_unserializable_body_is_repr():
+    c, dlq = make_dlq_consumer(status_doc())
+    c.on_message(object(), msg())
+    assert isinstance(dlq[0]["event"], str)
+
+
+def test_dlq_poison_after_second_failure_first_requeues():
+    submit = umock.MagicMock(side_effect=RuntimeError("es down"))
+    c, dlq = make_dlq_consumer(status_doc(A="completed"), submit=submit)
+    with umock.patch("hysds.workflow_rules.time.sleep"):
+        m1 = msg(redelivered=False)
+        c.on_message(ev("A"), m1)
+        m1.requeue.assert_called_once()
+        m1.ack.assert_not_called()
+        assert dlq == []
+        m2 = msg(redelivered=True)
+        c.on_message(ev("A"), m2)
+    m2.ack.assert_called_once()
+    m2.requeue.assert_not_called()
+    assert len(dlq) == 1
+    assert dlq[0]["event"]["step_id"] == "A" and "es down" in dlq[0]["reason"]
+    assert dlq[0]["reason"].startswith("poison event")
+
+
+def test_dlq_publish_failure_requeues_instead_of_losing():
+    def boom(payload):
+        raise ConnectionError("broker down")
+    submit = umock.MagicMock(side_effect=RuntimeError("es down"))
+    c, _ = make_consumer(status_doc(A="completed"), submit=submit, dlq_publish_fn=boom)
+    with umock.patch("hysds.workflow_rules.time.sleep"):
+        m = msg(redelivered=True)
+        c.on_message(ev("A"), m)
+    m.requeue.assert_called_once()
+    m.ack.assert_not_called()
+
+
+def test_dlq_missing_run_and_unknown_step_and_missing_spec():
+    c, dlq = make_dlq_consumer(status=None)
+    m = msg()
+    c.on_message(ev("A", run_id="gone"), m)
+    m.ack.assert_called_once()
+    assert "run not found" in dlq[0]["reason"] and dlq[0]["event"]["run_id"] == "gone"
+    c2, dlq2 = make_dlq_consumer(status_doc())
+    c2.on_message(ev("nope"), msg())
+    assert "unknown step_id" in dlq2[0]["reason"]
+
+
+def test_dlq_default_publish_uses_named_queue():
+    conn = umock.MagicMock()
+    c = WorkflowRulesConsumer(conn, "workflow_queue", es=umock.MagicMock(), dlq_name="my_dlq")
+    c.dead_letter({"run_id": "r"}, "why")
+    producer = conn.clone.return_value.__enter__.return_value.Producer.return_value
+    kw = producer.publish.call_args.kwargs
+    assert kw["routing_key"] == "my_dlq" and kw["exchange"].name == "my_dlq"
+    assert producer.publish.call_args[0][0]["reason"] == "why"
+
+
+def test_healthy_event_not_dead_lettered():
+    c, dlq = make_dlq_consumer(status_doc(A="completed"))
+    c.on_message(ev("A"), msg())
+    assert dlq == []
+
+
+def _sg_with_barrier(c, ttl_expected=None):
+    c.process_event(child(0, n=2))
+    assert c.redis.ttl(wb.barrier_keys(RUN, "P")[0]) > 3 * 86400  # creation TTL is long
+
+
+def test_ttl_set_on_finalize():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 2}, pass_2="completed"), submit)
+    c.barrier_ttl = 777
+    _sg_with_barrier(c)
+    c.process_event(ev("B", spec_id=SG_ID))  # last job completed -> _finalize
+    assert submit.call_args[0][3]["step_id"] == "_finalize"
+    for k in wb.barrier_keys(RUN, "P"):
+        assert c.redis.ttl(k) == 777
+
+
+def test_ttl_set_on_halt():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 2}), submit)
+    c.barrier_ttl = 555
+    _sg_with_barrier(c)
+    c.process_event(ev("A", "job-failed", spec_id=SG_ID, error_class="worker", retry_count=0))
+    assert submit.call_args[0][3]["step_id"] == "_halt"
+    for k in wb.barrier_keys(RUN, "P"):
+        assert c.redis.ttl(k) == 555
+
+
+def test_ttl_default_is_one_day():
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 2}), umock.MagicMock())
+    assert c.barrier_ttl == 86400
+
+
+def test_ttl_not_set_on_ordinary_submit_or_retry():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 2}), submit)
+    c._es.get.return_value = {"found": True, "_source": sg_retry_spec()}
+    c._retry_job_type = RT
+    _sg_with_barrier(c)
+    c.process_event(sg_fail(1))  # retry
+    c.process_event(ev("A", spec_id=SG_ID))  # pass submit
+    for k in wb.barrier_keys(RUN, "P"):
+        assert c.redis.ttl(k) > 3 * 86400
+
+
+def test_ttl_failure_is_best_effort():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="running"), submit=submit)
+    c._expire_barriers = umock.MagicMock(side_effect=RuntimeError("redis"))
+    [a] = c.process_event(ev("A", "job-failed", error_class="worker", retry_count=0))
+    assert isinstance(a, Submit) and submit.call_count == 1
+
+
+def test_ttl_linear_spec_without_scatter_is_noop():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="running"), submit=submit)
+    c.process_event(ev("A", "job-failed", error_class="worker", retry_count=0))
+    assert submit.call_count == 1

@@ -12,13 +12,20 @@ duplicate events are expected; the ``pending`` pre-check plus submit-time dedup 
 Phase 3 adds scatter/gather (contract section 10). The barrier is I/O (Redis), so ``decide`` stays
 pure by running in two passes for a scatter-child event: pass 1 (``barrier=None``) returns a
 ``BarrierRecord`` action; the shell executes it (with the Redis-loss rebuild) and calls ``decide``
-again with the resulting BarrierResult, which yields the final actions. Retry is TODO(phase4).
+again with the resulting BarrierResult, which yields the final actions.
+
+Phase 4 (contract 12): a retryable ``job-failed``/``job-offline`` (per ``retry_on`` / ``max_retries``)
+yields a ``RetryAction`` instead of a halt or a barrier record; poison/malformed events and
+``DeadLetter`` actions go to ``WORKFLOW_DLQ``; ``_finalize``/``_halt`` shorten the run's barrier TTL.
 """
 
 import functools
+import json
 import logging
+import socket
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import requests
@@ -27,11 +34,15 @@ from kombu.mixins import ConsumerMixin
 
 from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
+from hysds_commons.workflow_spec import is_retryable, retry_policy
 from hysds_commons.workflow_status import WorkflowStatusNotFound, get_status
 from hysds_commons.workflow_submit import (
     CONNECTOR_JOB_TYPES,
     FINALIZE_STEP,
     HALT_STEP,
+    RETRY_JOB_TYPE,
+    RETRY_QUEUE,
+    retry_params,
     connector_params,
     submit_workflow_job,
     workflow_tag,
@@ -45,6 +56,8 @@ INTERNAL_STEPS = (FINALIZE_STEP, HALT_STEP)
 # submit-claim keys outlive any realistic run
 CLAIM_TTL_SECONDS = 30 * 24 * 3600
 PREFETCH_COUNT = 10
+DEFAULT_DLQ = "workflow_dead_letter"
+DEFAULT_BARRIER_TERMINAL_TTL = 86400
 
 
 # ----------------------------------------------------------------------------- actions
@@ -69,6 +82,33 @@ class Ignore:
 
 
 @dataclass
+class RetryAction:
+    """Resubmit the failed job via mozart's ``job-lw-mozart-retry`` (contract 12.3). The retry job
+    is *not* workflow-tagged; the retried job keeps its own tag (retry.py)."""
+    run_id: str
+    step_id: str
+    child_index: Optional[int]
+    job_id: str
+    max_retries: int
+    retry_count: int  # of the failed attempt; the retry is attempt retry_count + 1
+    error_class: Optional[str]
+    queue: str = RETRY_QUEUE
+
+    @property
+    def claim_key(self):
+        return "wf-claim:%s:%s:%s:retry%d" % (self.run_id, self.step_id, self.child_index,
+                                              self.retry_count + 1)
+
+    @property
+    def params(self):
+        return retry_params(self.job_id, self.max_retries)
+
+    def summary(self):
+        return (f"retry {self.step_id}/{self.job_id} attempt {self.retry_count + 1}/{self.max_retries} "
+                f"({self.error_class})")
+
+
+@dataclass
 class DeadLetter:
     reason: str
 
@@ -89,7 +129,7 @@ class BarrierRecord:
         return f"barrier-record {self.step_id}/{self.job_id}={self.status}"
 
 
-Action = Any  # Submit | Ignore | DeadLetter | BarrierRecord
+Action = Any  # Submit | RetryAction | Ignore | DeadLetter | BarrierRecord
 
 
 # ----------------------------------------------------------------------------- decide
@@ -167,6 +207,23 @@ def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
         event, step, f"scatter {step}: {k}/{n} completed < threshold {threshold}"))]
 
 
+def _default_retry_job_type():
+    return RETRY_JOB_TYPE
+
+
+def _retry_action(event, node, spec, step):
+    """RetryAction if this failed attempt is retryable under the node's policy, else None."""
+    if node.get("kind") != "job" or event.get("synthetic") or not event.get("job_id"):
+        return None
+    policy = retry_policy(spec, step)
+    retry_count = event.get("retry_count")
+    retry_count = retry_count if isinstance(retry_count, int) and not isinstance(retry_count, bool) else 0
+    if not is_retryable(policy, event.get("error_class"), retry_count):
+        return None
+    return RetryAction(event.get("run_id"), step, event.get("child_index"), event["job_id"],
+                       policy["max_retries"], retry_count, event.get("error_class"))
+
+
 def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier=None):
     """Pure decision function for one WORKFLOW_QUEUE event. Returns a list of actions.
 
@@ -180,7 +237,6 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
 
     # 1. run / spec presence and terminal check
     if status is None:
-        # TODO(phase4): real DLQ
         return [DeadLetter(f"run not found: {run_id}")]
     if spec is None:
         return [DeadLetter(f"spec not found for run {run_id}: {status.get('spec_id')}")]
@@ -206,6 +262,12 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
         return [DeadLetter(f"unknown step_id {step!r} for run {run_id}")]
     node = nodes[step]
 
+    # 3a. retryable failure (job nodes and scatter children): resubmit; NOT a barrier record, no halt
+    if ev_status in FAILURE_STATUSES and barrier is None:
+        retry = _retry_action(event, node, spec, step)
+        if retry is not None:
+            return [retry]
+
     # 3. scatter child -> barrier (two passes, see module docstring)
     if event.get("child_index") is not None:
         if barrier is not None:
@@ -218,7 +280,7 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier
 
     # 4. failure
     if ev_status in FAILURE_STATUSES:
-        # TODO(phase4): retry_on / max_retries check before halting
+        # not retryable (or retries exhausted): halt (retryable failures returned above)
         return [_halt(run_id, spec_id, event)]
 
     if ev_status != "job-completed":
@@ -314,12 +376,14 @@ def _synthetic_failure(event, step_id, error):
 
 # ----------------------------------------------------------------------------- I/O shell
 class WorkflowRulesConsumer(ConsumerMixin):
-    """kombu consumer: ack only after actions executed; one requeue, then poison-ack."""
+    """kombu consumer: ack only after actions executed. A first handler exception requeues once;
+    a second one, a malformed event or a ``DeadLetter`` action publishes to ``WORKFLOW_DLQ`` and acks."""
 
     def __init__(self, connection, queue_name, es=None, specs_index="workflow_specs",
                  status_index="workflow_status", job_specs_index="job_specs",
                  get_status_fn=get_status, submit_fn=submit_workflow_job, prefetch=PREFETCH_COUNT,
-                 redis_client=None):
+                 redis_client=None, dlq_name=DEFAULT_DLQ, barrier_ttl=DEFAULT_BARRIER_TERMINAL_TTL,
+                 dlq_publish_fn=None, retry_job_type=None):
         self.connection = connection
         self.queue_name = queue_name
         self._es = es
@@ -332,6 +396,10 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self._spec_cache = {}
         self._queue_cache = {}
         self._redis = redis_client
+        self.dlq_name = dlq_name
+        self.barrier_ttl = barrier_ttl
+        self._dlq_publish_fn = dlq_publish_fn or self._kombu_dlq_publish
+        self._retry_job_type = retry_job_type
         exchange = Exchange(queue_name, type="direct", durable=True)
         self.queue = Queue(queue_name, exchange, routing_key=queue_name, durable=True)
 
@@ -372,6 +440,58 @@ class WorkflowRulesConsumer(ConsumerMixin):
     def release(self, workflow):
         self.redis.delete(self.claim_key(workflow))
 
+    def claim_retry(self, action):
+        return bool(self.redis.set(action.claim_key, "1", nx=True, ex=CLAIM_TTL_SECONDS))
+
+    def release_retry(self, action):
+        self.redis.delete(action.claim_key)
+
+    # -- dead letters (contract 12.7)
+    def _kombu_dlq_publish(self, payload):
+        exchange = Exchange(self.dlq_name, type="direct", durable=True)
+        queue = Queue(self.dlq_name, exchange, routing_key=self.dlq_name, durable=True)
+        with self.connection.clone() as conn:
+            conn.Producer().publish(payload, exchange=exchange, routing_key=self.dlq_name,
+                                    declare=[queue], serializer="json", retry=True)
+
+    def dead_letter(self, event, reason):
+        """Publish ``{event, reason, consumer_host, timestamp}`` to ``WORKFLOW_DLQ``."""
+        try:
+            json.dumps(event)
+        except (TypeError, ValueError):
+            event = repr(event)
+        self._dlq_publish_fn({
+            "event": event,
+            "reason": reason,
+            "consumer_host": socket.gethostname(),
+            "timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
+        })
+        log.error("workflow event dead-lettered to %s: %s", self.dlq_name, reason)
+
+    # -- retry job type (versioned id, e.g. job-lw-mozart-retry:v6.1.2)
+    def retry_job_type(self):
+        if self._retry_job_type:
+            return self._retry_job_type
+        resolved = None
+        try:
+            r = self.es.search(index=self.job_specs_index, body={
+                "query": {"prefix": {"id": RETRY_JOB_TYPE}}, "size": 20, "_source": ["id"]})
+            ids = sorted(h["_source"]["id"] for h in r["hits"]["hits"]
+                         if h["_source"].get("id", "").split(":")[0] == RETRY_JOB_TYPE)
+            resolved = ids[-1] if ids else None
+        except Exception:
+            log.exception("could not look up the %s job_spec", RETRY_JOB_TYPE)
+        if resolved:
+            self._retry_job_type = resolved  # cache only a successful lookup
+        return resolved or RETRY_JOB_TYPE
+
+    def _expire_barriers(self, spec, run_id):
+        """Contract 12.7: _finalize/_halt submitted -> barrier keys get the terminal TTL."""
+        children = [n["child"] for n in (spec.get("nodes") or {}).values()
+                    if n.get("kind") == "scatter" and n.get("child")]
+        if children:
+            workflow_barrier.expire_run_barriers(self.redis, run_id, children, self.barrier_ttl)
+
     # -- loaders
     def load_spec(self, spec_id):
         if spec_id in self._spec_cache:  # specs are immutable
@@ -409,7 +529,18 @@ class WorkflowRulesConsumer(ConsumerMixin):
             actions = decide(event, spec, status, self.recommended_queue, barrier=barrier)
         executed = []
         for a in actions:
-            if isinstance(a, Submit):
+            if isinstance(a, DeadLetter):
+                self.dead_letter(event, a.reason)
+            elif isinstance(a, RetryAction):
+                if not self.claim_retry(a):
+                    executed.append(Ignore(f"already claimed: {a.claim_key} (duplicate event)"))
+                    continue
+                try:
+                    self.submit_fn(self.retry_job_type(), a.queue, a.params, None, enable_dedup=False)
+                except Exception:
+                    self.release_retry(a)  # let the requeued delivery retry the submit
+                    raise
+            elif isinstance(a, Submit):
                 if not self.claim(a.workflow):
                     executed.append(Ignore(f"already claimed: {self.claim_key(a.workflow)} (duplicate event)"))
                     continue
@@ -418,6 +549,11 @@ class WorkflowRulesConsumer(ConsumerMixin):
                 except Exception:
                     self.release(a.workflow)  # let the requeued delivery retry the submit
                     raise
+                if a.workflow.get("step_id") in INTERNAL_STEPS and spec is not None:
+                    try:
+                        self._expire_barriers(spec, a.workflow.get("run_id"))
+                    except Exception:  # best effort: the submit already happened
+                        log.exception("failed to set barrier TTL for run %s", a.workflow.get("run_id"))
             executed.append(a)
         actions = executed
         self._log_event(event, status, actions, barrier)
@@ -450,15 +586,35 @@ class WorkflowRulesConsumer(ConsumerMixin):
                 (status or {}).get("status"), barrier.summary() if barrier else None,
                 [a.summary() for a in actions])
 
+    @staticmethod
+    def validate_event(body):
+        """Return a reason string if ``body`` cannot be a workflow event, else None."""
+        if not isinstance(body, dict):
+            return f"event body is not an object: {type(body).__name__}"
+        for k in ("run_id", "step_id", "status"):
+            if not isinstance(body.get(k), str) or not body[k]:
+                return f"missing or non-string {k!r}"
+        return None
+
     def on_message(self, body, message):
         try:
-            if not isinstance(body, dict):
-                raise ValueError(f"event body is not an object: {body!r}")
+            problem = self.validate_event(body)
+            if problem:
+                self.dead_letter(body, f"malformed event: {problem}")
+                message.ack()
+                return
             self.process_event(body)
-        except Exception:
+        except Exception as exc:
             if message.delivery_info.get("redelivered"):
-                # TODO(phase4): publish to a real DLQ
-                log.exception("POISON workflow event (failed twice), acking and dropping: %r", body)
+                log.exception("POISON workflow event (failed twice), dead-lettering: %r", body)
+                try:
+                    self.dead_letter(body, f"poison event: failed twice: {type(exc).__name__}: {exc}")
+                except Exception:
+                    # never lose an event: keep it on the queue if the DLQ itself is down
+                    log.exception("DLQ publish failed; requeueing")
+                    time.sleep(1)
+                    message.requeue()
+                    return
                 message.ack()
             else:
                 log.exception("workflow event handler failed, requeueing once: %r", body)
@@ -473,6 +629,9 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     queue_name = app.conf.WORKFLOW_QUEUE
+    dlq_name = app.conf.get("WORKFLOW_DLQ", DEFAULT_DLQ)
+    barrier_ttl = int(app.conf.get("WORKFLOW_BARRIER_TERMINAL_TTL", DEFAULT_BARRIER_TERMINAL_TTL))
+    retry_job_type = app.conf.get("WORKFLOW_RETRY_JOB_TYPE")
     mozart_rest_url = app.conf.MOZART_REST_URL
     # submit through mozart's REST API so workflow jobs get exactly the
     # semantics (and any policy) of a normal /job/submit
@@ -480,7 +639,8 @@ def main():
     submit_fn = functools.partial(submit_workflow_job, mozart_rest_url=mozart_rest_url, session=session)
     with app.connection() as conn:
         log.info("workflow_rules consuming %s, submitting via %s/job/submit", queue_name, mozart_rest_url)
-        WorkflowRulesConsumer(conn, queue_name, submit_fn=submit_fn).run()
+        WorkflowRulesConsumer(conn, queue_name, submit_fn=submit_fn, dlq_name=dlq_name,
+                              barrier_ttl=barrier_ttl, retry_job_type=retry_job_type).run()
 
 
 if __name__ == "__main__":

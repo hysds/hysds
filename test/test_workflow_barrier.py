@@ -211,3 +211,14 @@ def test_rebuild_seed_then_event_counts(r):
     wb.seed_barrier(r, RUN, C, 3, seed)
     x = wb.record_child(r, RUN, C, "j2", OK, 3)
     assert (x.completed, x.failed, x.expected, x.winner) == (1 + 1, 1, 3, True)
+
+
+def test_expire_run_barriers_sets_ttl_on_both_keys_and_ignores_missing():
+    import fakeredis
+    r = fakeredis.FakeStrictRedis()
+    wb.record_child(r, "R", "C1", "j1", "job-completed", 2)
+    n = wb.expire_run_barriers(r, "R", ["C1", "C2-missing"], 100)
+    assert n == 2
+    for k in wb.barrier_keys("R", "C1"):
+        assert r.ttl(k) == 100
+    assert not r.exists(*wb.barrier_keys("R", "C2-missing"))

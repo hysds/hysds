@@ -330,6 +330,8 @@ def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
         "status": "job-completed",
         "short_error": "oops",
         "workflow_outputs": None,
+        "error_class": None,
+        "retry_count": 0,
     }
     assert producer.publish.call_args.kwargs["routing_key"] == "workflow_queue"
 
@@ -394,6 +396,8 @@ def test_workflow_event_full_payload_shape(monkeypatch):
         "status": "job-completed",
         "short_error": None,
         "workflow_outputs": {"mosaic": {"url": "s3://b/m.tif"}},
+        "error_class": None,
+        "retry_count": 0,
     }
 
 
@@ -417,3 +421,72 @@ def test_workflow_tag_surfaced_from_job_dict(monkeypatch):
 
     doc = msgpack.loads(rpush.call_args[0][1])
     assert doc["workflow"]["run_id"] == "r"
+
+
+# --- slice 4.1: error_class / retry_count on the WORKFLOW_QUEUE event ---
+
+
+def test_event_carries_error_class_and_retry_count(monkeypatch):
+    job = _workflow_job(status="job-failed")
+    job["job"]["retry_count"] = 2
+    job["job"]["job_info"]["error_class"] = "exit_code:3"
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    payload = producer.publish.call_args[0][0]
+    assert payload["error_class"] == "exit_code:3"
+    assert payload["retry_count"] == 2
+
+
+def test_top_level_error_class_wins_and_is_mirrored_to_job_info(monkeypatch):
+    job = _workflow_job(status="job-failed")
+    job["error_class"] = "timeout"
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    assert producer.publish.call_args[0][0]["error_class"] == "timeout"
+
+
+@pytest.mark.parametrize("status,expected", [("job-failed", "worker"), ("job-offline", "offline")])
+def test_default_error_class_when_none_set(monkeypatch, status, expected):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status=status))
+    payload = producer.publish.call_args[0][0]
+    assert payload["error_class"] == expected
+    assert payload["retry_count"] == 0
+
+
+def test_completed_job_has_no_error_class(monkeypatch):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-completed"))
+    assert producer.publish.call_args[0][0]["error_class"] is None
+
+
+def test_error_class_set_on_indexed_doc(monkeypatch):
+    monkeypatch.setattr(lu.app.conf, "HYSDS_JOB_STATUS_EXPIRES", 86400, raising=False)
+    monkeypatch.setattr(lu.app.conf, "HARD_TIME_LIMIT_GAP", 300, raising=False)
+    monkeypatch.setattr(lu.app.conf, "REDIS_JOB_STATUS_KEY", "logstash", raising=False)
+    monkeypatch.setattr(lu, "set_redis_job_status_pool", lambda: None)
+    r = umock.MagicMock()
+    monkeypatch.setattr(lu, "StrictRedis", umock.MagicMock(return_value=r))
+    monkeypatch.setattr(lu, "publish_workflow_event", lambda j: None)
+    import msgpack
+    lu.log_job_status(_workflow_job(status="job-offline"))
+    doc = msgpack.loads(r.rpush.call_args[0][1])
+    assert doc["error_class"] == "offline"
+    assert doc["job"]["job_info"]["error_class"] == "offline"
+
+
+@pytest.mark.parametrize("content,expected", [
+    ("transient_s3\n", "pge:transient_s3"),
+    ("  a.b:c-d_1  ", "pge:a.b:c-d_1"),
+    ("x" * 64, "pge:" + "x" * 64),
+    ("x" * 65, None),
+    ("", None),
+    ("two words", None),
+    ("line1\nline2", None),
+    ("bad/char", None),
+    ("$(rm)", None),
+])
+def test_read_pge_error_class_validation(tmp_path, content, expected):
+    (tmp_path / "_error_class.txt").write_text(content)
+    assert lu.read_pge_error_class(str(tmp_path)) == expected
+
+
+def test_read_pge_error_class_missing_file(tmp_path):
+    assert lu.read_pge_error_class(str(tmp_path)) is None
+    assert lu.read_pge_error_class(None) is None

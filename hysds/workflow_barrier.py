@@ -120,6 +120,17 @@ def record_child(redis, run_id, step_id, job_id, status, child_total):
     return _result(_script(redis)(keys=keys, args=_args(job_id, status, child_total, True)))
 
 
+def expire_run_barriers(redis, run_id, child_step_ids, ttl):
+    """Contract 12.7: once a run is terminal (``_finalize``/``_halt`` submitted), shorten both
+    barrier keys of each scatter child step to ``ttl`` seconds. Missing keys are a no-op.
+    Returns the number of keys that existed."""
+    n = 0
+    for step_id in child_step_ids:
+        for key in barrier_keys(run_id, step_id):
+            n += 1 if redis.expire(key, ttl) else 0
+    return n
+
+
 def barrier_exists(redis, run_id, step_id):
     """True if either barrier key exists (the rebuild runs only when both are missing)."""
     bkey, mkey = barrier_keys(run_id, step_id)

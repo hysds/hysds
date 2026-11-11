@@ -427,13 +427,44 @@ def get_workflow_queue_producer():
     return WORKFLOW_QUEUE_PRODUCER
 
 
+# contract 12.1: error classes on failed attempts
+PGE_ERROR_CLASS_FILE = "_error_class.txt"
+PGE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_:.-]{1,64}$")
+DEFAULT_ERROR_CLASS = {"job-failed": "worker", "job-offline": "offline"}
+
+
+def read_pge_error_class(job_dir):
+    """``pge:<token>`` from the PGE's ``_error_class.txt`` (one valid token), else None.
+    A missing, unreadable, empty, multi-line or invalid file is ignored (logged)."""
+    path = os.path.join(job_dir or "", PGE_ERROR_CLASS_FILE)
+    try:
+        with open(path) as f:
+            raw = f.read(1024)
+    except OSError:
+        return None
+    token = raw.strip()
+    if not PGE_TOKEN_RE.match(token):
+        logger.warning(f"ignoring invalid {PGE_ERROR_CLASS_FILE} content: {raw[:80]!r}")
+        return None
+    return f"pge:{token}"
+
+
+def set_error_class(job_status_json, error_class):
+    """Stamp ``error_class`` on the status doc (top level) and ``job.job_info``."""
+    job_status_json["error_class"] = error_class
+    job = job_status_json.get("job")
+    if isinstance(job, dict):
+        job.setdefault("job_info", {})["error_class"] = error_class
+
+
 @backoff.on_exception(
     backoff.expo, Exception, max_tries=backoff_max_tries, max_value=backoff_max_value
 )
 def publish_workflow_event(job_for_indexing):
     """D2: single WORKFLOW_QUEUE emit point.
 
-    Publishes {run_id, step_id, child_index, job_id, status, short_error} to
+    Publishes {run_id, step_id, child_index, job_id, status, short_error, error_class,
+    retry_count} to
     WORKFLOW_QUEUE for terminal-status jobs that carry a top-level
     "workflow" tag. No job submitted today sets that tag, so this never
     fires on real traffic yet -- only the (not-yet-existing) workflow
@@ -457,6 +488,8 @@ def publish_workflow_event(job_for_indexing):
         "status": job_for_indexing.get("status"),
         "short_error": job_for_indexing.get("short_error"),
         "workflow_outputs": job_info.get("workflow_outputs"),
+        "error_class": job_for_indexing.get("error_class") or job_info.get("error_class"),
+        "retry_count": (job_for_indexing.get("job") or {}).get("retry_count") or 0,
         "timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
     }
     queue_name = app.conf.WORKFLOW_QUEUE
@@ -496,6 +529,15 @@ def log_job_status(job):
         ).get("workflow")
         if wf:
             job_for_indexing["workflow"] = wf
+
+    # contract 12.1: every failed/offline attempt carries an error_class. job_worker sets the
+    # specific one; anything that reaches here without one (early worker failures, the
+    # orchestrator, offline_jobs, fail_job) gets the status default.
+    if job_for_indexing.get("status") in DEFAULT_ERROR_CLASS:
+        ec = (job_for_indexing.get("error_class")
+              or ((job_for_indexing.get("job") or {}).get("job_info") or {}).get("error_class")
+              or DEFAULT_ERROR_CLASS[job_for_indexing["status"]])
+        set_error_class(job_for_indexing, ec)
 
     job_for_indexing["resource"] = "job"
     job_for_indexing["type"] = job_for_indexing.get("job", {}).get("type", "unknown")
