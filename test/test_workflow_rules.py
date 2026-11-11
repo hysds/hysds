@@ -133,16 +133,6 @@ def test_ref_resolution_failure_halts():
     assert "pass_1" in we["short_error"] and "ref" in we["short_error"]
 
 
-def test_scatter_child_gather_ignored_phase3():
-    sg = scatter_gather_spec()
-    st = {"run_id": RUN, "spec_id": "demo-scatter:1.0.0", "status": "running", "inputs": {},
-          "nodes": {n: {"state": "pending"} for n in sg["nodes"]}}
-    [a] = decide(ev("P", child_index=0, child_total=3), sg, st)
-    assert isinstance(a, Ignore) and "not implemented in v1 phase 2" in a.reason
-    [a] = decide(ev("gather_1"), sg, st)
-    assert isinstance(a, Ignore) and "not implemented in v1 phase 2" in a.reason
-
-
 def test_job_with_scatter_successor_submits_scatter_connector():
     sg = scatter_gather_spec()
     st = {"run_id": RUN, "spec_id": "demo-scatter:1.0.0", "status": "running", "inputs": {},
@@ -266,3 +256,224 @@ def test_claim_released_when_submit_fails():
         c.process_event(e)
     c.process_event(e)
     assert submit.call_count == 2
+
+
+# ------------------------------------------------------------------ phase 3: scatter/gather
+from hysds import workflow_barrier as wb  # noqa: E402
+from hysds.workflow_rules import BarrierRecord  # noqa: E402
+
+SG_ID = "demo-scatter:1.0.0"
+
+
+def sg_status(**states):
+    sg = scatter_gather_spec()
+    nodes = {n: {"state": "pending"} for n in sg["nodes"]}
+    for n, s in states.items():
+        nodes[n] = s if isinstance(s, dict) else {"state": s}
+    return {"run_id": RUN, "spec_id": SG_ID, "status": "running", "inputs": {"x": "x0"}, "nodes": nodes}
+
+
+def child(i, status="job-completed", n=5, **kw):
+    return ev("P", status, child_index=i, child_total=n, job_id=f"jc-{i}", spec_id=SG_ID, **kw)
+
+
+def barrier_result(c, f, n, winner=True):
+    return wb.BarrierResult(c, f, n, winner)
+
+
+def test_child_first_pass_returns_barrier_record():
+    st = sg_status(P={"state": "running", "expected": 5, "threshold": 0.6})
+    [a] = decide(child(2), scatter_gather_spec(), st)
+    assert a == BarrierRecord(RUN, "P", "jc-2", "job-completed", 5)
+
+
+@pytest.mark.parametrize("bad", [dict(child_total=None), dict(job_id=None), dict(status="job-started")])
+def test_unrecordable_child_loud_ignore(bad):
+    e = child(1)
+    e.update(bad)
+    [a] = decide(e, scatter_gather_spec(), sg_status(P="running"))
+    assert isinstance(a, Ignore) and a.loud
+
+
+def test_non_winner_ignored_with_counts():
+    st = sg_status(P="running")
+    [a] = decide(child(0), scatter_gather_spec(), st, barrier=barrier_result(1, 0, 5, False))
+    assert isinstance(a, Ignore) and "1 completed, 0 failed of 5" in a.reason and not a.loud
+
+
+def test_winner_threshold_pass_submits_gather_with_synthetic_event():
+    st = sg_status(P={"state": "running", "expected": 5})
+    [a] = decide(child(4), scatter_gather_spec(), st, barrier=barrier_result(3, 2, 5))  # 0.6 >= 0.6
+    assert a.job_type == "job-workflow-gather:v1.0.0" and a.queue == "workflow-connector-gather"
+    assert a.workflow == {"run_id": RUN, "step_id": "gather_1", "spec_id": SG_ID,
+                          "child_index": None, "child_total": None}
+    we = json.loads(a.params["workflow_event"])
+    assert we == {"run_id": RUN, "step_id": "P", "spec_id": SG_ID, "status": "barrier-released",
+                  "barrier": {"expected": 5, "completed": 3, "failed": 2}}
+
+
+def test_winner_threshold_fail_halts():
+    st = sg_status(P="running")
+    [a] = decide(child(4), scatter_gather_spec(), st, barrier=barrier_result(2, 3, 5))
+    assert a.job_type == "job-workflow-halt:v1.0.0" and a.workflow["step_id"] == "_halt"
+    we = json.loads(a.params["workflow_event"])
+    assert we["step_id"] == "P" and we["status"] == "job-failed" and we["child_index"] is None
+    assert we["short_error"] == "scatter P: 2/5 completed < threshold 0.6"
+
+
+def test_winner_gather_not_pending_ignored():
+    st = sg_status(P="running", gather_1="completed")
+    [a] = decide(child(4), scatter_gather_spec(), st, barrier=barrier_result(5, 0, 5))
+    assert isinstance(a, Ignore) and "not pending" in a.reason
+
+
+@pytest.mark.parametrize("rs", ["completed", "failed", "cancelled"])
+def test_child_event_on_terminal_run_recorded_then_no_action(rs):
+    st = sg_status(P="running")
+    st["status"] = rs
+    [a] = decide(child(0), scatter_gather_spec(), st)
+    assert isinstance(a, BarrierRecord)  # still recorded
+    for win in (True, False):
+        [a] = decide(child(0), scatter_gather_spec(), st, barrier=barrier_result(5, 0, 5, win))
+        assert isinstance(a, Ignore) and "already" in a.reason
+
+
+def test_scatter_completion_n0_submits_gather_else_ignores():
+    sg = scatter_gather_spec()
+    st = sg_status(scatter_1="completed", P={"state": "running", "expected": 0})
+    e = ev("scatter_1", spec_id=SG_ID, workflow_outputs=typed(n=0))
+    [a] = decide(e, sg, st)
+    assert a.job_type == "job-workflow-gather:v1.0.0" and a.workflow["step_id"] == "gather_1"
+    assert json.loads(a.params["workflow_event"])["step_id"] == "scatter_1"
+    st = sg_status(scatter_1="completed", P={"state": "running", "expected": 5})
+    [a] = decide(e, sg, st)
+    assert isinstance(a, Ignore) and not a.loud
+    st = sg_status(scatter_1="completed", P={"state": "running", "expected": 0}, gather_1="running")
+    [a] = decide(e, sg, st)
+    assert isinstance(a, Ignore) and "not pending" in a.reason
+
+
+def test_gather_completion_submits_pass():
+    st = sg_status(gather_1="completed")
+    [a] = decide(ev("gather_1", spec_id=SG_ID), scatter_gather_spec(), st)
+    assert a.job_type == "job-workflow-pass:v1.0.0" and a.workflow["step_id"] == "pass_2"
+    st = sg_status(gather_1="completed", pass_2="running")
+    [a] = decide(ev("gather_1", spec_id=SG_ID), scatter_gather_spec(), st)
+    assert isinstance(a, Ignore)
+
+
+def test_gather_completion_last_node_finalizes():
+    sg = scatter_gather_spec()
+    sg["nodes"]["gather_1"]["next"] = []
+    del sg["nodes"]["pass_2"], sg["nodes"]["B"]
+    sg["outputs"] = {"final": "$.gather_1.result"}
+    st = {"run_id": RUN, "spec_id": SG_ID, "status": "running", "inputs": {}, "nodes": {}}
+    [a] = decide(ev("gather_1", spec_id=SG_ID), sg, st)
+    assert a.job_type == "job-workflow-finalize:v1.0.0" and a.workflow["step_id"] == "_finalize"
+
+
+@pytest.mark.parametrize("step", ["scatter_1", "gather_1"])
+def test_connector_failure_halts(step):
+    st = sg_status()
+    [a] = decide(ev(step, "job-failed", spec_id=SG_ID, short_error="x"), scatter_gather_spec(), st)
+    assert a.job_type == "job-workflow-halt:v1.0.0"
+    assert json.loads(a.params["workflow_event"])["step_id"] == step
+
+
+# -- consumer shell over fakeredis
+def make_sg_consumer(status, submit=None):
+    c, es = make_consumer(status, spec=scatter_gather_spec(), submit=submit)
+    es.search.return_value = {"hits": {"hits": []}}
+    return c, es
+
+
+def run_children(c, statuses, n=None):
+    n = n or len(statuses)
+    out = []
+    for i, s in enumerate(statuses):
+        out.append(c.process_event(child(i, s, n=n)))
+    return out
+
+
+def test_shell_threshold_pass_gather_submitted_once():
+    submit = umock.MagicMock()
+    c, es = make_sg_consumer(sg_status(P={"state": "running", "expected": 5}), submit)
+    # 3 ok + 2 failed, with duplicates; redeliveries of the winner collapse via the barrier
+    res = run_children(c, ["job-completed", "job-failed", "job-completed", "job-failed", "job-completed"])
+    assert all(isinstance(a[0], Ignore) for a in res[:4])
+    assert isinstance(res[4][0], Submit)
+    assert submit.call_count == 1
+    jt, q, params, wf = submit.call_args[0]
+    assert jt == "job-workflow-gather:v1.0.0" and wf["step_id"] == "gather_1"
+    c.process_event(child(4, "job-completed"))  # redelivered winner event
+    assert submit.call_count == 1
+    assert es.search.call_count == 1  # only the first child (keys missing, node running) rebuilds
+
+
+def test_shell_threshold_fail_halts():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 5}), submit)
+    run_children(c, ["job-completed", "job-failed", "job-failed", "job-failed", "job-completed"])
+    assert submit.call_count == 1
+    assert submit.call_args[0][0] == "job-workflow-halt:v1.0.0"
+
+
+def test_shell_duplicate_winner_protected_by_claim():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 1}), submit)
+    c.process_event(child(0, n=1))
+    # simulate barrier state loss after release -> second "winner" must hit the claim
+    c.redis.delete(*wb.barrier_keys(RUN, "P"))
+    [a] = c.process_event(child(0, n=1))
+    assert "already claimed" in a.summary()
+    assert submit.call_count == 1
+
+
+def test_shell_terminal_run_records_but_no_submit():
+    submit = umock.MagicMock()
+    st = sg_status(P="running")
+    st["status"] = "failed"
+    c, _ = make_sg_consumer(st, submit)
+    [a] = c.process_event(child(0, n=5))
+    assert isinstance(a, Ignore)
+    assert wb.get_barrier(c.redis, RUN, "P")["completed"] == 1
+    submit.assert_not_called()
+
+
+def test_shell_rebuild_when_keys_missing_and_running():
+    submit = umock.MagicMock()
+    c, es = make_sg_consumer(sg_status(P={"state": "running", "expected": 3}), submit)
+    es.search.return_value = {"hits": {"hits": [
+        {"_id": "1", "_source": {"job_id": "jc-0", "status": "job-completed", "@timestamp": "t1"}, "sort": ["t1", "jc-0"]},
+        {"_id": "2", "_source": {"job_id": "jc-1", "status": "job-completed", "@timestamp": "t2"}, "sort": ["t2", "jc-1"]},
+    ]}}
+    # event for child 2 arrives after Redis was lost: seed (2 done) + this event = 3 -> winner
+    [a] = c.process_event(child(2, n=3))
+    assert isinstance(a, Submit) and a.job_type == "job-workflow-gather:v1.0.0"
+    assert es.search.call_count == 1
+    # the redelivered event: keys exist now, no rebuild, no second submit
+    c.process_event(child(2, n=3))
+    assert es.search.call_count == 1 and submit.call_count == 1
+
+
+def test_shell_no_rebuild_when_node_not_running():
+    c, es = make_sg_consumer(sg_status(P="pending"))
+    c.process_event(child(0, n=3))
+    es.search.assert_not_called()
+
+
+def test_shell_n0_via_scatter_completion():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(scatter_1="completed", P={"state": "running", "expected": 0}), submit)
+    c.process_event(ev("scatter_1", spec_id=SG_ID))
+    c.process_event(ev("scatter_1", spec_id=SG_ID))
+    assert submit.call_count == 1 and submit.call_args[0][3]["step_id"] == "gather_1"
+
+
+def test_shell_log_line_includes_barrier_counts(caplog):
+    import logging
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 5}))
+    with caplog.at_level(logging.INFO, logger="hysds.workflow_rules"):
+        c.process_event(child(0))
+    assert any("barrier=barrier completed=1 failed=0 expected=5 winner=False" in r.getMessage()
+               for r in caplog.records)

@@ -9,8 +9,10 @@ Two layers:
 The consumer never writes ``workflow_status`` (connector jobs do). Delivery is at-least-once, so
 duplicate events are expected; the ``pending`` pre-check plus submit-time dedup make them harmless.
 
-Phase 2 implements the linear subset. Scatter children, gather and retry are explicit
-``Ignore`` actions marked TODO(phase3)/TODO(phase4).
+Phase 3 adds scatter/gather (contract section 10). The barrier is I/O (Redis), so ``decide`` stays
+pure by running in two passes for a scatter-child event: pass 1 (``barrier=None``) returns a
+``BarrierRecord`` action; the shell executes it (with the Redis-loss rebuild) and calls ``decide``
+again with the resulting BarrierResult, which yields the final actions. Retry is TODO(phase4).
 """
 
 import functools
@@ -23,6 +25,7 @@ import requests
 from kombu import Exchange, Queue
 from kombu.mixins import ConsumerMixin
 
+from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
 from hysds_commons.workflow_status import WorkflowStatusNotFound, get_status
 from hysds_commons.workflow_submit import (
@@ -73,7 +76,20 @@ class DeadLetter:
         return f"dead-letter: {self.reason}"
 
 
-Action = Any  # Submit | Ignore | DeadLetter
+@dataclass
+class BarrierRecord:
+    """Shell must record this child event in the barrier, then re-run ``decide`` with the result."""
+    run_id: str
+    step_id: str
+    job_id: Optional[str]
+    status: str
+    child_total: Optional[int]
+
+    def summary(self):
+        return f"barrier-record {self.step_id}/{self.job_id}={self.status}"
+
+
+Action = Any  # Submit | Ignore | DeadLetter | BarrierRecord
 
 
 # ----------------------------------------------------------------------------- decide
@@ -102,11 +118,53 @@ def _pending(status, node_id):
     return _state(status, node_id) == "pending"
 
 
-def decide(event, spec, status, recommended_queue=_no_recommended_queue):
+def _scatter_for_child(nodes, child_id):
+    for sid, n in nodes.items():
+        if n.get("kind") == "scatter" and n.get("child") == child_id:
+            return sid, n
+    return None, None
+
+
+def _barrier_event(event, spec_id, barrier):
+    return {
+        "run_id": event.get("run_id"),
+        "step_id": event.get("step_id"),
+        "spec_id": spec_id,
+        "status": "barrier-released",
+        "barrier": {"expected": barrier.expected, "completed": barrier.completed, "failed": barrier.failed},
+    }
+
+
+def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
+    """Second pass for a scatter-child event: ``barrier`` is the BarrierResult."""
+    run_id, step = event.get("run_id"), event.get("step_id")
+    counts = f"{barrier.completed} completed, {barrier.failed} failed of {barrier.expected}"
+    if status.get("status") in TERMINAL_RUN_STATUSES:
+        return [Ignore(f"run {run_id} already {status.get('status')} (child recorded: {counts})")]
+    if not barrier.winner:
+        return [Ignore(f"barrier {step} not released ({counts})")]
+    sid, snode = _scatter_for_child(nodes, step)
+    if snode is None or len(snode.get("next") or []) != 1:
+        return [Ignore(f"barrier {step} released ({counts}) but no scatter with exactly one successor; "
+                       "NOT submitting", loud=True)]
+    gather = snode["next"][0]
+    threshold = (snode.get("completion") or {}).get("threshold", 1.0)
+    n, k = barrier.expected, barrier.completed
+    if n > 0 and k / n >= threshold:
+        if _state(status, gather) != "pending":
+            return [Ignore(f"pre-check: {gather} is {_state(status, gather)!r}, not pending "
+                           f"(barrier winner, {counts})")]
+        return [_connector("gather", run_id, gather, spec_id, _barrier_event(event, spec_id, barrier))]
+    return [_halt(run_id, spec_id, _synthetic_failure(
+        event, step, f"scatter {step}: {k}/{n} completed < threshold {threshold}"))]
+
+
+def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier=None):
     """Pure decision function for one WORKFLOW_QUEUE event. Returns a list of actions.
 
     ``recommended_queue(job_type) -> str | None`` supplies the job_spec's first recommended queue
-    (the only I/O-derived input; injected so this function stays pure).
+    and ``barrier`` (a BarrierResult) is the outcome of the shell executing a prior
+    ``BarrierRecord`` for this same event. Both are injected so this function stays pure.
     """
     run_id = event.get("run_id")
     step = event.get("step_id")
@@ -118,10 +176,16 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue):
         return [DeadLetter(f"run not found: {run_id}")]
     if spec is None:
         return [DeadLetter(f"spec not found for run {run_id}: {status.get('spec_id')}")]
-    if status.get("status") in TERMINAL_RUN_STATUSES:
-        return [Ignore(f"run {run_id} already {status.get('status')}")]
     spec_id = status.get("spec_id") or event.get("spec_id")
     nodes = spec.get("nodes") or {}
+    is_child = event.get("child_index") is not None and step in nodes and step not in INTERNAL_STEPS
+    if status.get("status") in TERMINAL_RUN_STATUSES:
+        if is_child and barrier is None and _child_recordable(event):
+            # harmless bookkeeping: keep the barrier accurate, take no action
+            return [_barrier_record(event)]
+        if is_child and barrier is not None:
+            return _decide_barrier(event, spec, status, nodes, spec_id, barrier)
+        return [Ignore(f"run {run_id} already {status.get('status')}")]
 
     # 2. internal connectors: no recursion
     if step in INTERNAL_STEPS:
@@ -134,10 +198,15 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue):
         return [DeadLetter(f"unknown step_id {step!r} for run {run_id}")]
     node = nodes[step]
 
-    # 3. scatter child
+    # 3. scatter child -> barrier (two passes, see module docstring)
     if event.get("child_index") is not None:
-        # TODO(phase3): scatter barrier
-        return [Ignore("not implemented in v1 phase 2: scatter-child event (barrier is phase 3)")]
+        if barrier is not None:
+            return _decide_barrier(event, spec, status, nodes, spec_id, barrier)
+        if not _child_recordable(event):
+            return [Ignore(f"scatter-child event for {step} cannot be recorded (status="
+                           f"{ev_status!r} job_id={event.get('job_id')!r} child_total="
+                           f"{event.get('child_total')!r}); NOT advancing", loud=True)]
+        return [_barrier_record(event)]
 
     # 4. failure
     if ev_status in FAILURE_STATUSES:
@@ -186,12 +255,37 @@ def decide(event, spec, status, recommended_queue=_no_recommended_queue):
         return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id))]
 
     if kind == "gather":
-        # TODO(phase3): gather
-        return [Ignore("not implemented in v1 phase 2: gather event")]
+        if not succ:
+            return [_connector("finalize", run_id, FINALIZE_STEP, spec_id, event)]
+        if len(succ) != 1 or nodes[succ[0]].get("kind") != "pass":
+            return [Ignore(f"gather {step} successor must be exactly one pass; got {succ}", loud=True)]
+        target = succ[0]
+        if not _pending(status, target):
+            return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
+        return [_connector("pass", run_id, target, spec_id, event)]
     if kind == "scatter":
-        # TODO(phase3): scatter connector completion
-        return [Ignore("not implemented in v1 phase 2: scatter connector event")]
+        child = node.get("child")
+        expected = ((status.get("nodes") or {}).get(child) or {}).get("expected")
+        if expected != 0:
+            return [Ignore(f"scatter {step} completed; children drive the barrier (expected={expected!r})")]
+        if len(succ) != 1:
+            return [Ignore(f"scatter {step} must have exactly one successor", loud=True)]
+        gather = succ[0]
+        if not _pending(status, gather):
+            return [Ignore(f"pre-check: {gather} is not pending (duplicate event?)")]
+        return [_connector("gather", run_id, gather, spec_id, event)]
     return [Ignore(f"step {step} has unsupported kind {kind!r}", loud=True)]
+
+
+def _child_recordable(event):
+    ct = event.get("child_total")
+    return bool(event.get("status") in workflow_barrier.TERMINAL_CHILD_STATUSES and event.get("job_id")
+                and isinstance(ct, int) and not isinstance(ct, bool) and ct > 0)
+
+
+def _barrier_record(event):
+    return BarrierRecord(event.get("run_id"), event.get("step_id"), event.get("job_id"),
+                         event.get("status"), event.get("child_total"))
 
 
 def _synthetic_failure(event, step_id, error):
@@ -301,6 +395,10 @@ class WorkflowRulesConsumer(ConsumerMixin):
         if status is not None:
             spec = self.load_spec(status.get("spec_id"))
         actions = decide(event, spec, status, self.recommended_queue)
+        barrier = None
+        if len(actions) == 1 and isinstance(actions[0], BarrierRecord):
+            barrier = self.record_barrier(actions[0], status)
+            actions = decide(event, spec, status, self.recommended_queue, barrier=barrier)
         executed = []
         for a in actions:
             if isinstance(a, Submit):
@@ -314,18 +412,35 @@ class WorkflowRulesConsumer(ConsumerMixin):
                     raise
             executed.append(a)
         actions = executed
-        self._log_event(event, status, actions)
+        self._log_event(event, status, actions, barrier)
         return actions
 
+    def record_barrier(self, rec, status):
+        """Execute a BarrierRecord: rebuild from job_status if Redis lost the barrier, then record."""
+        rebuilt = False
+        if (status.get("status") not in TERMINAL_RUN_STATUSES and _state(status, rec.step_id) == "running"
+                and not workflow_barrier.barrier_exists(self.redis, rec.run_id, rec.step_id)):
+            seed = workflow_barrier.rebuild_from_job_status(self.es, rec.run_id, rec.step_id)
+            workflow_barrier.seed_barrier(self.redis, rec.run_id, rec.step_id, rec.child_total, seed)
+            rebuilt = True
+            log.warning("workflow barrier %s/%s missing in Redis; rebuilt %d children from job_status",
+                        rec.run_id, rec.step_id, len(seed))
+        result = workflow_barrier.record_child(self.redis, rec.run_id, rec.step_id, rec.job_id,
+                                               rec.status, rec.child_total)
+        result.rebuilt = rebuilt
+        return result
+
     @staticmethod
-    def _log_event(event, status, actions):
+    def _log_event(event, status, actions, barrier=None):
         level = logging.INFO
         for a in actions:
             if isinstance(a, DeadLetter) or (isinstance(a, Ignore) and a.loud):
                 level = logging.ERROR
-        log.log(level, "workflow_event run_id=%s step_id=%s child_index=%s status=%s run_status=%s actions=%s",
+        log.log(level, "workflow_event run_id=%s step_id=%s child_index=%s status=%s run_status=%s "
+                "barrier=%s actions=%s",
                 event.get("run_id"), event.get("step_id"), event.get("child_index"), event.get("status"),
-                (status or {}).get("status"), [a.summary() for a in actions])
+                (status or {}).get("status"), barrier.summary() if barrier else None,
+                [a.summary() for a in actions])
 
     def on_message(self, body, message):
         try:
