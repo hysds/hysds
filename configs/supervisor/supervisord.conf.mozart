@@ -135,6 +135,20 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
+[program:watchdog_workflow_run_timeouts]
+directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
+environment=PYTHONHTTPSVERIFY=0
+command={{ OPS_HOME }}/mozart/ops/hysds/scripts/watchdog_workflow_run_timeouts.py
+process_name=%(program_name)s
+priority=1
+numprocs=1
+numprocs_start=0
+redirect_stderr=true
+stdout_logfile=%(here)s/../log/%(program_name)s.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=10
+startsecs=10
+
 [program:watchdog_job_timeouts]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 environment=PYTHONHTTPSVERIFY=0
