@@ -17,7 +17,8 @@ One atomic Lua script handles every child event:
   Seeding (Redis-loss rebuild) uses the same script with ``release = 0`` so a seed can never
   steal the win from the event being processed.
 
-The script returns ``{completed, failed, expected, winner}``.
+The script returns ``{completed, failed, expected, winner, released}``; ``released`` (the meta flag after
+this call) lets the consumer tell "released now" (winner) from "already released" (released and not winner).
 """
 
 import logging
@@ -69,7 +70,8 @@ if release == '1' and c + f == expected and redis.call('HGET', mkey, 'released')
   redis.call('HSET', mkey, 'released', 1)
   winner = 1
 end
-return {c, f, expected, winner}
+local released = tonumber(redis.call('HGET', mkey, 'released'))
+return {c, f, expected, winner, released}
 """
 
 
@@ -80,6 +82,7 @@ class BarrierResult:
     expected: int
     winner: bool
     rebuilt: bool = False
+    released: bool = False  # barrier is released (by this call or an earlier one)
 
     def summary(self):
         return (f"barrier completed={self.completed} failed={self.failed} expected={self.expected} "
@@ -108,8 +111,10 @@ def _args(job_id, status, child_total, release):
 
 
 def _result(raw, rebuilt=False):
-    c, f, n, w = (int(x) for x in raw)
-    return BarrierResult(c, f, n, bool(w), rebuilt)
+    vals = [int(x) for x in raw]
+    c, f, n, w = vals[:4]
+    released = bool(vals[4]) if len(vals) > 4 else bool(w)
+    return BarrierResult(c, f, n, bool(w), rebuilt, released)
 
 
 def record_child(redis, run_id, step_id, job_id, status, child_total):

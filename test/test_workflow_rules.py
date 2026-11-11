@@ -160,6 +160,8 @@ def make_consumer(status=None, spec=None, submit=None, get_status_fn=None, **kw)
                 raise WorkflowStatusNotFound(run_id)
             return status, 1, 1
     import fakeredis
+    kw.setdefault("job_doc_fn", lambda event: None)
+    kw.setdefault("job_exists_fn", lambda run_id, step_id, child_index: False)
     c = WorkflowRulesConsumer(umock.MagicMock(), "workflow_queue", es=es, get_status_fn=get_status_fn,
                               submit_fn=submit or umock.MagicMock(), redis_client=fakeredis.FakeStrictRedis(),
                               **kw)
@@ -897,3 +899,254 @@ def test_ttl_linear_spec_without_scatter_is_noop():
     c, _ = make_consumer(status_doc(A="running"), submit=submit)
     c.process_event(ev("A", "job-failed", error_class="worker", retry_count=0))
     assert submit.call_count == 1
+
+
+# ------------------------------------------------------------------ contract 12.8
+def replayed(e):
+    return dict(e, replayed=True)
+
+
+# -- decide: lost gather after barrier release
+def test_replayed_child_barrier_already_released_gather_pending_resubmits_gather():
+    st = sg_status(P={"state": "completed", "expected": 5}, gather_1="pending")
+    [a] = decide(replayed(child(0)), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(5, 0, 5, False, False, True))
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "gather_1" and a.stale_ok
+    assert json.loads(a.params["workflow_event"])["status"] == "barrier-released"
+
+
+def test_replayed_child_barrier_released_gather_queued_resubmits():
+    st = sg_status(gather_1="queued")
+    [a] = decide(replayed(child(0)), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(5, 0, 5, False, False, True))
+    assert isinstance(a, Submit) and a.workflow["step_id"] == "gather_1"
+
+
+@pytest.mark.parametrize("state", ["running", "completed", "failed", "cancelled"])
+def test_replayed_child_gather_already_running_no_resubmit(state):
+    st = sg_status(gather_1=state)
+    [a] = decide(replayed(child(0)), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(5, 0, 5, False, False, True))
+    assert isinstance(a, Ignore) and "not pending" in a.reason
+
+
+def test_replayed_child_barrier_not_released_ignored():
+    st = sg_status(gather_1="pending")
+    [a] = decide(replayed(child(0)), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(1, 0, 5, False, False, False))
+    assert isinstance(a, Ignore) and "not released" in a.reason
+
+
+def test_replayed_child_released_run_terminal_ignored():
+    st = dict(sg_status(gather_1="pending"), status="failed")
+    [a] = decide(replayed(child(0)), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(5, 0, 5, False, False, True))
+    assert isinstance(a, Ignore)
+
+
+def test_non_replayed_event_unchanged_when_barrier_already_released():
+    st = sg_status(gather_1="pending")
+    [a] = decide(child(0), scatter_gather_spec(), st,
+                 barrier=wb.BarrierResult(5, 0, 5, False, False, True))
+    assert isinstance(a, Ignore) and "not released" in a.reason
+
+
+def test_non_replayed_winner_submit_not_stale_ok():
+    st = sg_status(gather_1="pending")
+    [a] = decide(child(4), scatter_gather_spec(), st, barrier=barrier_result(5, 0, 5))
+    assert isinstance(a, Submit) and a.stale_ok is False
+
+
+def test_replayed_marks_pass_successor_and_finalize_submits_stale_ok():
+    st = status_doc(A="completed", pass_1="pending")
+    [a] = decide(replayed(ev("A")), linear_spec(), st)
+    assert isinstance(a, Submit) and a.stale_ok
+    [f] = decide(replayed(ev("B")), linear_spec(), status_doc(B="running"))
+    assert isinstance(f, Submit) and f.stale_ok
+    [h] = decide(replayed(ev("B", "job-failed")), linear_spec(), status_doc(B="running"))
+    assert isinstance(h, Submit) and h.stale_ok
+    [n] = decide(ev("B"), linear_spec(), status_doc(B="running"))
+    assert n.stale_ok is False
+
+
+def test_barrier_released_flag_from_lua():
+    import fakeredis
+    r = fakeredis.FakeStrictRedis()
+    assert wb.record_child(r, "r", "C", "a", "job-completed", 2).released is False
+    w = wb.record_child(r, "r", "C", "b", "job-completed", 2)
+    assert w.winner and w.released
+    again = wb.record_child(r, "r", "C", "b", "job-completed", 2)
+    assert not again.winner and again.released
+
+
+# -- shell: stale claims
+class Clock:
+    def __init__(self, t=1_700_000_000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def sg_shell(status, **kw):
+    kw.setdefault("stall_seconds", 600)
+    c, es = make_consumer(status, spec=scatter_gather_spec(), **kw)
+    return c, es
+
+
+def released_barrier(c):
+    for i in range(5):
+        wb.record_child(c.redis, RUN, "P", f"jc-{i}", "job-completed", 5)
+
+
+def test_shell_replayed_lost_gather_resubmitted_when_claim_stale_and_no_job():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="pending"), submit=submit, clock=clock)
+    released_barrier(c)
+    key = "wf-claim:run-1:gather_1:None"
+    c.redis.set(key, repr(clock.t - 601), ex=1000)
+    c.process_event(replayed(child(0)))
+    submit.assert_called_once()
+    assert submit.call_args[0][3]["step_id"] == "gather_1"
+    assert float(c.redis.get(key)) == clock.t  # re-claimed with a fresh timestamp
+
+
+def test_shell_replayed_claim_young_not_resubmitted():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="pending"), submit=submit, clock=clock)
+    released_barrier(c)
+    c.redis.set("wf-claim:run-1:gather_1:None", repr(clock.t - 100), ex=1000)
+    [a] = c.process_event(replayed(child(0)))
+    submit.assert_not_called()
+    assert isinstance(a, Ignore) and "already claimed" in a.reason
+
+
+def test_shell_replayed_claim_old_but_job_exists_not_resubmitted():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="pending"), submit=submit, clock=clock,
+                    job_exists_fn=lambda r, s, ci: (r, s, ci) == (RUN, "gather_1", None))
+    released_barrier(c)
+    c.redis.set("wf-claim:run-1:gather_1:None", repr(clock.t - 5000), ex=1000)
+    c.process_event(replayed(child(0)))
+    submit.assert_not_called()
+
+
+def test_shell_replayed_gather_already_running_no_resubmit_even_with_stale_claim():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="running"), submit=submit, clock=clock)
+    released_barrier(c)
+    c.redis.set("wf-claim:run-1:gather_1:None", repr(clock.t - 5000), ex=1000)
+    c.process_event(replayed(child(0)))
+    submit.assert_not_called()
+
+
+def test_shell_non_replayed_old_claim_never_taken_over():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="pending"), submit=submit, clock=clock)
+    # barrier winner event with a stale claim held: unchanged behaviour (ignore)
+    for i in range(4):
+        wb.record_child(c.redis, RUN, "P", f"jc-{i}", "job-completed", 5)
+    c.redis.set("wf-claim:run-1:gather_1:None", repr(clock.t - 5000), ex=1000)
+    [a] = c.process_event(child(4))
+    submit.assert_not_called()
+    assert isinstance(a, Ignore) and "already claimed" in a.reason
+
+
+def test_shell_replayed_non_replayed_redelivery_of_released_barrier_ignored():
+    submit = umock.MagicMock()
+    c, _ = sg_shell(sg_status(gather_1="pending"), submit=submit)
+    released_barrier(c)
+    [a] = c.process_event(child(0))
+    submit.assert_not_called()
+    assert isinstance(a, Ignore)
+
+
+def test_shell_replayed_stale_claim_no_claim_present_just_submits():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="completed", pass_1="pending"), submit=submit)
+    c.process_event(replayed(ev("A")))
+    submit.assert_called_once()
+
+
+def test_shell_replayed_pass_successor_stale_claim_taken_over():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="completed", pass_1="completed", B="queued"), submit=submit,
+                         clock=clock)
+    key = "wf-claim:run-1:B:None"
+    c.redis.set(key, repr(clock.t - 700), ex=1000)
+    c.process_event(replayed(ev("pass_1")))
+    submit.assert_called_once()
+
+
+def test_shell_replayed_halt_stale_claim_taken_over_and_legacy_value_uses_ttl():
+    clock, submit = Clock(), umock.MagicMock()
+    c, _ = make_consumer(status_doc(B="running"), submit=submit, clock=clock)
+    key = "wf-claim:run-1:_halt:None"
+    c.redis.set(key, "1", ex=30 * 24 * 3600 - 900)  # legacy value, created ~900s ago
+    assert 890 < c.claim_age(key) < 910
+    c.process_event(replayed(ev("B", "job-failed")))
+    submit.assert_called_once()
+
+
+def test_shell_claim_value_is_timestamp():
+    clock = Clock(1234.5)
+    c, _ = make_consumer(status_doc(A="completed", pass_1="pending"), clock=clock)
+    c.process_event(ev("A"))
+    assert float(c.redis.get("wf-claim:run-1:pass_1:None")) == 1234.5
+
+
+# -- retry claims and stale retry events
+def retry_shell(job_doc=None, **kw):
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(A="completed", pass_1="completed", B="running"), spec=retry_spec(),
+                         submit=submit, retry_job_type=RT, job_doc_fn=lambda e: job_doc, **kw)
+    return c, submit
+
+
+def test_retry_claim_ttl_default_and_configured():
+    c, submit = retry_shell()
+    c.process_event(fail())
+    assert 1190 < c.redis.ttl("wf-claim:run-1:B:None:retry1") <= 1200  # 2 x 600
+    c2, _ = retry_shell(stall_seconds=100, retry_claim_ttl=77)
+    c2.process_event(fail())
+    assert 70 < c2.redis.ttl("wf-claim:run-1:B:None:retry1") <= 77
+
+
+def test_retry_stale_when_job_retry_count_greater():
+    c, submit = retry_shell({"status": "job-failed", "job": {"retry_count": 1}})
+    [a] = c.process_event(fail(rc=0))
+    submit.assert_not_called()
+    assert isinstance(a, Ignore) and "retry_count" in a.reason
+    assert c.redis.get("wf-claim:run-1:B:None:retry1") is None
+
+
+@pytest.mark.parametrize("st", ["job-started", "job-queued", "job-revoked-not", "job-retried"])
+def test_retry_stale_when_job_non_terminal(st):
+    c, submit = retry_shell({"status": st, "job": {"retry_count": 0}})
+    [a] = c.process_event(fail())
+    submit.assert_not_called()
+    assert isinstance(a, Ignore) and "non-terminal" in a.reason
+
+
+def test_retry_proceeds_when_job_terminal_and_same_retry_count():
+    c, submit = retry_shell({"status": "job-failed", "job": {"retry_count": 0}})
+    [a] = c.process_event(fail())
+    assert isinstance(a, RetryAction)
+    submit.assert_called_once()
+
+
+def test_retry_proceeds_when_job_doc_missing():
+    c, submit = retry_shell(None)
+    c.process_event(fail())
+    submit.assert_called_once()
+
+
+def test_es_job_doc_lookup_uses_payload_id_then_job_id():
+    c, es = make_consumer(status_doc(B="running"))
+    c._job_doc_fn = c._es_job_doc
+    es.search.return_value = {"hits": {"hits": [{"_source": {"status": "job-failed"}}]}}
+    assert c._es_job_doc({"payload_id": "pid", "job_id": "jid"}) == {"status": "job-failed"}
+    body = es.search.call_args.kwargs["body"]
+    assert body["query"]["bool"]["should"][0] == {"ids": {"values": ["pid"]}}
+    es.search.return_value = {"hits": {"hits": []}}
+    assert c._es_job_doc({"job_id": "jid"}) is None

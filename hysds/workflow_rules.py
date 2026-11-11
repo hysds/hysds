@@ -58,6 +58,10 @@ CLAIM_TTL_SECONDS = 30 * 24 * 3600
 PREFETCH_COUNT = 10
 DEFAULT_DLQ = "workflow_dead_letter"
 DEFAULT_BARRIER_TERMINAL_TTL = 86400
+DEFAULT_STALL_SECONDS = 600
+JOB_STATUS_INDEX = "job_status-current"
+# job_status states after which an attempt is finished (anything else is still in flight)
+TERMINAL_JOB_STATUSES = ("job-completed", "job-failed", "job-offline", "job-revoked", "job-deduped")
 
 
 # ----------------------------------------------------------------------------- actions
@@ -67,6 +71,8 @@ class Submit:
     queue: str
     params: dict
     workflow: dict
+    # replayed event (contract 12.8): a held claim may be stale; the shell checks its age
+    stale_ok: bool = False
 
     def summary(self):
         return f"submit {self.workflow['step_id']}({self.job_type}@{self.queue})"
@@ -188,8 +194,13 @@ def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
     counts = f"{barrier.completed} completed, {barrier.failed} failed of {barrier.expected}"
     if status.get("status") in TERMINAL_RUN_STATUSES:
         return [Ignore(f"run {run_id} already {status.get('status')} (child recorded: {counts})")]
+    replay_resubmit = False
     if not barrier.winner:
-        return [Ignore(f"barrier {step} not released ({counts})")]
+        # contract 12.8: replayed event, barrier already released (by an earlier event) but the gather
+        # never ran -> fall through and submit it again under the existing claim
+        if not (event.get("replayed") and barrier.released):
+            return [Ignore(f"barrier {step} not released ({counts})")]
+        replay_resubmit = True
     sid, snode = _scatter_for_child(nodes, step)
     if snode is None or len(snode.get("next") or []) != 1:
         return [Ignore(f"barrier {step} released ({counts}) but no scatter with exactly one successor; "
@@ -198,9 +209,11 @@ def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
     threshold = (snode.get("completion") or {}).get("threshold", 1.0)
     n, k = barrier.expected, barrier.completed
     if n > 0 and k / n >= threshold:
-        if _state(status, gather) != "pending":
+        ok_states = ("pending", "queued") if replay_resubmit else ("pending",)
+        if _state(status, gather) not in ok_states:
             return [Ignore(f"pre-check: {gather} is {_state(status, gather)!r}, not pending "
-                           f"(barrier winner, {counts})")]
+                           f"({'replayed, barrier already released' if replay_resubmit else 'barrier winner'}, "
+                           f"{counts})")]
         return [_connector("gather", run_id, gather, spec_id, _barrier_event(event, spec_id, barrier),
                           node=nodes.get(gather))]
     return [_halt(run_id, spec_id, _synthetic_failure(
@@ -225,6 +238,16 @@ def _retry_action(event, node, spec, step):
 
 
 def decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier=None):
+    """``_decide`` plus contract 12.8: on a replayed event every Submit may take over a stale claim."""
+    actions = _decide(event, spec, status, recommended_queue, barrier)
+    if event.get("replayed"):
+        for a in actions:
+            if isinstance(a, Submit):
+                a.stale_ok = True
+    return actions
+
+
+def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrier=None):
     """Pure decision function for one WORKFLOW_QUEUE event. Returns a list of actions.
 
     ``recommended_queue(job_type) -> str | None`` supplies the job_spec's first recommended queue
@@ -383,7 +406,9 @@ class WorkflowRulesConsumer(ConsumerMixin):
                  status_index="workflow_status", job_specs_index="job_specs",
                  get_status_fn=get_status, submit_fn=submit_workflow_job, prefetch=PREFETCH_COUNT,
                  redis_client=None, dlq_name=DEFAULT_DLQ, barrier_ttl=DEFAULT_BARRIER_TERMINAL_TTL,
-                 dlq_publish_fn=None, retry_job_type=None):
+                 dlq_publish_fn=None, retry_job_type=None, stall_seconds=DEFAULT_STALL_SECONDS,
+                 retry_claim_ttl=None, job_status_index=JOB_STATUS_INDEX, job_exists_fn=None,
+                 job_doc_fn=None, clock=time.time):
         self.connection = connection
         self.queue_name = queue_name
         self._es = es
@@ -400,6 +425,12 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self.barrier_ttl = barrier_ttl
         self._dlq_publish_fn = dlq_publish_fn or self._kombu_dlq_publish
         self._retry_job_type = retry_job_type
+        self.stall_seconds = stall_seconds
+        self.retry_claim_ttl = retry_claim_ttl if retry_claim_ttl is not None else 2 * stall_seconds
+        self.job_status_index = job_status_index
+        self._job_exists_fn = job_exists_fn or self._es_job_exists
+        self._job_doc_fn = job_doc_fn or self._es_job_doc
+        self._clock = clock
         exchange = Exchange(queue_name, type="direct", durable=True)
         self.queue = Queue(queue_name, exchange, routing_key=queue_name, durable=True)
 
@@ -434,17 +465,88 @@ class WorkflowRulesConsumer(ConsumerMixin):
     def claim(self, workflow):
         """Atomically claim the right to submit (run, step, child). Orchestrator dedup
         reads a lagging index and can't stop near-simultaneous duplicate submits
-        (seen in the slice 2.7 E2E: a doubled job-failed event submitted _halt twice)."""
-        return bool(self.redis.set(self.claim_key(workflow), "1", nx=True, ex=CLAIM_TTL_SECONDS))
+        (seen in the slice 2.7 E2E: a doubled job-failed event submitted _halt twice).
+        The value is the claim's creation time (epoch seconds), used for staleness (12.8)."""
+        return bool(self.redis.set(self.claim_key(workflow), repr(self._clock()), nx=True,
+                                   ex=CLAIM_TTL_SECONDS))
 
     def release(self, workflow):
         self.redis.delete(self.claim_key(workflow))
 
+    def claim_age(self, key):
+        """Seconds since the claim was created, or None if it is gone. Legacy value ('1') -> derived
+        from the TTL (age = full TTL - remaining TTL)."""
+        raw = self.redis.get(key)
+        if raw is None:
+            return None
+        try:
+            created = float(raw)
+        except (TypeError, ValueError):
+            created = 0.0
+        if created > 1e8:  # an epoch timestamp (legacy claims hold "1")
+            return max(0.0, self._clock() - created)
+        else:
+            ttl = self.redis.ttl(key)
+            return float(CLAIM_TTL_SECONDS - ttl) if isinstance(ttl, int) and ttl >= 0 else 0.0
+
+    def _es_job_exists(self, run_id, step_id, child_index):
+        must = [{"term": {"workflow.run_id": run_id}}, {"term": {"workflow.step_id": step_id}}]
+        if child_index is not None:
+            must.append({"term": {"workflow.child_index": child_index}})
+        r = self.es.count(index=self.job_status_index, body={"query": {"bool": {"filter": must}}})
+        return (r.get("count") or 0) > 0
+
+    def _es_job_doc(self, event):
+        """Latest job_status doc of the event's job (payload_id = doc id, else job_id), or None."""
+        ident = event.get("payload_id") or event.get("job_id")
+        r = self.es.search(index=self.job_status_index, body={
+            "size": 1, "_source": ["status", "job.retry_count"],
+            "query": {"bool": {"should": [{"ids": {"values": [ident]}}, {"term": {"job_id": ident}}],
+                               "minimum_should_match": 1}},
+            "sort": [{"@timestamp": {"order": "desc", "unmapped_type": "date"}}]})
+        hits = (r.get("hits") or {}).get("hits") or []
+        return hits[0].get("_source") if hits else None
+
+    def take_stale_claim(self, workflow):
+        """Contract 12.8 (replayed events only): the claim is held. If no job for (run, step[, child])
+        exists in job_status and the claim is older than ``stall_seconds``, release it and re-claim."""
+        key = self.claim_key(workflow)
+        age = self.claim_age(key)
+        if age is None:
+            return self.claim(workflow)  # expired/released since the failed SET NX
+        if age <= self.stall_seconds:
+            return False
+        try:
+            exists = self._job_exists_fn(workflow.get("run_id"), workflow.get("step_id"),
+                                         workflow.get("child_index"))
+        except Exception:
+            log.exception("job_status lookup failed for stale-claim check %s; keeping claim", key)
+            return False
+        if exists:
+            return False
+        log.warning("stale claim %s (age %.0fs > %ss, no job in job_status): releasing and resubmitting",
+                    key, age, self.stall_seconds)
+        self.release(workflow)
+        return self.claim(workflow)
+
     def claim_retry(self, action):
-        return bool(self.redis.set(action.claim_key, "1", nx=True, ex=CLAIM_TTL_SECONDS))
+        return bool(self.redis.set(action.claim_key, repr(self._clock()), nx=True,
+                                   ex=int(self.retry_claim_ttl)))
 
     def release_retry(self, action):
         self.redis.delete(action.claim_key)
+
+    def retry_is_stale(self, action, event):
+        """Contract 12.8: the job moved on (its retry_count is beyond the event's) or is not terminal."""
+        doc = self._job_doc_fn(event)
+        if not doc:
+            return None
+        rc = (doc.get("job") or {}).get("retry_count") or 0
+        if rc > action.retry_count:
+            return f"job retry_count {rc} > event retry_count {action.retry_count}"
+        if doc.get("status") not in TERMINAL_JOB_STATUSES:
+            return f"job status is {doc.get('status')!r} (non-terminal)"
+        return None
 
     # -- dead letters (contract 12.7)
     def _kombu_dlq_publish(self, payload):
@@ -532,6 +634,11 @@ class WorkflowRulesConsumer(ConsumerMixin):
             if isinstance(a, DeadLetter):
                 self.dead_letter(event, a.reason)
             elif isinstance(a, RetryAction):
+                stale = self.retry_is_stale(a, event)
+                if stale:
+                    log.info("stale retry event for %s/%s ignored: %s", a.step_id, a.job_id, stale)
+                    executed.append(Ignore(f"stale retry event: {stale}"))
+                    continue
                 if not self.claim_retry(a):
                     executed.append(Ignore(f"already claimed: {a.claim_key} (duplicate event)"))
                     continue
@@ -541,7 +648,7 @@ class WorkflowRulesConsumer(ConsumerMixin):
                     self.release_retry(a)  # let the requeued delivery retry the submit
                     raise
             elif isinstance(a, Submit):
-                if not self.claim(a.workflow):
+                if not self.claim(a.workflow) and not (a.stale_ok and self.take_stale_claim(a.workflow)):
                     executed.append(Ignore(f"already claimed: {self.claim_key(a.workflow)} (duplicate event)"))
                     continue
                 try:
@@ -632,6 +739,8 @@ def main():
     dlq_name = app.conf.get("WORKFLOW_DLQ", DEFAULT_DLQ)
     barrier_ttl = int(app.conf.get("WORKFLOW_BARRIER_TERMINAL_TTL", DEFAULT_BARRIER_TERMINAL_TTL))
     retry_job_type = app.conf.get("WORKFLOW_RETRY_JOB_TYPE")
+    stall_seconds = int(app.conf.get("WORKFLOW_STALL_SECONDS", DEFAULT_STALL_SECONDS))
+    retry_claim_ttl = int(app.conf.get("WORKFLOW_RETRY_CLAIM_TTL", 2 * stall_seconds))
     mozart_rest_url = app.conf.MOZART_REST_URL
     # submit through mozart's REST API so workflow jobs get exactly the
     # semantics (and any policy) of a normal /job/submit
@@ -640,7 +749,8 @@ def main():
     with app.connection() as conn:
         log.info("workflow_rules consuming %s, submitting via %s/job/submit", queue_name, mozart_rest_url)
         WorkflowRulesConsumer(conn, queue_name, submit_fn=submit_fn, dlq_name=dlq_name,
-                              barrier_ttl=barrier_ttl, retry_job_type=retry_job_type).run()
+                              barrier_ttl=barrier_ttl, retry_job_type=retry_job_type,
+                              stall_seconds=stall_seconds, retry_claim_ttl=retry_claim_ttl).run()
 
 
 if __name__ == "__main__":
