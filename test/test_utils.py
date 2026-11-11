@@ -195,3 +195,35 @@ class TestPublishDataset(TestCase):
             self.job_dir,
             force=True,
         )
+
+
+# --- workflow-aware payload hash (dedup identity) ---
+
+
+def test_payload_hash_unchanged_without_workflow():
+    import hashlib
+    import json
+
+    from hysds.utils import get_payload_hash
+
+    payload = {"_command": "x", "a": 1, "_disk_usage": "1GB"}
+    expected = hashlib.md5(
+        json.dumps({"_command": "x", "a": 1}, sort_keys=2, ensure_ascii=True).encode()
+    ).hexdigest()
+    assert get_payload_hash(payload) == expected
+    assert get_payload_hash(payload, None) == expected
+    assert get_payload_hash(payload, {}) == expected
+
+
+def test_payload_hash_distinguishes_workflow_children_and_runs():
+    from hysds.utils import get_payload_hash
+
+    p = {"_command": "x", "a": 1}
+    wf = {"run_id": "r1", "step_id": "s1", "child_index": 0}
+    base = get_payload_hash(p)
+    h0 = get_payload_hash(p, wf)
+    assert h0 != base
+    assert h0 == get_payload_hash(p, dict(wf, child_total=9, spec_id="z"))  # stable
+    assert h0 != get_payload_hash(p, dict(wf, child_index=1))
+    assert h0 != get_payload_hash(p, dict(wf, run_id="r2"))
+    assert h0 != get_payload_hash(p, dict(wf, step_id="s2"))

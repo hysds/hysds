@@ -317,13 +317,19 @@ def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
     )
     assert producer.publish.call_count == 1
     payload = producer.publish.call_args[0][0]
+    ts = payload.pop("timestamp")
+    assert ts.endswith("Z")
     assert payload == {
         "run_id": "run-1",
         "step_id": "step-1",
+        "spec_id": "spec-1",
         "child_index": 2,
+        "child_total": None,
         "job_id": "uuid-1",
+        "payload_id": "uuid-1",
         "status": "job-completed",
         "short_error": "oops",
+        "workflow_outputs": None,
     }
     assert producer.publish.call_args.kwargs["routing_key"] == "workflow_queue"
 
@@ -361,3 +367,53 @@ def test_workflow_publish_failure_does_not_break_log_job_status(monkeypatch):
     monkeypatch.setattr(lu, "publish_workflow_event", boom)
     lu.log_job_status(_workflow_job(status="job-completed"))
     assert mock_redis.rpush.call_count == 1
+
+
+# --- slice 1.6: full WORKFLOW_QUEUE payload + tag surfacing ---
+
+
+def test_workflow_event_full_payload_shape(monkeypatch):
+    job = _workflow_job(status="job-completed")
+    job["workflow"]["child_total"] = 5
+    job["payload_id"] = "payload-9"
+    job["uuid"] = "uuid-9"
+    job["job_id"] = "job_id-9"
+    job["job"]["job_info"]["workflow_outputs"] = {"mosaic": {"url": "s3://b/m.tif"}}
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    payload = producer.publish.call_args[0][0]
+    ts = payload.pop("timestamp")
+    assert ts.endswith("Z")
+    assert payload == {
+        "run_id": "run-1",
+        "step_id": "step-1",
+        "spec_id": "spec-1",
+        "child_index": 2,
+        "child_total": 5,
+        "job_id": "job_id-9",
+        "payload_id": "payload-9",
+        "status": "job-completed",
+        "short_error": None,
+        "workflow_outputs": {"mosaic": {"url": "s3://b/m.tif"}},
+    }
+
+
+def test_workflow_event_outputs_none_when_absent(monkeypatch):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job())
+    payload = producer.publish.call_args[0][0]
+    assert payload["workflow_outputs"] is None
+    assert payload["payload_id"] == "uuid-1"  # falls back to uuid when absent
+
+
+def test_workflow_tag_surfaced_from_job_dict(monkeypatch):
+    """verdi-side status docs carry the tag on job["workflow"], not top level."""
+    job = _workflow_job(workflow=False)
+    job["job"]["workflow"] = {"run_id": "r", "step_id": "s", "child_index": 0}
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    assert producer.publish.call_count == 1
+    assert producer.publish.call_args[0][0]["run_id"] == "r"
+    # and the indexed doc has it at top level
+    rpush = lu.StrictRedis.return_value.rpush
+    import msgpack
+
+    doc = msgpack.loads(rpush.call_args[0][1])
+    assert doc["workflow"]["run_id"] == "r"

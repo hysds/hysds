@@ -265,8 +265,13 @@ def submit_job(j):
     # logger.info("payload: %s" % payload)
 
     # set payload hash
+    # (workflow-tagged jobs fold their tags into the identity so that scatter
+    # children / same step in different runs with identical params never dedup)
+    workflow = j.get("workflow", None)
     if j.get("payload_hash", None) is None:
-        j["payload_hash"] = get_payload_hash(payload)
+        j["payload_hash"] = get_payload_hash(payload, workflow)
+    elif workflow:
+        j["payload_hash"] = get_payload_hash({"_payload_hash": j["payload_hash"]}, workflow)
     payload_hash = j["payload_hash"]
 
     # do dedup
@@ -388,6 +393,10 @@ def submit_job(j):
             # set username
             if "username" not in job_json and username is not None:
                 job_json["username"] = username
+
+            # propagate workflow tag (top-level; read by log_job_status)
+            if workflow:
+                job_json["workflow"] = copy.deepcopy(workflow)
 
             # set job_info
             job_json["job_info"] = {

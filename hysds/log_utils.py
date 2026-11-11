@@ -445,13 +445,19 @@ def publish_workflow_event(job_for_indexing):
     if job_for_indexing.get("status") not in TERMINAL_JOB_STATUSES:
         return
 
+    job_info = (job_for_indexing.get("job") or {}).get("job_info") or {}
     payload = {
         "run_id": workflow.get("run_id"),
         "step_id": workflow.get("step_id"),
+        "spec_id": workflow.get("spec_id"),
         "child_index": workflow.get("child_index"),
+        "child_total": workflow.get("child_total"),
         "job_id": job_for_indexing.get("job_id") or job_for_indexing.get("uuid"),
+        "payload_id": job_for_indexing.get("payload_id") or job_for_indexing.get("uuid"),
         "status": job_for_indexing.get("status"),
         "short_error": job_for_indexing.get("short_error"),
+        "workflow_outputs": job_info.get("workflow_outputs"),
+        "timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
     }
     queue_name = app.conf.WORKFLOW_QUEUE
     exchange = Exchange(queue_name, type="direct")
@@ -480,6 +486,16 @@ def log_job_status(job):
     job_for_indexing = copy.deepcopy(job)
     if "context" in job_for_indexing:
         del job_for_indexing["context"]
+
+    # surface the workflow tag at the top level of the job_status doc. It rides
+    # on the job dict (job["workflow"]) or, for orchestrator-side statuses, on
+    # job_info; an explicit top-level tag wins.
+    if not job_for_indexing.get("workflow"):
+        wf = (job_for_indexing.get("job") or {}).get("workflow") or (
+            (job_for_indexing.get("job") or {}).get("job_info") or {}
+        ).get("workflow")
+        if wf:
+            job_for_indexing["workflow"] = wf
 
     job_for_indexing["resource"] = "job"
     job_for_indexing["type"] = job_for_indexing.get("job", {}).get("type", "unknown")

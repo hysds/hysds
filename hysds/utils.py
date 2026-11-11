@@ -350,13 +350,25 @@ def get_short_error(e):
         return e_str
 
 
-def get_payload_hash(payload):
-    """Return unique hash of HySDS job JSON payload."""
+def get_payload_hash(payload, workflow=None):
+    """Return unique hash of HySDS job JSON payload.
+
+    If a workflow tag is given, its identity (run_id, step_id, child_index)
+    is folded into the hash so workflow jobs with identical params are never
+    deduped against each other. Without it the hash is unchanged.
+    """
 
     clean_payload = copy.deepcopy(payload)
     for k in ("_disk_usage", "_sciflo_job_num", "_sciflo_wuid"):
         if k in clean_payload:
             del clean_payload[k]
+    if workflow:
+        clean_payload = {
+            "_payload": clean_payload,
+            "_workflow": {
+                k: workflow.get(k) for k in ("run_id", "step_id", "child_index")
+            },
+        }
     return hashlib.md5(
         json.dumps(clean_payload, sort_keys=2, ensure_ascii=True).encode()
     ).hexdigest()
