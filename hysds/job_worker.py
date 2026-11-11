@@ -26,6 +26,11 @@ from celery.signals import (
 )
 
 import hysds  # fixes some cyclical import issues
+from hysds_commons.workflow_outputs import (
+    WorkflowOutputsError,
+    get_workflow_outputs_file,
+    read_workflow_outputs,
+)
 from hysds.celery import app
 from hysds.containers.base import JOB_DIR_LABEL, JOB_ID_LABEL, TASK_ID_LABEL
 from hysds.containers.factory import container_engine_factory
@@ -339,6 +344,22 @@ def evict_localize_cache(work_path, cache_path, percent_free, threshold=10.0):
         if percent_free <= threshold:
             logger.info(f"Failed to free up disk space to {threshold:02.2f}%.")
     return percent_free
+
+
+def bind_workflow_outputs(job, job_dir):
+    """Read the job-scoped ``_workflow_outputs.json`` (ADR-003) into job_info.
+
+    No-op (no ``workflow_outputs`` key) when the file is absent. Raises
+    RuntimeError, failing the job, if the file exists but is invalid.
+    """
+
+    if not os.path.exists(get_workflow_outputs_file(job_dir)):
+        return
+    try:
+        outputs = read_workflow_outputs(job_dir)
+    except WorkflowOutputsError as e:
+        raise RuntimeError(f"_workflow_outputs.json invalid: {e}") from e
+    job["job_info"]["workflow_outputs"] = outputs
 
 
 def redelivered_job_dup(job):
@@ -1426,6 +1447,9 @@ def run_job(job, queue_when_finished=True):
                     raise RuntimeError("Failed to get exit status.")
                 else:
                     raise RuntimeError(f"Got non-zero exit code: {status}")
+
+            # bind workflow outputs (ADR-003); raises on invalid file, failing the job
+            bind_workflow_outputs(job, job_dir)
 
             # check for metrics from PGE
             for pge_metrics_file in find_pge_metrics(job_dir):

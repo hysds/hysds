@@ -51,6 +51,48 @@ class TestJobWorkerFuncs(TestCase):
         self.assertTrue(expected_stats_file in result)
         self.assertTrue(expected_stats_file2 in result)
 
+    def _write_wf(self, text):
+        with open(os.path.join(self.job_dir, "_workflow_outputs.json"), "w") as f:
+            f.write(text)
+
+    def test_bind_workflow_outputs_valid(self):
+        import json
+        from hysds.job_worker import bind_workflow_outputs
+
+        outs = [{"name": "qa_score", "value_d": 0.93}, {"name": "s", "value_s": "PASS"}]
+        self._write_wf(json.dumps({"version": "1.0", "outputs": outs}))
+        job = {"job_info": {}}
+        bind_workflow_outputs(job, self.job_dir)
+        self.assertEqual(job["job_info"]["workflow_outputs"], outs)
+
+    def test_bind_workflow_outputs_absent_is_noop(self):
+        from hysds.job_worker import bind_workflow_outputs
+
+        job = {"job_info": {}}
+        bind_workflow_outputs(job, self.job_dir)
+        self.assertEqual(job, {"job_info": {}})
+
+    def test_bind_workflow_outputs_failures(self):
+        import json
+        from hysds.job_worker import bind_workflow_outputs
+
+        big = json.dumps(
+            {"version": "1.0", "outputs": [{"name": "a", "value_s": "x" * 20000}]}
+        )
+        dup = json.dumps(
+            {
+                "version": "1.0",
+                "outputs": [{"name": "a", "value_d": 1}, {"name": "a", "value_d": 2}],
+            }
+        )
+        for text in (big, "{not json", dup):
+            self._write_wf(text)
+            job = {"job_info": {}}
+            with self.assertRaises(RuntimeError) as cm:
+                bind_workflow_outputs(job, self.job_dir)
+            self.assertIn("_workflow_outputs.json", str(cm.exception))
+            self.assertNotIn("workflow_outputs", job["job_info"])
+
 
 class TestFailJob(TestCase):
     """fail_job must not re-log a status the caller already logged."""
