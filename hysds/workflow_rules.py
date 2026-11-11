@@ -13,11 +13,13 @@ Phase 2 implements the linear subset. Scatter children, gather and retry are exp
 ``Ignore`` actions marked TODO(phase3)/TODO(phase4).
 """
 
+import functools
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+import requests
 from kombu import Exchange, Queue
 from kombu.mixins import ConsumerMixin
 
@@ -348,9 +350,14 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     queue_name = app.conf.WORKFLOW_QUEUE
+    mozart_rest_url = app.conf.MOZART_REST_URL
+    # submit through mozart's REST API so workflow jobs get exactly the
+    # semantics (and any policy) of a normal /job/submit
+    session = requests.Session()
+    submit_fn = functools.partial(submit_workflow_job, mozart_rest_url=mozart_rest_url, session=session)
     with app.connection() as conn:
-        log.info("workflow_rules consuming %s", queue_name)
-        WorkflowRulesConsumer(conn, queue_name).run()
+        log.info("workflow_rules consuming %s, submitting via %s/job/submit", queue_name, mozart_rest_url)
+        WorkflowRulesConsumer(conn, queue_name, submit_fn=submit_fn).run()
 
 
 if __name__ == "__main__":
