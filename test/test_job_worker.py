@@ -25,6 +25,14 @@ class TestJobWorkerFuncs(TestCase):
         )
         self.job_dir = tempfile.mkdtemp(prefix="job-")
         logging.info(f"self.job_dir: {self.job_dir}")
+        # hysds.celery is mocked: make app.conf.get(key, default) return the default
+        import hysds.job_worker
+
+        patcher = patch.object(
+            hysds.job_worker.app.conf, "get", side_effect=lambda k, d=None: d
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         umock.patch.stopall()
@@ -85,6 +93,12 @@ class TestJobWorkerFuncs(TestCase):
                 "outputs": [{"name": "a", "value_d": 1}, {"name": "a", "value_d": 2}],
             }
         )
+        # configured cap (WORKFLOW_OUTPUTS_MAX_BYTES) of 10KB; default is 512KB
+        import hysds.job_worker
+
+        hysds.job_worker.app.conf.get.side_effect = lambda k, d=None: (
+            10 * 1024 if k == "WORKFLOW_OUTPUTS_MAX_BYTES" else d
+        )
         for text in (big, "{not json", dup):
             self._write_wf(text)
             job = {"job_info": {}}
@@ -92,6 +106,199 @@ class TestJobWorkerFuncs(TestCase):
                 bind_workflow_outputs(job, self.job_dir)
             self.assertIn("_workflow_outputs.json", str(cm.exception))
             self.assertNotIn("workflow_outputs", job["job_info"])
+
+    # --- resolve_workflow_output_refs -------------------------------------
+
+    def _job(self, outputs, staged):
+        return {
+            "job_info": {
+                "workflow_outputs": outputs,
+                "metrics": {"products_staged": staged},
+            }
+        }
+
+    def _prod(self, name, urls, path=None):
+        return {
+            "id": name,
+            "path": path or os.path.join(self.job_dir, name),
+            "urls": urls,
+        }
+
+    def test_resolve_refs_noop_without_outputs(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = {"job_info": {}}
+        resolve_workflow_output_refs(job, self.job_dir)
+        self.assertEqual(job, {"job_info": {}})
+
+    def test_resolve_refs_untouched_without_class(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        outs = [{"name": "s", "value_s": "PASS"}, {"name": "d", "value_d": 1.5}]
+        job = self._job(outs, [])
+        resolve_workflow_output_refs(job, self.job_dir)
+        self.assertEqual(
+            job["job_info"]["workflow_outputs"],
+            [{"name": "s", "value_s": "PASS"}, {"name": "d", "value_d": 1.5}],
+        )
+
+    def test_resolve_refs_directory_and_file(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        outs = [
+            {"name": "dir", "class": "Directory", "value_s": "prodA"},
+            {"name": "f", "class": "File", "value_s": "prodA/sub/x.tif"},
+        ]
+        job = self._job(
+            outs, [self._prod("prodA", ["s3://bkt/data/prodA"])]
+        )
+        resolve_workflow_output_refs(job, self.job_dir)
+        got = job["job_info"]["workflow_outputs"]
+        self.assertEqual(got[0]["value_s"], "s3://bkt/data/prodA")
+        self.assertEqual(got[1]["value_s"], "s3://bkt/data/prodA/sub/x.tif")
+        self.assertEqual(got[1]["class"], "File")
+
+    def test_resolve_refs_list_keeps_order_across_products(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        outs = [
+            {
+                "name": "items",
+                "class": "File",
+                "value_s": ["pB/b.h5", "pA/a.h5", "pB/c.h5"],
+            }
+        ]
+        job = self._job(
+            outs,
+            [
+                self._prod("pA", ["s3://bkt/pA"]),
+                self._prod("pB", ["s3://bkt/pB/"]),
+            ],
+        )
+        resolve_workflow_output_refs(job, self.job_dir)
+        self.assertEqual(
+            job["job_info"]["workflow_outputs"][0]["value_s"],
+            ["s3://bkt/pB/b.h5", "s3://bkt/pA/a.h5", "s3://bkt/pB/c.h5"],
+        )
+
+    def test_resolve_refs_symlinked_dataset_dir(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        real = tempfile.mkdtemp(prefix="real-")
+        try:
+            os.makedirs(os.path.join(real, "20240101T000000"))
+            link = os.path.join(self.job_dir, "dataset")
+            os.symlink(os.path.join(real, "20240101T000000"), link)
+            # path recorded by publish_datasets is the symlink path
+            job = self._job(
+                [{"name": "f", "class": "File", "value_s": "dataset/out.nc"}],
+                [self._prod("dataset", ["s3://bkt/ds"], path=link)],
+            )
+            resolve_workflow_output_refs(job, self.job_dir)
+            self.assertEqual(
+                job["job_info"]["workflow_outputs"][0]["value_s"],
+                "s3://bkt/ds/out.nc",
+            )
+        finally:
+            shutil.rmtree(real)
+
+    def test_resolve_refs_osaka_url_normalized(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        for url in (
+            "s3://s3-us-west-2.amazonaws.com/bkt/a/b/prod",
+            "s3://minio.local:9000/bkt/a/b/prod",
+            "s3://s3.amazonaws.com:80/bkt/a/b/prod",
+        ):
+            job = self._job(
+                [{"name": "f", "class": "File", "value_s": "prod/x"}],
+                [self._prod("prod", [url])],
+            )
+            resolve_workflow_output_refs(job, self.job_dir)
+            self.assertEqual(
+                job["job_info"]["workflow_outputs"][0]["value_s"],
+                "s3://bkt/a/b/prod/x",
+            )
+
+    def test_resolve_refs_picks_s3_over_https(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = self._job(
+            [{"name": "d", "class": "Directory", "value_s": "prod"}],
+            [
+                self._prod(
+                    "prod",
+                    ["https://host/browse/prod", "s3://bkt/key/prod"],
+                )
+            ],
+        )
+        resolve_workflow_output_refs(job, self.job_dir)
+        self.assertEqual(
+            job["job_info"]["workflow_outputs"][0]["value_s"], "s3://bkt/key/prod"
+        )
+
+    def test_resolve_refs_longest_product_match_and_no_prefix_confusion(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = self._job(
+            [{"name": "f", "class": "File", "value_s": "prod2/x"}],
+            [
+                self._prod("prod", ["s3://bkt/prod"]),
+                self._prod("prod2", ["s3://bkt/prod2"]),
+            ],
+        )
+        resolve_workflow_output_refs(job, self.job_dir)
+        self.assertEqual(
+            job["job_info"]["workflow_outputs"][0]["value_s"], "s3://bkt/prod2/x"
+        )
+
+    def test_resolve_refs_path_outside_products_fails(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        for bad in ("other/x", "../prod/x", "prodx"):
+            job = self._job(
+                [{"name": "f", "class": "File", "value_s": bad}],
+                [self._prod("prod", ["s3://bkt/prod"])],
+            )
+            with self.assertRaises(RuntimeError) as cm:
+                resolve_workflow_output_refs(job, self.job_dir)
+            self.assertIn("not inside any published product", str(cm.exception))
+
+    def test_resolve_refs_no_products_fails(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = self._job([{"name": "f", "class": "File", "value_s": "p/x"}], [])
+        with self.assertRaises(RuntimeError) as cm:
+            resolve_workflow_output_refs(job, self.job_dir)
+        self.assertIn("no products were published", str(cm.exception))
+        del job["job_info"]["metrics"]
+        with self.assertRaises(RuntimeError):
+            resolve_workflow_output_refs(job, self.job_dir)
+
+    def test_resolve_refs_no_s3_url_fails(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = self._job(
+            [{"name": "f", "class": "File", "value_s": "prod/x"}],
+            [self._prod("prod", ["https://host/prod", "gs://b/prod"])],
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            resolve_workflow_output_refs(job, self.job_dir)
+        self.assertIn("no s3 url", str(cm.exception))
+
+    def test_resolve_refs_size_cap_after_rewrite_fails(self):
+        from hysds.job_worker import resolve_workflow_output_refs
+
+        job = self._job(
+            [{"name": "f", "class": "File", "value_s": ["prod/x"] * 20}],
+            [self._prod("prod", ["s3://bkt/some/long/key/prefix/prod"])],
+        )
+        with patch(
+            "hysds.job_worker._workflow_outputs_max_bytes", return_value=200
+        ):
+            with self.assertRaises(RuntimeError) as cm:
+                resolve_workflow_output_refs(job, self.job_dir)
+        self.assertIn("WORKFLOW_OUTPUTS_MAX_BYTES", str(cm.exception))
 
 
 class TestFailJob(TestCase):

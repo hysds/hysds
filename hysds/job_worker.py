@@ -12,6 +12,7 @@ import socket
 import threading
 import time
 import traceback
+from urllib.parse import urlparse
 from datetime import timezone, datetime
 from itertools import compress
 from subprocess import CalledProcessError, check_output
@@ -27,7 +28,9 @@ from celery.signals import (
 
 import hysds  # fixes some cyclical import issues
 from hysds_commons.workflow_outputs import (
+    DEFAULT_WORKFLOW_OUTPUTS_MAX_BYTES,
     WorkflowOutputsError,
+    check_workflow_outputs_size,
     get_workflow_outputs_file,
     read_workflow_outputs,
 )
@@ -382,10 +385,123 @@ def bind_workflow_outputs(job, job_dir):
     if not os.path.exists(get_workflow_outputs_file(job_dir)):
         return
     try:
-        outputs = read_workflow_outputs(job_dir)
+        outputs = read_workflow_outputs(job_dir, max_bytes=_workflow_outputs_max_bytes())
     except WorkflowOutputsError as e:
         raise RuntimeError(f"_workflow_outputs.json invalid: {e}") from e
     job["job_info"]["workflow_outputs"] = outputs
+
+
+def _workflow_outputs_max_bytes():
+    """Size cap for workflow outputs (``WORKFLOW_OUTPUTS_MAX_BYTES`` setting)."""
+    return app.conf.get(
+        "WORKFLOW_OUTPUTS_MAX_BYTES", DEFAULT_WORKFLOW_OUTPUTS_MAX_BYTES
+    )
+
+
+def _s3_url_to_bucket_form(url):
+    """Normalize an s3 product url to ``s3://bucket/key``.
+
+    Osaka/endpoint form ``s3://<host>/bucket/key`` (host containing
+    ``amazonaws.com`` or a ``:port``) becomes ``s3://bucket/key``; plain
+    ``s3://bucket/key`` is returned as-is. Returns None for non-s3 urls.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "s3":
+        return None
+    host = parsed.netloc
+    path = parsed.path.lstrip("/")
+    if "amazonaws.com" in host or ":" in host:
+        return "s3://" + path.rstrip("/")
+    return f"s3://{host}/{path}".rstrip("/")
+
+
+def resolve_workflow_output_refs(job, job_dir):
+    """Rewrite File/Directory workflow outputs to published s3 URLs.
+
+    For every ``job_info.workflow_outputs`` entry with a ``class``, each local
+    path (relative to ``job_dir``) is matched to the published product
+    (``metrics.products_staged``) that contains it and replaced, in place and
+    in order, with ``<product s3 url>/<path relative to the product dir>``.
+
+    ``products_staged[*]["path"]`` finding: ``publish_datasets`` records the
+    ``prod_dir`` produced by ``find_dataset_json(job_dir)``, i.e.
+    ``os.path.join(dirname(root), name)`` for ``root`` yielded by
+    ``os.walk(job_dir, followlinks=True)``. That is an ABSOLUTE path under
+    ``job_dir`` that is NOT resolved: a dataset directory reached through a
+    symlink (MAAP's timestamped dataset dir) is recorded by its symlink path.
+    So matching here uses lexical normalization only (normpath/abspath, never
+    realpath).
+
+    Raises RuntimeError (failing the job) if a path cannot be resolved, or the
+    rewritten outputs exceed the size cap.
+    """
+    outputs = job.get("job_info", {}).get("workflow_outputs")
+    if not outputs:
+        return
+    class_entries = [o for o in outputs if o.get("class")]
+    if not class_entries:
+        return
+
+    staged = (
+        job.get("job_info", {}).get("metrics", {}).get("products_staged") or []
+    )
+    names = ", ".join(repr(o["name"]) for o in class_entries)
+    if not staged:
+        raise RuntimeError(
+            f"Workflow output(s) {names} are File/Directory references but no "
+            f"products were published (products_staged is empty). The job must "
+            f"produce a dataset to reference; post-processing may be disabled "
+            f"(disable_post_builtins) or the datasets were skipped/deduped."
+        )
+
+    job_dir_abs = os.path.abspath(job_dir)
+    products = []
+    for prod in staged:
+        prod_path = prod.get("path")
+        if prod_path:
+            products.append((os.path.normpath(os.path.abspath(prod_path)), prod))
+
+    def resolve_one(out_name, rel_path):
+        full = os.path.normpath(os.path.join(job_dir_abs, rel_path))
+        best = None
+        for prod_path, prod in products:
+            if full == prod_path or full.startswith(prod_path + os.sep):
+                if best is None or len(prod_path) > len(best[0]):
+                    best = (prod_path, prod)
+        if best is None:
+            raise RuntimeError(
+                f"Workflow output {out_name!r}: path {rel_path!r} is not inside "
+                f"any published product. Published: "
+                f"{[p for p, _ in products]}. Only files/directories within a "
+                f"published dataset can be referenced."
+            )
+        prod_path, prod = best
+        base = None
+        for url in prod.get("urls") or []:
+            base = _s3_url_to_bucket_form(url)
+            if base:
+                break
+        if not base:
+            raise RuntimeError(
+                f"Workflow output {out_name!r}: product {prod.get('id')!r} has no "
+                f"s3 url (urls: {prod.get('urls')}); cannot build a reference."
+            )
+        rel = os.path.relpath(full, prod_path)
+        if rel == ".":
+            return base
+        return base + "/" + "/".join(p for p in rel.split(os.sep) if p)
+
+    for out in class_entries:
+        value = out["value_s"]
+        if isinstance(value, list):
+            out["value_s"] = [resolve_one(out["name"], v) for v in value]
+        else:
+            out["value_s"] = resolve_one(out["name"], value)
+
+    try:
+        check_workflow_outputs_size(outputs, max_bytes=_workflow_outputs_max_bytes())
+    except WorkflowOutputsError as e:
+        raise RuntimeError(f"Workflow outputs too large after resolving refs: {e}") from e
 
 
 def redelivered_job_dup(job):
@@ -1676,8 +1792,17 @@ def run_job(job, queue_when_finished=True):
                 logger.info(
                     f"Post-processing steps that didn't signal continuation: {', '.join(no_cont)}"
                 )
+
+            # rewrite File/Directory workflow outputs to published urls; only
+            # for a completed job (not failed/deduped). Raising here is handled
+            # below exactly like a post-processor failure.
+            if job_status_json["status"] == "job-completed":
+                resolve_workflow_output_refs(job, job_dir)
         except Exception as e:
             error = str(e)
+            # unresolved (local-path) outputs must not ride the failure doc /
+            # WORKFLOW_QUEUE event of a job that failed after binding
+            job["job_info"].pop("workflow_outputs", None)
             job_status_json = {
                 "uuid": job["task_id"],
                 "job_id": job["job_id"],
