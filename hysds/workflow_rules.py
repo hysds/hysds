@@ -6,7 +6,8 @@ Two layers:
 * :class:`WorkflowRulesConsumer` -- a thin kombu shell that loads the spec and status, calls
   ``decide`` and executes the resulting actions with ``submit_workflow_job``.
 
-The consumer never writes ``workflow_status`` (connector jobs do). Delivery is at-least-once, so
+The consumer writes ``workflow_status`` only to append a retried node's failed attempt to
+``nodes.<id>.attempts`` (display only); connector jobs do every other write. Delivery is at-least-once, so
 duplicate events are expected; the ``pending`` pre-check plus submit-time dedup make them harmless.
 
 Phase 3 adds scatter/gather (contract section 10). The barrier is I/O (Redis), so ``decide`` stays
@@ -35,7 +36,14 @@ from kombu.mixins import ConsumerMixin
 from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
 from hysds_commons.workflow_spec import is_retryable, retry_policy
-from hysds_commons.workflow_status import WorkflowStatusNotFound, get_status
+from hysds_commons.workflow_status import (
+    ERROR_CLASS_INPUT_RESOLUTION,
+    ERROR_CLASS_NO_QUEUE,
+    ERROR_CLASS_THRESHOLD,
+    WorkflowStatusNotFound,
+    get_status,
+    update_status,
+)
 from hysds_commons.workflow_submit import (
     CONNECTOR_JOB_TYPES,
     FINALIZE_STEP,
@@ -56,6 +64,8 @@ INTERNAL_STEPS = (FINALIZE_STEP, HALT_STEP)
 # submit-claim keys outlive any realistic run
 CLAIM_TTL_SECONDS = 30 * 24 * 3600
 PREFETCH_COUNT = 10
+# nodes.<id>.attempts keeps at most this many entries (a scatter child node accumulates every child's retries)
+MAX_NODE_ATTEMPTS = 100
 DEFAULT_DLQ = "workflow_dead_letter"
 DEFAULT_BARRIER_TERMINAL_TTL = 86400
 DEFAULT_STALL_SECONDS = 600
@@ -219,7 +229,8 @@ def _decide_barrier(event, spec, status, nodes, spec_id, barrier):
         return [_connector("gather", run_id, gather, spec_id, _barrier_event(event, spec_id, barrier),
                           node=nodes.get(gather))]
     return [_halt(run_id, spec_id, _synthetic_failure(
-        event, step, f"scatter {step}: {k}/{n} completed < threshold {threshold}"))]
+        event, step, f"scatter {step}: {k}/{n} completed < threshold {threshold}",
+        ERROR_CLASS_THRESHOLD))]
 
 
 def _default_retry_job_type():
@@ -341,12 +352,14 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
         try:
             params = resolve_inputs(tnode, build_context(status, event))
         except WorkflowRefError as e:
-            return [_halt(run_id, spec_id, _synthetic_failure(event, target, f"ref resolution error: {e}"))]
+            return [_halt(run_id, spec_id, _synthetic_failure(event, target, f"ref resolution error: {e}",
+                                                                        ERROR_CLASS_INPUT_RESOLUTION))]
         queue = (tnode.get("queue") or (spec.get("defaults") or {}).get("queue")
                  or recommended_queue(tnode["run"]))
         if not queue:
             return [_halt(run_id, spec_id, _synthetic_failure(
-                event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}"))]
+                event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}",
+            ERROR_CLASS_NO_QUEUE))]
         return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id))]
 
     if kind == "gather":
@@ -383,7 +396,7 @@ def _barrier_record(event):
                          event.get("status"), event.get("child_total"))
 
 
-def _synthetic_failure(event, step_id, error):
+def _synthetic_failure(event, step_id, error, error_class=None):
     return {
         "run_id": event.get("run_id"),
         "spec_id": event.get("spec_id"),
@@ -394,9 +407,36 @@ def _synthetic_failure(event, step_id, error):
         "payload_id": None,
         "status": "job-failed",
         "short_error": error,
+        "error_class": error_class,
         "workflow_outputs": None,
         "synthetic": True,
     }
+
+
+def failed_attempt(action, event):
+    """The ``nodes.<id>.attempts`` entry for the attempt that ``action`` retries."""
+    entry = {"job_id": action.job_id, "payload_id": event.get("payload_id"), "status": event.get("status"),
+             "error": (event.get("short_error") or "")[:500] or None, "error_class": action.error_class,
+             "retry_count": action.retry_count, "ended_at": event.get("timestamp")}
+    if action.child_index is not None:
+        entry["child_index"] = action.child_index
+    return {k: v for k, v in entry.items() if v is not None}
+
+
+def attempt_mutate(step_id, entry):
+    """OCC mutate: append ``entry`` to ``nodes[step_id].attempts`` (newest ``MAX_NODE_ATTEMPTS`` kept);
+    None if the run is gone from the node or the attempt is already recorded."""
+    def mutate(doc):
+        node = (doc.get("nodes") or {}).get(step_id)
+        if node is None:
+            return None
+        attempts = node.get("attempts") or []
+        if any(a.get("job_id") == entry["job_id"] and a.get("retry_count") == entry.get("retry_count")
+               for a in attempts):
+            return None
+        node["attempts"] = (attempts + [entry])[-MAX_NODE_ATTEMPTS:]
+        return doc
+    return mutate
 
 
 # ----------------------------------------------------------------------------- I/O shell
@@ -410,7 +450,8 @@ class WorkflowRulesConsumer(ConsumerMixin):
                  redis_client=None, dlq_name=DEFAULT_DLQ, barrier_ttl=DEFAULT_BARRIER_TERMINAL_TTL,
                  dlq_publish_fn=None, retry_job_type=None, stall_seconds=DEFAULT_STALL_SECONDS,
                  retry_claim_ttl=None, job_status_index=JOB_STATUS_INDEX, job_exists_fn=None,
-                 job_doc_fn=None, clock=time.time, retry_visibility_wait=0, sleep_fn=time.sleep):
+                 job_doc_fn=None, clock=time.time, retry_visibility_wait=0, sleep_fn=time.sleep,
+                 update_status_fn=update_status):
         self.connection = connection
         self.queue_name = queue_name
         self._es = es
@@ -435,6 +476,7 @@ class WorkflowRulesConsumer(ConsumerMixin):
         self._clock = clock
         self.retry_visibility_wait = retry_visibility_wait
         self._sleep = sleep_fn
+        self.update_status_fn = update_status_fn
         exchange = Exchange(queue_name, type="direct", durable=True)
         self.queue = Queue(queue_name, exchange, routing_key=queue_name, durable=True)
 
@@ -562,6 +604,17 @@ class WorkflowRulesConsumer(ConsumerMixin):
             return None  # never became visible: let the retry job report it
         return f"job status is {doc.get('status')!r} (non-terminal)"
 
+    def record_attempt(self, action, event):
+        """Append the failed attempt to ``nodes.<step>.attempts`` (display only, best effort: a
+        failure here must never block the retry). Deduped on (job_id, retry_count) so a requeued
+        delivery does not append twice."""
+        try:
+            self.update_status_fn(self.es, self.status_index, action.run_id,
+                                  attempt_mutate(action.step_id, failed_attempt(action, event)))
+        except Exception:
+            log.exception("could not record attempt of %s/%s for run %s", action.step_id, action.job_id,
+                          action.run_id)
+
     # -- dead letters (contract 12.7)
     def _kombu_dlq_publish(self, payload):
         exchange = Exchange(self.dlq_name, type="direct", durable=True)
@@ -656,6 +709,7 @@ class WorkflowRulesConsumer(ConsumerMixin):
                 if not self.claim_retry(a):
                     executed.append(Ignore(f"already claimed: {a.claim_key} (duplicate event)"))
                     continue
+                self.record_attempt(a, event)
                 try:
                     self.submit_fn(self.retry_job_type(), a.queue, a.params, None, enable_dedup=False)
                 except Exception:

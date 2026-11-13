@@ -131,6 +131,7 @@ def test_ref_resolution_failure_halts():
     we = json.loads(a.params["workflow_event"])
     assert we["step_id"] == "B" and we["status"] == "job-failed"
     assert "pass_1" in we["short_error"] and "ref" in we["short_error"]
+    assert we["error_class"] == "input_resolution"
 
 
 def test_job_with_scatter_successor_submits_scatter_connector():
@@ -159,12 +160,22 @@ def make_consumer(status=None, spec=None, submit=None, get_status_fn=None, **kw)
             if status is None:
                 raise WorkflowStatusNotFound(run_id)
             return status, 1, 1
+    import copy
     import fakeredis
+    updates = []
+
+    def update_status_fn(client, index, run_id, mutate):  # records the attempts the consumer appends
+        new = mutate(copy.deepcopy(status))
+        if new is not None:
+            updates.append(new)
+        return new
+    kw.setdefault("update_status_fn", update_status_fn)
     kw.setdefault("job_doc_fn", lambda event: None)
     kw.setdefault("job_exists_fn", lambda run_id, step_id, child_index: False)
     c = WorkflowRulesConsumer(umock.MagicMock(), "workflow_queue", es=es, get_status_fn=get_status_fn,
                               submit_fn=submit or umock.MagicMock(), redis_client=fakeredis.FakeStrictRedis(),
                               **kw)
+    c.status_updates = updates
     return c, es
 
 
@@ -1234,3 +1245,72 @@ def test_undecodable_body_requeued_if_dlq_down():
     c.on_decode_error(msg, ValueError("bad"))
     msg.requeue.assert_called_once()
     msg.ack.assert_not_called()
+
+
+# ------------------------------------------------------------------ run error_class / node attempts
+def test_threshold_halt_event_carries_error_class_threshold():
+    st = sg_status(P="running")
+    [a] = decide(child(4), scatter_gather_spec(), st, barrier=barrier_result(2, 3, 5))  # 0.4 < 0.6
+    assert json.loads(a.params["workflow_event"])["error_class"] == "threshold"
+
+
+def test_no_queue_halt_event_carries_error_class_no_queue():
+    spec = linear_spec()
+    del spec["defaults"]["queue"]
+    [a] = decide(ev("pass_1", workflow_outputs={"outputs": 1}), spec, status_doc(pass_1="completed"))
+    we = json.loads(a.params["workflow_event"])
+    assert "no queue" in we["short_error"] and we["error_class"] == "no_queue"
+
+
+def test_shell_retry_appends_failed_attempt_to_node():
+    c, _ = make_consumer(status_doc(A="completed", pass_1="completed", B="running"), spec=retry_spec(),
+                         retry_job_type=RT)
+    c.process_event(fail(payload_id="pl-1", short_error="exit 1 " + "x" * 600, timestamp="2026-01-01T00:00:09Z"))
+    [new] = c.status_updates
+    [att] = new["nodes"]["B"]["attempts"]
+    assert att == {"job_id": "jid-B", "payload_id": "pl-1", "status": "job-failed", "error": ("exit 1 " + "x" * 600)[:500],
+                   "error_class": "exit_code:1", "retry_count": 0, "ended_at": "2026-01-01T00:00:09Z"}
+    assert new["nodes"]["B"]["state"] == "running"  # nothing else changes
+
+
+def test_shell_second_retry_appends_and_duplicate_is_not_added_twice():
+    st = status_doc(B="running")
+    c, _ = make_consumer(st, spec=retry_spec(), retry_job_type=RT)
+    c.process_event(fail())
+    st["nodes"]["B"] = c.status_updates[-1]["nodes"]["B"]  # the doc as the first write left it
+    c.process_event(fail(rc=1))
+    assert [a["retry_count"] for a in c.status_updates[-1]["nodes"]["B"]["attempts"]] == [0, 1]
+    n = len(c.status_updates)
+    c.process_event(fail(rc=1))  # duplicate delivery: claimed, and (job_id, retry_count) already recorded
+    assert len(c.status_updates) == n
+
+
+def test_attempt_mutate_dedupes_and_caps():
+    from hysds.workflow_rules import MAX_NODE_ATTEMPTS, attempt_mutate
+    doc = {"nodes": {"B": {"state": "running"}}}
+    m = attempt_mutate("B", {"job_id": "j", "retry_count": 0})
+    doc = m(doc)
+    assert m(doc) is None  # same attempt again
+    assert attempt_mutate("nope", {"job_id": "j"})(doc) is None
+    for i in range(MAX_NODE_ATTEMPTS + 5):
+        doc = attempt_mutate("B", {"job_id": f"j{i}", "retry_count": 1})(doc)
+    atts = doc["nodes"]["B"]["attempts"]
+    assert len(atts) == MAX_NODE_ATTEMPTS and atts[-1]["job_id"] == f"j{MAX_NODE_ATTEMPTS + 4}"
+
+
+def test_scatter_child_attempt_records_child_index():
+    submit = umock.MagicMock()
+    c, _ = make_sg_consumer(sg_status(P={"state": "running", "expected": 5}), submit)
+    c._es.get.return_value = {"found": True, "_source": sg_retry_spec()}
+    c._retry_job_type = RT
+    c.process_event(sg_fail(2))
+    [att] = c.status_updates[-1]["nodes"]["P"]["attempts"]
+    assert att["child_index"] == 2 and att["job_id"] == "jc-2" and att["error_class"] == "exit_code:1"
+
+
+def test_attempt_record_failure_never_blocks_the_retry():
+    submit = umock.MagicMock()
+    c, _ = make_consumer(status_doc(B="running"), spec=retry_spec(), submit=submit, retry_job_type=RT,
+                         update_status_fn=umock.MagicMock(side_effect=RuntimeError("es down")))
+    c.process_event(fail())
+    submit.assert_called_once()

@@ -175,13 +175,16 @@ def test_healthy_run_is_noop():
 
 
 def test_timeout_fails_run_and_revokes():
-    es = FakeES([run_doc(submitted=ago(hours=49), nodes={"A": {"state": "completed"}, "B": {"state": "running"}})])
+    es = FakeES([run_doc(submitted=ago(hours=49), nodes={"A": {"state": "completed"}, "B": {"state": "running", "started_at": "S"}})])
     es.nonterm["r1"] = ["p1", "p2"]
     s, submit, publish = sweep(es)
     doc = es.docs[("workflow_status", "r1")][0]
     assert doc["status"] == "failed" and doc["error"] == "run timed out after 48h"
     assert doc["nodes"]["A"]["state"] == "completed" and doc["nodes"]["B"]["state"] == "cancelled"
     assert doc["ended_at"] == wr._iso(NOW)
+    assert doc["error_class"] == "timeout" and doc["failed_node"] == "B"
+    assert doc["duration_s"] > 48 * 3600 and doc["current_nodes"] == []
+    assert doc["nodes"]["B"]["ended_at"] == wr._iso(NOW)
     assert s["timeout"] == ["r1"] and s["revoked"] == 2
     kw = submit.call_args.kwargs
     assert kw["job_type"] == "job-lw-mozart-revoke:test" and kw["queue"] == "system-jobs-queue"
