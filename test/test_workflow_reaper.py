@@ -181,6 +181,7 @@ def test_timeout_fails_run_and_revokes():
     doc = es.docs[("workflow_status", "r1")][0]
     assert doc["status"] == "failed" and doc["error"] == "run timed out after 48h"
     assert doc["nodes"]["A"]["state"] == "completed" and doc["nodes"]["B"]["state"] == "cancelled"
+    assert doc["ended_at"] == wr._iso(NOW)
     assert s["timeout"] == ["r1"] and s["revoked"] == 2
     kw = submit.call_args.kwargs
     assert kw["job_type"] == "job-lw-mozart-revoke:test" and kw["queue"] == "system-jobs-queue"
@@ -239,6 +240,7 @@ def test_terminal_sweep_revokes_leftovers(st):
     assert s["sweep"] == ["r1"] and s["revoked"] == 1
     assert json.loads(submit.call_args.kwargs["params"]["query"])["query"]["ids"]["values"] == ["late"]
     assert es.docs[("workflow_status", "r1")][0]["status"] == st  # untouched
+    assert "ended_at" not in es.docs[("workflow_status", "r1")][0]  # sweep never stamps terminal runs
     s2, submit2, _ = sweep(es, state, NOW + timedelta(seconds=30))  # swept recently -> skipped
     assert not s2["sweep"] and not submit2.called
 
