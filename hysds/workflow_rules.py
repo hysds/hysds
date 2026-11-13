@@ -35,7 +35,7 @@ from kombu.mixins import ConsumerMixin
 
 from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
-from hysds_commons.workflow_spec import is_retryable, retry_policy
+from hysds_commons.workflow_spec import is_retryable, resolve_node_queue, retry_policy
 from hysds_commons.workflow_status import (
     ERROR_CLASS_INPUT_RESOLUTION,
     ERROR_CLASS_NO_QUEUE,
@@ -354,8 +354,7 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
         except WorkflowRefError as e:
             return [_halt(run_id, spec_id, _synthetic_failure(event, target, f"ref resolution error: {e}",
                                                                         ERROR_CLASS_INPUT_RESOLUTION))]
-        queue = (tnode.get("queue") or (spec.get("defaults") or {}).get("queue")
-                 or recommended_queue(tnode["run"]))
+        queue = resolve_node_queue(spec, tnode, recommended_queue)
         if not queue:
             return [_halt(run_id, spec_id, _synthetic_failure(
                 event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}",
