@@ -35,7 +35,7 @@ from kombu.mixins import ConsumerMixin
 
 from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
-from hysds_commons.workflow_spec import is_retryable, resolve_node_queue, retry_policy
+from hysds_commons.workflow_spec import is_retryable, job_tag, resolve_node_queue, retry_policy
 from hysds_commons.workflow_status import (
     ERROR_CLASS_INPUT_RESOLUTION,
     ERROR_CLASS_NO_QUEUE,
@@ -83,6 +83,8 @@ class Submit:
     queue: str
     params: dict
     workflow: dict
+    # Figaro tag of the job: the job node's ``tag`` or the node id; None -> step id (connectors)
+    tag: Optional[str] = None
     # replayed event (contract 12.8): a held claim may be stale; the shell checks its age
     stale_ok: bool = False
 
@@ -359,7 +361,8 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
             return [_halt(run_id, spec_id, _synthetic_failure(
                 event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}",
             ERROR_CLASS_NO_QUEUE))]
-        return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id))]
+        return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id),
+                       tag=job_tag(tnode, target))]
 
     if kind == "gather":
         if not succ:
@@ -719,7 +722,8 @@ class WorkflowRulesConsumer(ConsumerMixin):
                     executed.append(Ignore(f"already claimed: {self.claim_key(a.workflow)} (duplicate event)"))
                     continue
                 try:
-                    self.submit_fn(a.job_type, a.queue, a.params, a.workflow)
+                    self.submit_fn(a.job_type, a.queue, a.params, a.workflow,
+                                   tags=[a.tag or a.workflow["step_id"]])
                 except Exception:
                     self.release(a.workflow)  # let the requeued delivery retry the submit
                     raise

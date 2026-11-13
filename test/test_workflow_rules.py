@@ -1314,3 +1314,30 @@ def test_attempt_record_failure_never_blocks_the_retry():
                          update_status_fn=umock.MagicMock(side_effect=RuntimeError("es down")))
     c.process_event(fail())
     submit.assert_called_once()
+
+
+def test_successor_tag_is_node_tag_or_node_id():
+    st = status_doc(A={"state": "completed", "outputs": {"items": ["a", "b"]}}, pass_1="completed")
+    e = ev("pass_1", workflow_outputs=[{"name": "outputs", "value_s": "x"}])
+    [a] = decide(e, linear_spec(), st)
+    assert a.tag == "B"  # no node tag -> node id
+    spec = linear_spec()
+    spec["nodes"]["B"]["tag"] = "my-step"
+    [a] = decide(e, spec, st)
+    assert a.tag == "my-step"
+    [c] = decide(ev("A", workflow_outputs=typed(count=3)), linear_spec(), status_doc(A="completed"))
+    assert c.tag is None  # connectors: shell falls back to the step id
+
+
+def test_shell_submits_with_node_tag_and_step_id_default():
+    spec = linear_spec()
+    spec["nodes"]["B"]["tag"] = "my-step"
+    submit = umock.MagicMock()
+    c, es = make_consumer(status_doc(A={"state": "completed", "outputs": {"items": ["a"]}}, pass_1="completed"),
+                          spec=spec, submit=submit)
+    c.on_message(ev("pass_1", workflow_outputs=[{"name": "outputs", "value_s": "x"}]), msg())
+    assert submit.call_args.kwargs["tags"] == ["my-step"]
+    submit.reset_mock()
+    c, es = make_consumer(status_doc(A="completed"), submit=submit)
+    c.on_message(ev("A"), msg())
+    assert submit.call_args.kwargs["tags"] == ["pass_1"]
