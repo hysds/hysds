@@ -1341,3 +1341,17 @@ def test_shell_submits_with_node_tag_and_step_id_default():
     c, es = make_consumer(status_doc(A="completed"), submit=submit)
     c.on_message(ev("A"), msg())
     assert submit.call_args.kwargs["tags"] == ["pass_1"]
+
+
+@pytest.mark.parametrize("mode", ["empty", "omitted"])
+def test_pass_with_empty_bind_submits_next_job(mode):
+    spec = linear_spec()
+    spec["nodes"]["A"]["out"] = []
+    spec["nodes"]["pass_1"]["bind"] = {}
+    if mode == "omitted":
+        del spec["nodes"]["pass_1"]["bind"]
+    spec["nodes"]["B"]["in"] = {"mode": "ok"}
+    st = status_doc(A="completed", pass_1={"state": "completed", "outputs": {}}, B="queued")
+    [a] = decide(ev("pass_1"), spec, st)
+    assert isinstance(a, Submit) and a.job_type == "job-wf_test:v1.0"
+    assert a.params == {"mode": "ok"} and a.workflow["step_id"] == "B"
