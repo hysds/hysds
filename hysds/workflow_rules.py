@@ -35,8 +35,16 @@ from kombu.mixins import ConsumerMixin
 
 from hysds import workflow_barrier
 from hysds_commons.workflow_refs import WorkflowRefError, build_context, resolve_inputs
-from hysds_commons.workflow_spec import is_retryable, job_tag, resolve_node_queue, retry_policy
+from hysds_commons.workflow_spec import (
+    ARM_KINDS,
+    is_retryable,
+    job_tag,
+    resolve_node_queue,
+    retry_policy,
+    switch_arms,
+)
 from hysds_commons.workflow_status import (
+    ERROR_CLASS_HALTED,
     ERROR_CLASS_INPUT_RESOLUTION,
     ERROR_CLASS_NO_QUEUE,
     ERROR_CLASS_THRESHOLD,
@@ -153,7 +161,11 @@ Action = Any  # Submit | RetryAction | Ignore | DeadLetter | BarrierRecord
 
 
 # ----------------------------------------------------------------------------- decide
-PLUGGABLE_KINDS = ("pass", "scatter", "gather")
+PLUGGABLE_KINDS = ("pass", "scatter", "gather", "switch", "gate")
+# a gate runs the switch connector (job type, queue name and allowlist entry)
+CONNECTOR_CONFIG_KIND = {"gate": "switch"}
+# error classes a switch/gate connector job may stamp via _error_class.txt (arrives as ``pge:<token>``)
+ROUTE_ERROR_CLASSES = ("input_resolution", "routing")
 
 
 def _no_recommended_queue(job_type):
@@ -165,9 +177,10 @@ def _connector(kind, run_id, step_id, spec_id, event, node=None):
     ``connector`` / ``connector_queue`` win (contract 11.4); absent (pre-3b specs) or for
     finalize/halt, fall back to ``CONNECTOR_JOB_TYPES`` on ``workflow-connector-<kind>``."""
     node = node if (node and kind in PLUGGABLE_KINDS) else {}
+    ckind = CONNECTOR_CONFIG_KIND.get(kind, kind)
     return Submit(
-        job_type=node.get("connector") or CONNECTOR_JOB_TYPES[kind],
-        queue=node.get("connector_queue") or f"workflow-connector-{kind}",
+        job_type=node.get("connector") or CONNECTOR_JOB_TYPES[ckind],
+        queue=node.get("connector_queue") or f"workflow-connector-{ckind}",
         params=connector_params(run_id, step_id, spec_id, event),
         workflow=workflow_tag(run_id, step_id, spec_id),
     )
@@ -175,6 +188,66 @@ def _connector(kind, run_id, step_id, spec_id, event, node=None):
 
 def _halt(run_id, spec_id, event):
     return _connector("halt", run_id, HALT_STEP, spec_id, event)
+
+
+def _predecessor(event, nodes):
+    """The triggering job/gather event, trimmed, for a halt connector to record (a switch connector
+    records its own predecessor, so nothing is attached for switch/gate events). None if not needed."""
+    if (nodes.get(event.get("step_id")) or {}).get("kind") not in ("job", "gather"):
+        return None
+    return {k: event.get(k) for k in ("step_id", "job_id", "payload_id", "timestamp", "workflow_outputs")
+            if event.get(k) is not None}
+
+
+def _halt_action(run_id, spec_id, event, halt_id, hnode, nodes, status):
+    """User halt node reached: failed -> ``_halt``; completed -> ``_finalize`` (step_id = the halt node)."""
+    if not _pending(status, halt_id):
+        return [Ignore(f"pre-check: {halt_id} is not pending (duplicate event?)")]
+    reason = hnode.get("reason") or "halted"
+    syn = _synthetic_failure(event, halt_id, reason, ERROR_CLASS_HALTED)
+    pred = _predecessor(event, nodes)
+    if pred:
+        syn["predecessor"] = pred
+    if hnode.get("status") == "completed":
+        syn.update(status="job-completed", short_error=None, error_class=None)
+        return [_connector("finalize", run_id, FINALIZE_STEP, spec_id, syn)]
+    return [_halt(run_id, spec_id, syn)]
+
+
+def _start_node(run_id, spec_id, event, target, nodes, spec, status, recommended_queue, job_ok):
+    """Start successor ``target`` after ``event`` completed. job (only after pass/switch/gate, whose
+    connector recorded the inputs in status) -> resolve ``in`` and submit; pass/scatter/switch/gate ->
+    their connector; halt -> the halt action."""
+    tnode = nodes[target]
+    tkind = tnode.get("kind")
+    step = event.get("step_id")
+    if tkind == "halt":
+        return _halt_action(run_id, spec_id, event, target, tnode, nodes, status)
+    if tkind == "job":
+        if not job_ok:
+            return [Ignore(f"{step} successor {target} has unsupported kind {tkind!r}", loud=True)]
+        # the pass/switch connector marks its successor 'queued' (inputs resolved) before its own
+        # completion event arrives; 'queued' is still submittable. Duplicate events re-submit and
+        # collapse onto the existing job via orchestrator dedup.
+        if _state(status, target) not in ("pending", "queued"):
+            return [Ignore(f"pre-check: {target} is {_state(status, target)!r}, not pending/queued (duplicate event?)")]
+        try:
+            params = resolve_inputs(tnode, build_context(status, event))
+        except WorkflowRefError as e:
+            return [_halt(run_id, spec_id, _synthetic_failure(event, target, f"ref resolution error: {e}",
+                                                                        ERROR_CLASS_INPUT_RESOLUTION))]
+        queue = resolve_node_queue(spec, tnode, recommended_queue)
+        if not queue:
+            return [_halt(run_id, spec_id, _synthetic_failure(
+                event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}",
+                ERROR_CLASS_NO_QUEUE))]
+        return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id),
+                       tag=job_tag(tnode, target))]
+    if tkind not in PLUGGABLE_KINDS or tkind == "gather":
+        return [Ignore(f"{step} successor {target} has unsupported kind {tkind!r}", loud=True)]
+    if not _pending(status, target):
+        return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
+    return [_connector(tkind, run_id, target, spec_id, event, node=tnode)]
 
 
 def _state(status, node_id):
@@ -319,6 +392,9 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
     # 4. failure
     if ev_status in FAILURE_STATUSES:
         # not retryable (or retries exhausted): halt (retryable failures returned above)
+        ec = event.get("error_class") or ""
+        if node.get("kind") in ARM_KINDS and ec.startswith("pge:") and ec[4:] in ROUTE_ERROR_CLASSES:
+            event = {**event, "error_class": ec[4:]}  # switch/gate connector: input_resolution | routing
         return [_halt(run_id, spec_id, event)]
 
     if ev_status != "job-completed":
@@ -330,49 +406,35 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
     if kind == "job":
         if not succ:
             return [_connector("finalize", run_id, FINALIZE_STEP, spec_id, event)]
-        target = succ[0]
-        tkind = nodes[target].get("kind")
-        if tkind not in ("pass", "scatter"):
-            return [Ignore(f"job {step} successor {target} has unsupported kind {tkind!r}", loud=True)]
-        if not _pending(status, target):
-            return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
-        return [_connector(tkind, run_id, target, spec_id, event, node=nodes[target])]
+        if nodes[succ[0]].get("kind") not in ("pass", "scatter", "switch", "gate", "halt"):
+            return [Ignore(f"job {step} successor {succ[0]} has unsupported kind {nodes[succ[0]].get('kind')!r}",
+                           loud=True)]
+        return _start_node(run_id, spec_id, event, succ[0], nodes, spec, status, recommended_queue, False)
 
     if kind == "pass":
         if len(succ) != 1:
             return [Ignore(f"pass {step} must have exactly one successor", loud=True)]
-        target = succ[0]
-        tnode = nodes[target]
-        if tnode.get("kind") != "job":
-            return [Ignore(f"pass {step} successor {target} is not a job", loud=True)]
-        # the pass connector marks its successor 'queued' (binds resolved) before
-        # its own completion event arrives; 'queued' is still submittable.
-        # Duplicate pass events re-submit and collapse onto the existing job via
-        # orchestrator dedup.
-        if _state(status, target) not in ("pending", "queued"):
-            return [Ignore(f"pre-check: {target} is {_state(status, target)!r}, not pending/queued (duplicate event?)")]
-        try:
-            params = resolve_inputs(tnode, build_context(status, event))
-        except WorkflowRefError as e:
-            return [_halt(run_id, spec_id, _synthetic_failure(event, target, f"ref resolution error: {e}",
-                                                                        ERROR_CLASS_INPUT_RESOLUTION))]
-        queue = resolve_node_queue(spec, tnode, recommended_queue)
-        if not queue:
-            return [_halt(run_id, spec_id, _synthetic_failure(
-                event, target, f"no queue for {target}: none on node/defaults/job_spec {tnode['run']}",
-            ERROR_CLASS_NO_QUEUE))]
-        return [Submit(tnode["run"], queue, params, workflow_tag(run_id, target, spec_id),
-                       tag=job_tag(tnode, target))]
+        if nodes[succ[0]].get("kind") != "job":
+            return [Ignore(f"pass {step} successor {succ[0]} is not a job", loud=True)]
+        return _start_node(run_id, spec_id, event, succ[0], nodes, spec, status, recommended_queue, True)
 
     if kind == "gather":
         if not succ:
             return [_connector("finalize", run_id, FINALIZE_STEP, spec_id, event)]
-        if len(succ) != 1 or nodes[succ[0]].get("kind") != "pass":
-            return [Ignore(f"gather {step} successor must be exactly one pass; got {succ}", loud=True)]
-        target = succ[0]
-        if not _pending(status, target):
-            return [Ignore(f"pre-check: {target} is not pending (duplicate event?)")]
-        return [_connector("pass", run_id, target, spec_id, event, node=nodes[target])]
+        if len(succ) != 1 or nodes[succ[0]].get("kind") not in ("pass", "switch", "gate", "halt"):
+            return [Ignore(f"gather {step} successor must be exactly one pass, switch, gate or halt; got {succ}",
+                           loud=True)]
+        return _start_node(run_id, spec_id, event, succ[0], nodes, spec, status, recommended_queue, False)
+
+    if kind in ARM_KINDS:
+        outs = _event_node_outputs(event, step)
+        arm = outs.get("arm") if outs else None
+        target = dict(switch_arms(node)).get(arm) if isinstance(arm, str) else None
+        if target is None or target not in nodes:
+            return [DeadLetter(f"{kind} {step}: arm {arm!r} is not an arm of the spec node "
+                               f"{[a for a, _ in switch_arms(node)]} (run {run_id})")]
+        return _start_node(run_id, spec_id, event, target, nodes, spec, status, recommended_queue, True)
+
     if kind == "scatter":
         child = node.get("child")
         expected = ((status.get("nodes") or {}).get(child) or {}).get("expected")
@@ -385,6 +447,14 @@ def _decide(event, spec, status, recommended_queue=_no_recommended_queue, barrie
             return [Ignore(f"pre-check: {gather} is not pending (duplicate event?)")]
         return [_connector("gather", run_id, gather, spec_id, event, node=nodes.get(gather))]
     return [Ignore(f"step {step} has unsupported kind {kind!r}", loud=True)]
+
+
+def _event_node_outputs(event, step):
+    """``{name: value}`` from the event's ``workflow_outputs`` (None if absent or malformed)."""
+    try:
+        return build_context({}, event)["nodes"].get(step)
+    except WorkflowRefError:
+        return None
 
 
 def _child_recordable(event):

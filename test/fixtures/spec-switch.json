@@ -1,0 +1,56 @@
+{
+  "id": "e2e-switch", "version": "1.0.0", "schema_version": "1.0",
+  "label": "E2E switch: radiometer-shaped QA routing (switch, gate, halt, exclusive rejoin)",
+  "defaults": { "queue": "hello_world_worker" },
+  "inputs": {
+    "l2_outputs":        { "type": "string", "default": "[{\"name\":\"qa_score\",\"value_d\":0.9},{\"name\":\"product\",\"value_s\":\"L2SMP.h5\"}]" },
+    "reprocess_outputs": { "type": "string", "default": "[{\"name\":\"product\",\"value_s\":\"L2SMP-r.h5\"}]" },
+    "publish_outputs":   { "type": "string", "default": "[{\"name\":\"published\",\"value_s\":\"yes\"}]" },
+    "archive_outputs":   { "type": "string", "default": "[{\"name\":\"result\",\"value_s\":\"archived\"}]" },
+    "qa_min":            { "type": "float", "default": 0.8 },
+    "tier":              { "type": "string", "default": "gold" }
+  },
+  "entry": "L2SMP",
+  "nodes": {
+    "L2SMP": { "kind": "job", "run": "job-wf_test:v1.0", "in": { "mode": "ok", "outputs": "$.inputs.l2_outputs" },
+               "out": ["qa_score", "product"], "next": ["qa_route"] },
+    "qa_route": {
+      "kind": "switch",
+      "cases": [
+        { "name": "reject", "when": { "left": "$.L2SMP.qa_score", "op": "lt", "right": 0.3 }, "next": ["reject"] },
+        { "name": "reprocess", "when": { "all": [
+            { "left": "$.L2SMP.qa_score", "op": "ge", "right": 0.3 },
+            { "left": "$.L2SMP.qa_score", "op": "lt", "right": "$.inputs.qa_min" } ] }, "next": ["reprocess_L2SMP"] }
+      ],
+      "default": ["publish"]
+    },
+    "reject": { "kind": "halt", "status": "failed", "reason": "L2SMP qa_score below 0.3" },
+    "reprocess_L2SMP": { "kind": "job", "run": "job-wf_test:v1.0",
+                         "in": { "mode": "ok", "outputs": "$.inputs.reprocess_outputs" },
+                         "out": ["product"], "next": ["pass_pub"] },
+    "pass_pub": { "kind": "pass", "bind": { "publish.reprocessed": "$.reprocess_L2SMP.product" }, "next": ["publish"] },
+    "publish": { "kind": "job", "run": "job-wf_test:v1.0",
+                 "in": { "mode": "ok", "outputs": "$.inputs.publish_outputs", "route": "$.qa_route.arm", "product": "$.L2SMP.product" },
+                 "out": ["published"], "next": ["qa_gate"] },
+    "qa_gate": { "kind": "gate",
+                 "when": { "left": "$.L2SMP.qa_score", "op": "ge", "right": "$.inputs.qa_min" },
+                 "on_true": ["finish"], "on_false": ["tier"] },
+    "finish": { "kind": "halt", "status": "completed", "reason": "high-quality product published" },
+    "tier": { "kind": "switch", "on": "$.inputs.tier",
+              "choices": { "gold": ["archive_gold"], "silver": ["archive_silver"] },
+              "default": ["archive_other"] },
+    "archive_gold":   { "kind": "job", "run": "job-wf_test:v1.0", "in": { "mode": "ok", "outputs": "$.inputs.archive_outputs" },
+                        "out": ["result"], "next": [] },
+    "archive_silver": { "kind": "job", "run": "job-wf_test:v1.0", "in": { "mode": "ok", "outputs": "$.inputs.archive_outputs" },
+                        "out": ["result"], "next": [] },
+    "archive_other":  { "kind": "job", "run": "job-wf_test:v1.0", "in": { "mode": "ok", "outputs": "$.inputs.archive_outputs" },
+                        "out": ["result"], "next": [] }
+  },
+  "outputs": {
+    "route": "$.qa_route.arm",
+    "published": "$.publish.published",
+    "reprocessed": "$.reprocess_L2SMP.product",
+    "archived_gold": "$.archive_gold.result",
+    "archived_other": "$.archive_other.result"
+  }
+}
