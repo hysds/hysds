@@ -48,6 +48,15 @@ filter {
     }
   }
 
+  # workflow_status snapshots: the producer (hysds.workflow_snapshot) sets [index] to the
+  # run's daily index (workflow_status-YYYY.MM.DD of its creation date, fixed for the life of
+  # the run so every version of a run lands in the same index). Fall back to today's index.
+  if [resource] == "workflow_status" and ![index] {
+    mutate {
+      add_field => { "index" => "workflow_status-%{+YYYY.MM.dd}" }
+    }
+  }
+
   # Sets a flag to tell logstash to delete the original document
   # if we move from job_status to job_failed
   ruby {
@@ -261,6 +270,40 @@ output {
       {%- endif %}
       index => "event_status-%{+YYYY.MM.dd}"
       document_id => "%{uuid}"
+      ecs_compatibility => disabled
+      ssl => true
+      ssl_certificate_verification => false
+      cacert => "{{ CA_BUNDLE_CERT }}"
+      user => {{ OS_USER }}
+      password => {{ OS_PASSWORD }}
+    }
+  } else if [resource] == "workflow_status" {
+    {{ 'opensearch' if MOZART_ES_ENGINE == 'opensearch' else 'elasticsearch' }} {
+      {%- if MOZART_ES_PVT_IP is iterable and MOZART_ES_PVT_IP is not string %}
+      hosts => [
+        {%- for url in MOZART_ES_PVT_IP %}
+          {%- if url.startswith('https://') %}
+        "{{ url }}"{{ "," if not loop.last else "" }}
+          {%- else %}
+        "{{ 'https://'~url if MOZART_AWS_ES == true or 'es.amazonaws.com' in url else 'https://'~url~':9200' }}"{{ "," if not loop.last else "" }}
+          {%- endif %}
+        {%- endfor %}
+      ]
+      {%- else %}
+        {%- if MOZART_ES_PVT_IP.startswith('https://') %}
+      hosts => ["{{ MOZART_ES_PVT_IP }}"]
+        {%- else %}
+      hosts => ["{{ 'https://'~MOZART_ES_PVT_IP if MOZART_AWS_ES == true or 'es.amazonaws.com' in MOZART_ES_PVT_IP else 'https://'~MOZART_ES_PVT_IP~':9200' }}"]
+        {%- endif %}
+      {%- endif %}
+      index => "%{[index]}"
+      document_id => "%{run_id}"
+      action => "index"
+      # snapshots are idempotent full documents ordered by the producer's INCR counter:
+      # a stale (lower) version gets a 409 that the plugin logs and drops; a redelivery of
+      # the same version is accepted (external_gte)
+      version => "%{version}"
+      version_type => "external_gte"
       ecs_compatibility => disabled
       ssl => true
       ssl_certificate_verification => false
