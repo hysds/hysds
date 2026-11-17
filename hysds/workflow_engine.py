@@ -566,8 +566,9 @@ class Engine:
         def fn(d):
             if d["status"] in ws.TERMINAL_RUN_STATUSES:
                 return None
-            new, revoke, cancelled = _cancel_rest(d, "user", None, "cancelled by %s" % user)
-            new = set_run_status(new, "cancelled", reason="cancelled by %s" % user, cancelled_by=user or "unknown")
+            why = event.get("reason") or "cancelled by %s" % user  # the reaper passes "run timed out ..."
+            new, revoke, cancelled = _cancel_rest(d, "user", None, why)
+            new = set_run_status(new, "cancelled", reason=why, cancelled_by=user or "unknown")
 
             def extra(pipe):
                 for c in cancelled:
