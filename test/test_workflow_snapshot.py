@@ -70,3 +70,24 @@ def test_guard_realerts_after_interval(r, caplog, monkeypatch):
         t[0] += ws.ALERT_INTERVAL_SEC + 1
         ws.push_run_snapshot(r, {"run_id": "g"}, list_key="logstash", max_len=1)
     assert len(caplog.records) == 2
+
+
+def test_job_definitions_only_in_first_and_final_snapshots():
+    import sys
+    sys.path.insert(0, __import__("os").path.dirname(__file__))
+    from test_workflow_engine import LINEAR, Harness, make_spec
+    h = Harness(make_spec(LINEAR))
+    h.start()
+    for s in "abc":
+        h.finish(s, {"o": s})
+    snaps = h.snapshots()
+    assert len(snaps) >= 5 and snaps[0]["version"] == 1 and snaps[-1]["status"] == "completed"
+    assert "job_definitions" in snaps[0] and "job_definitions" in snaps[-1]
+    assert all("job_definitions" not in x for x in snaps[1:-1])
+    assert "job_definitions" in h.doc()  # the Redis run doc (what the engine submits from, mozart reads) keeps them
+    # a failed run's final snapshot has them too
+    h2 = Harness(make_spec(LINEAR))
+    h2.start()
+    h2.finish("a", status="job-failed", error_class="worker", short_error="x")
+    snaps = h2.snapshots()
+    assert snaps[-1]["status"] == "failed" and "job_definitions" in snaps[-1]

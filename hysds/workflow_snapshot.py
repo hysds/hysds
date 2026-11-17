@@ -9,6 +9,13 @@ delays the record and out-of-order delivery cannot overwrite a newer snapshot.
 The payload format matches ``log_job_status``: a msgpack-encoded dict with ``resource``,
 ``@version`` ("1", the HySDS payload marker, unrelated to the document ``version``) and
 ``@timestamp``, RPUSHed onto ``REDIS_JOB_STATUS_KEY``.
+
+``job_definitions`` (the frozen job specs/hysds-io/containers, large, written once by mozart) are in the FIRST
+snapshot (version 1, from ``init_run``) and the FINAL one (the run ended) only; every snapshot in between leaves
+the field out. Logstash indexes with ``action => index``, which replaces the whole document, so the definitions are
+absent from OpenSearch between those two snapshots and the final snapshot restores them. That is acceptable: while a
+run is active mozart reads it from Redis (``GET /workflow/runs/<id>``), where the run doc keeps them (the engine
+submits jobs from them).
 """
 import logging
 import re
@@ -21,6 +28,7 @@ logger = logging.getLogger("hysds.workflow_snapshot")
 
 RESOURCE = "workflow_status"
 VERSION_KEY_TMPL = "wf:ver:%s"
+FINAL_STATUSES = ("completed", "failed", "cancelled")
 DEFAULT_LIST_KEY = "logstash"
 DEFAULT_MAX_LEN = 100000
 ALERT_INTERVAL_SEC = 300
@@ -74,6 +82,8 @@ def build_snapshot(run_doc, version=None):
     doc = dict(run_doc)
     if version is not None:
         doc["version"] = version
+    if doc.get("version") != 1 and doc.get("status") not in FINAL_STATUSES:
+        doc.pop("job_definitions", None)  # first and final snapshots only (see the module docstring)
     doc["resource"] = RESOURCE
     doc["index"] = run_doc.get("index") or daily_index(run_doc)  # mozart stamps it: one daily index per run
     doc["@version"] = "1"
