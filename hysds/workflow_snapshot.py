@@ -65,25 +65,44 @@ def _check_list_size(redis_client, list_key, max_len):
             )
 
 
-def push_run_snapshot(redis_client, run_doc, list_key=None, max_len=None):
-    """INCR the run's version counter, stamp it on a copy of ``run_doc`` and RPUSH it.
+def build_snapshot(run_doc, version=None):
+    """msgpack bytes of the snapshot of ``run_doc`` (the exact payload ``push_run_snapshot`` queues).
 
-    Returns the version used. ``run_doc`` must carry ``run_id``. The caller's dict is not
-    modified. Redis errors propagate so the caller can retry.
+    ``version`` (default: the doc's own) is stamped on a copy; the caller's dict is not modified.
+    Used by the engine to queue the snapshot inside the same Redis transaction as the state change."""
+    doc = dict(run_doc)
+    if version is not None:
+        doc["version"] = version
+    doc["resource"] = RESOURCE
+    doc["index"] = run_doc.get("index") or daily_index(run_doc)  # mozart stamps it: one daily index per run
+    doc["@version"] = "1"
+    doc["@timestamp"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+    return msgpack.dumps(doc)
+
+
+def list_key_and_max():
+    return _conf("REDIS_JOB_STATUS_KEY", DEFAULT_LIST_KEY), _conf("WORKFLOW_LOGSTASH_MAX_LEN", DEFAULT_MAX_LEN)
+
+
+def check_list_size(redis_client, list_key=None, max_len=None):
+    """Public form of the rate-limited long-list alert (never raises)."""
+    k, m = list_key_and_max()
+    _check_list_size(redis_client, list_key or k, m if max_len is None else max_len)
+
+
+def push_run_snapshot(redis_client, run_doc, list_key=None, max_len=None, version=None):
+    """Stamp a version on a copy of ``run_doc`` and RPUSH it. Returns the version used.
+
+    Without ``version`` the run's counter is INCRed (``wf:ver:<run_id>``). With ``version`` (the engine,
+    which already incremented it atomically with the state change) it is used as is. ``run_doc`` must
+    carry ``run_id``. Redis errors propagate so the caller can retry.
     """
     run_id = run_doc["run_id"]
     list_key = list_key or _conf("REDIS_JOB_STATUS_KEY", DEFAULT_LIST_KEY)
     if max_len is None:
         max_len = _conf("WORKFLOW_LOGSTASH_MAX_LEN", DEFAULT_MAX_LEN)
-
-    version = int(redis_client.incr(VERSION_KEY_TMPL % run_id))
-    doc = dict(run_doc)
-    doc["version"] = version
-    doc["resource"] = RESOURCE
-    doc["index"] = daily_index(run_doc)
-    doc["@version"] = "1"
-    doc["@timestamp"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
-
+    if version is None:
+        version = int(redis_client.incr(VERSION_KEY_TMPL % run_id))
     _check_list_size(redis_client, list_key, max_len)
-    redis_client.rpush(list_key, msgpack.dumps(doc))
+    redis_client.rpush(list_key, build_snapshot(run_doc, version))
     return version

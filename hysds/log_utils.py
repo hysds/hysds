@@ -237,6 +237,8 @@ def get_job_status(task_id):
 TERMINAL_JOB_STATUSES = frozenset(
     {"job-completed", "job-failed", "job-deduped", "job-offline", "job-revoked"}
 )
+# non-terminal statuses also sent to WORKFLOW_QUEUE (v2 engine: step state queued -> running)
+WORKFLOW_PROGRESS_STATUSES = frozenset({"job-started"})
 
 
 def is_job_finalized(task_id):
@@ -473,7 +475,7 @@ def publish_workflow_event(job_for_indexing):
     workflow = job_for_indexing.get("workflow")
     if not workflow:
         return
-    if job_for_indexing.get("status") not in TERMINAL_JOB_STATUSES:
+    if job_for_indexing.get("status") not in TERMINAL_JOB_STATUSES | WORKFLOW_PROGRESS_STATUSES:
         return
 
     job_info = (job_for_indexing.get("job") or {}).get("job_info") or {}

@@ -336,10 +336,15 @@ def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
     assert producer.publish.call_args.kwargs["routing_key"] == "workflow_queue"
 
 
-@pytest.mark.parametrize("status", NON_TERMINAL)
-def test_workflow_event_not_published_for_non_terminal_status(monkeypatch, status):
-    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status=status))
+def test_workflow_event_not_published_for_queued(monkeypatch):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-queued"))
     producer.publish.assert_not_called()
+
+
+def test_workflow_event_published_for_job_started(monkeypatch):
+    # v2 engine: job-started moves a step from queued to running
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-started"))
+    assert producer.publish.call_args.args[0]["status"] == "job-started"
 
 
 def test_workflow_event_not_published_without_workflow_tag(monkeypatch):
