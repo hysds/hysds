@@ -73,3 +73,10 @@ def test_untagged_hash_unchanged(orch):
 
     orch.submit_job(_j())
     assert orch.query_dedup_job.call_args[0][0] == get_payload_hash({"_command": "x", "a": 1})
+
+
+def test_retry_count_carried_to_job_dict(orch):
+    orch.submit_job(_j(workflow=WF, retry_count=2))
+    assert _queued_job(orch)["retry_count"] == 2
+    orch.submit_job(_j(workflow=WF))
+    assert "retry_count" not in _queued_job(orch)

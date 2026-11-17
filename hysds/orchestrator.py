@@ -386,6 +386,10 @@ def submit_job(j):
             # set priority
             job_json["priority"] = priority
 
+            # workflow engine retry: carry the attempt number (what lw-mozart-retry sets) to the job
+            if j.get("retry_count"):
+                job_json["retry_count"] = j["retry_count"]
+
             # set tag
             if "tag" not in job_json and tag is not None:
                 job_json["tag"] = tag
