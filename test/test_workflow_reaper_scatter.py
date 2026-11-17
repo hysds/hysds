@@ -194,18 +194,6 @@ def test_interrupted_fanout_is_resumed():
     assert sorted(g.h.kids()) == [0, 1, 2]
 
 
-def test_connector_job_missed_completion_without_stored_event_is_lost():
-    g = srig(["seed"], connector=True)
-    pid, _ = g.h.job_of("s")
-    g.status[pid] = "job-completed"
-    g.age(700)
-    g.sweep()
-    g.age(200)
-    acts = g.sweep()
-    assert any("failed as lost" in a for _, a in acts)
-    assert g.h.doc()["status"] == "failed"
-
-
 def test_halting_drain_cancels_queued_children_and_recovers_the_running_one():
     g = srig(["a", "b", "c"], threshold=0.3)
     g.h.child(0, "job-started")

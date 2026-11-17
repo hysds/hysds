@@ -34,8 +34,7 @@ scatter step, children phase          each live child (``wf:sc`` record queued/r
                                       a child stuck ``retry_wait`` (crash between the retry decision and the
                                       re-submit) is re-submitted after the event grace; a fan-out interrupted
                                       before every child was submitted is resumed after the queued age; every
-                                      child settled but the step not (lost finish) is finished. A scatter
-                                      connector job is an ordinary attempt (first rows).
+                                      child settled but the step not (lost finish) is finished.
 ``halting`` with a scatter in         the engine's drain is re-run (cancels queued / retry_wait / never-submitted
 children phase                        children, revokes the queued ones); the running children are recovered as
                                       above and the step settles by the threshold rule
@@ -241,12 +240,10 @@ class Reaper:
         return done
 
     def _recover_attempt(self, run_id, spec, sid, state, att, now):
-        return self._recover_job(run_id, spec, sid, state, att["job_id"], now,
-                                 connector=_phase(ws.get_run(self.r, run_id)["steps"][sid]) == "connector")
+        return self._recover_job(run_id, spec, sid, state, att["job_id"], now)
 
-    def _recover_job(self, run_id, spec, sid, state, jid, now, child_index=None, connector=False):
-        """One live job: a step attempt, or (``child_index`` given) one scatter child. ``connector``: the attempt is
-        the step's scatter connector, whose ``items`` output cannot be synthesized."""
+    def _recover_job(self, run_id, spec, sid, state, jid, now, child_index=None):
+        """One live job: a step attempt, or (``child_index`` given) one scatter child."""
         # the Redis job status is keyed by the celery task id of the run_job task (recorded from the job-queued /
         # job-started event), not by the attempt's payload id; without a recorded task id nothing is known yet
         status = self.status_fn(ws.get_task_id(self.r, run_id, jid) or jid)
@@ -259,7 +256,7 @@ class Reaper:
             stored = ws.get_stored_event(self.r, jid, status)
             if stored is not None:
                 ev, kind = dict(stored, replayed=True), "missed terminal event (%s): stored event replayed" % status
-            elif status == "job-completed" and (connector or spec["steps"][sid].get("out")):
+            elif status == "job-completed" and spec["steps"][sid].get("out"):
                 ev = dict(base, status="job-failed", error_class="lost",
                           short_error="job completed but its stored event (and so its outputs) is gone")
                 kind = "missed completion with outputs, stored event missing: failed as lost"

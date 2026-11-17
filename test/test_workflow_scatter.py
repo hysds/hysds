@@ -6,13 +6,8 @@ from test_workflow_engine import FROZEN, Harness, _src, _step, make_spec  # noqa
 from hysds import workflow_state as ws
 from hysds_commons.workflow_run2 import validate_run_doc
 
-CONN = "job-lister:v1"
-
-
-def spec_for(threshold=1.0, connector=False, downstream=False, retries=None, out=("o", "p")):
+def spec_for(threshold=1.0, downstream=False, retries=None, out=("o", "p")):
     sc = {"input": "v", "threshold": threshold}
-    if connector:
-        sc["connector"] = {"job_type": CONN, "queue": "qc"}
     extra = dict(max_retries=retries, retry_on=["worker"]) if retries else {}
     steps = {"s": _step(ins={"v": _src("$.inputs.items")}, out=out, scatter=sc, **extra)}
     outputs = {"res": {"type": "string[]?", "source": ["$.s.o"]}}
@@ -273,77 +268,51 @@ def test_null_or_non_list_scatter_input_is_a_run_time_error(value):
     assert d["status"] == "failed" and d["error_class"] == "input_resolution" and h.jobs == []
 
 
-# ---------------------------------------------------------------------------------------- connector
+# ---------------------------------------------------------------------------------------- lister step
 
 
-def conn_event(h, outputs, status="job-completed", **kw):
-    pid, job = h.job_of("s")
-    ev = {"run_id": "r1", "step_id": "s", "status": status, "job_id": pid, "payload_id": pid,
-          "workflow_outputs": outputs, "error_class": None}
-    ev.update(kw)
-    return ev
+def lister_spec(retries=None):
+    """A mission lister (an ordinary job step whose ``items`` output is the list) feeding the scatter."""
+    extra = dict(max_retries=retries, retry_on=["worker"]) if retries else {}
+    steps = {"L": _step(ins={}, out=("items",)),
+             "s": _step(deps=["L"], ins={"v": _src("$.L.items")}, out=("o", "p"),
+                        scatter={"input": "v", "threshold": 1.0}, **extra)}
+    return make_spec(steps, outputs={"res": {"type": "string[]?", "source": ["$.s.o"]}})
 
 
-def test_mission_connector_lists_the_items_then_fans_out():
-    h = SH(spec_for(connector=True), inputs={"items": ["seed"]})
+def test_lister_step_output_is_the_scatter_list():
+    h = SH(lister_spec())
     h.start()
-    (pid, job), = h.jobs
-    assert job["jt"] == CONN and job["queue"] == "qc" and job["params"] == {"v": ["seed"]}
-    assert job["workflow"]["child_index"] is None
-    assert h.doc()["steps"]["s"]["state"] == "queued" and h.doc()["steps"]["s"]["scatter"]["phase"] == "connector"
-    h.send(conn_event(h, [{"name": "items", "value_s": ["x", "y", "z"]}]))
+    assert [j["workflow"]["step_id"] for _, j in h.jobs] == ["L"]
+    h.finish("L", {"items": ["x", "y", "z"]})
     kids = h.kids()
-    assert sorted(kids) == [0, 1, 2] and [kids[i][1]["jt"] for i in kids] == ["job-t:v1"] * 3
-    assert [kids[i][1]["params"]["v"] for i in kids] == ["x", "y", "z"]
+    assert sorted(kids) == [0, 1, 2] and [kids[i][1]["params"]["v"] for i in kids] == ["x", "y", "z"]
     d = h.doc()
-    assert d["steps"]["s"]["scatter"]["phase"] == "children" and d["steps"]["s"]["attempts"][0]["status"] == "completed"
+    assert d["steps"]["s"]["scatter"]["phase"] == "children" and d["steps"]["s"]["attempts"] == []
     assert validate_run_doc(d) == []
     for i in range(3):
         h.ok(i)
     assert h.doc()["status"] == "completed" and h.doc()["outputs"]["res"] == ["o0", "o1", "o2"]
 
 
-def test_connector_with_an_empty_list_completes_the_step():
-    h = SH(spec_for(connector=True), inputs={"items": ["seed"]})
+def test_lister_with_an_empty_list_completes_the_step():
+    h = SH(lister_spec())
     h.start()
-    h.send(conn_event(h, [{"name": "items", "value_b": []}]))
-    d = h.doc()
-    assert d["status"] == "completed" and d["outputs"] == {"res": []}
+    h.finish("L", {"items": []})
+    assert h.doc()["status"] == "completed" and h.doc()["outputs"] == {"res": []}
 
 
-def test_connector_duplicate_completion_does_not_refan_or_settle():
-    h = SH(spec_for(connector=True), inputs={"items": ["seed"]})
+def test_lister_failure_fails_the_run_and_the_scatter_never_starts():
+    h = SH(lister_spec())
     h.start()
-    ev = conn_event(h, [{"name": "items", "value_s": ["x", "y"]}])
-    h.send(ev)
-    h.send(ev)
-    assert len(h.kids()) == 2 and len(h.jobs) == 3
-    assert h.doc()["steps"]["s"]["state"] == "running"
+    h.finish("L", None, "job-failed", error_class="worker")
+    assert h.doc()["status"] == "failed" and [j["workflow"]["step_id"] for _, j in h.jobs] == ["L"]
 
 
-@pytest.mark.parametrize("outputs", [[], [{"name": "items", "value_s": "notalist"}], [{"name": "other", "value_s": ["a"]}]])
-def test_connector_without_a_list_fails_the_step(outputs):
-    h = SH(spec_for(connector=True), inputs={"items": ["seed"]})
+def test_children_retry_with_their_item_from_the_lister_output():
+    h = SH(lister_spec(retries=1))
     h.start()
-    h.send(conn_event(h, outputs))
-    d = h.doc()
-    assert d["status"] == "failed" and d["error_class"] == "outputs" and "'items' must be a list" in d["steps"]["s"]["error"]
-
-
-def test_connector_failure_is_retried_like_any_job_then_fails_the_step():
-    spec = spec_for(connector=True, retries=1)
-    h = SH(spec, inputs={"items": ["seed"]})
-    h.start()
-    h.send(conn_event(h, None, "job-failed", error_class="worker"))
-    assert [j["jt"] for _, j in h.jobs] == [CONN, CONN] and h.jobs[1][1]["retry_count"] == 1
-    h.send(conn_event(h, None, "job-failed", error_class="worker"))
-    assert h.doc()["status"] == "failed" and h.doc()["error_class"] == "worker"
-
-
-def test_connector_children_retry_with_their_item_from_the_connector_list():
-    h = SH(spec_for(connector=True, retries=1), inputs={"items": ["seed"]})
-    h.start()
-    h.send(conn_event(h, [{"name": "items", "value_s": ["x", "y"]}]))
+    h.finish("L", {"items": ["x", "y"]})
     h.bad(1)
     assert h.kids()[1][1]["params"]["v"] == "y"
 
@@ -539,23 +508,3 @@ def test_halt_under_continue_drains_the_scatter_the_same_way():
     assert set(h.revoked[-1][1]) == {kids[1][0], kids[2][0], kids[3][0]}
     h.ok(0)  # 1 of 4 < 0.5: the scatter fails, which outranks the completed halt
     assert h.doc()["status"] == "failed"
-
-
-def test_connector_finishing_while_halting_cancels_the_step_without_fanning_out():
-    steps = {"s": _step(ins={"v": _src("$.inputs.x")}, out=("o",),
-                        scatter={"input": "v", "connector": {"job_type": CONN, "queue": "qc"}}),
-             "f": _step(ins={"v": _src("$.inputs.x")})}
-    spec = make_spec(steps, inputs={"x": {"type": "string", "default": "d"}}, on_error="drain")
-    h = SH(spec)
-    h.start()
-    pid, _ = h.job_of("s")
-    h.send({"run_id": "r1", "step_id": "s", "status": "job-started", "job_id": pid, "payload_id": pid})
-    fail_f(h)
-    assert h.doc()["status"] == "halting" and h.doc()["steps"]["s"]["state"] == "running"
-    n = len(h.jobs)
-    h.send({"run_id": "r1", "step_id": "s", "status": "job-completed", "job_id": pid, "payload_id": pid,
-            "workflow_outputs": [{"name": "items", "value_s": ["a", "b"]}]})
-    h.pump()
-    d = h.doc()
-    assert len(h.jobs) == n and d["steps"]["s"]["state"] == "cancelled" and d["status"] == "failed"
-    assert ws.n_done(h.r, "r1") == 2

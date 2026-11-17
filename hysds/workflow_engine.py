@@ -28,8 +28,8 @@ cancel is always ``kill``. Every end of a run goes through :func:`_final_doc`, t
 failed/completed from the step states, so ``halting`` -> final and the settled-set finalize agree.
 
 
-Scatter (PLAN 6.5, B14): a scattered step is ONE node. When released it (optionally first runs the mission's
-``hysds:ScatterConnector`` job, whose ``items`` output is the list) reads the item list, records N and submits
+Scatter (PLAN 6.5, B14): a scattered step is ONE node. When released it reads the item list from its resolved
+input (an ordinary upstream job's list output, e.g. a mission lister step), records N and submits
 one child job per item (workflow tag ``child_index``/``child_total``). Each child's state, outputs and the
 barrier counters live in Redis (``wf:sc*`` keys, one Lua script per transition): a child settling touches no
 run doc, so a big scatter does not flood the snapshot queue; the doc gets counters at most
@@ -60,7 +60,6 @@ from hysds_commons.workflow_refs2 import evaluate_when, resolve_outputs, resolve
 from hysds_commons.workflow_run2 import (
     TERMINAL_STEP_STATES,
     end_attempt,
-    mark_scatter_connector,
     mark_scatter_fanout,
     mark_step_cancelled,
     mark_step_completed,
@@ -90,7 +89,6 @@ ERROR_SUBMIT = "submit"
 ERROR_OUTPUTS = "outputs"
 ERROR_HALTED = "halted"
 ERROR_SCATTER_THRESHOLD = "scatter_threshold"
-SCATTER_ITEMS_OUTPUT = "items"  # the output a hysds:ScatterConnector job writes: the list to fan out over
 DEFAULT_SCATTER_MAX_SNAPSHOTS = 20  # WORKFLOW_SCATTER_MAX_SNAPSHOTS: progress snapshots per scatter step
 DEFAULT_SCATTER_DOC_CHILDREN_MAX = 500  # WORKFLOW_SCATTER_DOC_CHILDREN_MAX: child job ids kept in the run doc
 SCATTER_CANCEL_CHECK = 50  # re-read the run status every this many child submits
@@ -360,8 +358,6 @@ class Engine:
         except WorkflowRefError as e:
             return self._fail_waiting(run_id, sid, str(e), ERROR_INPUT_RESOLUTION)
         if "scatter" in step:
-            if step["scatter"].get("connector"):  # the mission lists the items first (hysds:ScatterConnector)
-                return self._queue_and_submit(run_id, sid, params, connector=True)
             items = params.get(step["scatter"]["input"])
             if not isinstance(items, list):  # B20: a null (or non-list) scatter input is a run-time error
                 return self._fail_waiting(run_id, sid, "scatter input '%s' must be a list, got %s" % (
@@ -377,21 +373,15 @@ class Engine:
                                  {k: v for k, v in event.items() if k not in ("kind", "run_id")})
 
     # ------------------------------------------------------------------ submit
-    def _build_job(self, doc, spec, sid, params, child_index=None, child_total=None, connector=False):
-        """The job JSON of a step; of one scatter child (``child_index``/``child_total`` in its workflow tag);
-        or of the step's scatter connector job (``connector=True``: its own job type and queue)."""
+    def _build_job(self, doc, spec, sid, params, child_index=None, child_total=None):
+        """The job JSON of a step; or of one scatter child (``child_index``/``child_total`` in its workflow tag)."""
         step = spec["steps"][sid]
-        if connector:
-            jt = step["scatter"]["connector"]["job_type"]
-            definition = (doc.get("job_definitions") or {}).get(jt) or {}
-            queue = step["scatter"]["connector"].get("queue") or definition.get("queue")
-        else:
-            jt = step["job_type"]
-            definition = (doc.get("job_definitions") or {}).get(jt) or {}
-            queue = step_queue(spec, sid, definition.get("queue"))
+        jt = step["job_type"]
+        definition = (doc.get("job_definitions") or {}).get(jt) or {}
+        queue = step_queue(spec, sid, definition.get("queue"))
         workflow = {"run_id": doc["run_id"], "step_id": sid, "spec_id": doc["spec_id"],
                     "child_index": child_index, "child_total": child_total}
-        tl = None if connector else step.get("time_limit")
+        tl = step.get("time_limit")
         kwargs = dict(workflow=workflow, tags=[step.get("tag") or sid], priority=self.priority,
                       time_limit=tl if tl else None, enable_dedup=False)
         if self.build_job_fn is not None:
@@ -399,21 +389,16 @@ class Engine:
         from hysds_commons.workflow_job2 import resolve_frozen_job
         return resolve_frozen_job(definition, jt, queue, params, **kwargs)
 
-    def _queue_and_submit(self, run_id, sid, params, retry_of=None, connector=False):
+    def _queue_and_submit(self, run_id, sid, params, retry_of=None):
         """Record the attempt (compare-and-set), then send the job. ``retry_of`` is the number of attempts
-        the step had when the retry was decided (a concurrent duplicate loses the race). ``connector``: the
-        job is the step's scatter connector (the step's attempts are the connector's)."""
+        the step had when the retry was decided (a concurrent duplicate loses the race)."""
         doc, spec = self._load(run_id)
-        if connector:
-            conn = spec["steps"][sid]["scatter"]["connector"]
-            has_queue = conn.get("queue") or (doc.get("job_definitions") or {}).get(conn["job_type"], {}).get("queue")
-        else:
-            has_queue = spec["steps"][sid].get("queue") or (doc.get("job_definitions") or {}).get(
-                spec["steps"][sid].get("job_type"), {}).get("queue")
+        has_queue = spec["steps"][sid].get("queue") or (doc.get("job_definitions") or {}).get(
+            spec["steps"][sid].get("job_type"), {}).get("queue")
         if not has_queue:
             return self._fail_waiting(run_id, sid, "no queue for step %s" % sid, "no_queue", retry_of=retry_of)
         try:
-            job = self._build_job(doc, spec, sid, params, connector=connector)
+            job = self._build_job(doc, spec, sid, params)
         except Exception as e:  # FrozenJobError: a required param is missing / bad frozen definition
             return self._fail_waiting(run_id, sid, "cannot build job: %s" % e, ERROR_SUBMIT, retry_of=retry_of)
         if retry_of:
@@ -429,8 +414,6 @@ class Engine:
                     return None
             elif len(st["attempts"]) != retry_of or st["attempts"][-1]["status"] != "failed":
                 return None
-            if connector:
-                return mark_scatter_connector(d, sid, payload_id), payload_id
             return mark_step_queued(d, sid, payload_id), payload_id
 
         if self._update(run_id, fn) is None:
@@ -688,14 +671,8 @@ class Engine:
             return "ignored: %s event for %s matches no attempt (stale or foreign)" % (status, sid)
         if status == "job-queued":
             return "queued %s (task id recorded)" % sid
-        sc = st.get("scatter")
-        if sc and sc["phase"] == "children":  # an event of the (finished) connector job: a duplicate
-            return "ignored: %s of the connector of %s (already fanned out): %s" % (
-                status, sid, self._fanout(run_id, sid) if status == "job-completed" else "")
         if status == "job-started":
             return self._started(run_id, sid, idx, event)
-        if status == "job-completed" and sc and sc["phase"] == "connector":
-            return self._connector_done(run_id, sid, idx, event)
         if status == "job-completed":
             return self._completed(run_id, sid, idx, event)
         if status in FAILURE_STATUSES:
@@ -774,9 +751,8 @@ class Engine:
             params = resolve_step_inputs(spec["steps"][sid], settled, doc["inputs"])
         except WorkflowRefError as e:
             return self._fail_waiting(run_id, sid, str(e), ERROR_INPUT_RESOLUTION)
-        connector = (doc["steps"][sid].get("scatter") or {}).get("phase") == "connector"
         return "retry %s (attempt %d, after %s): %s" % (
-            sid, n_attempts + 1, ec, self._queue_and_submit(run_id, sid, params, retry_of=n_attempts, connector=connector))
+            sid, n_attempts + 1, ec, self._queue_and_submit(run_id, sid, params, retry_of=n_attempts))
 
     # ------------------------------------------------------------------ scatter (PLAN 6.5, B14)
     @staticmethod
@@ -784,57 +760,16 @@ class Engine:
         from hysds import workflow_snapshot
         return int(workflow_snapshot._conf(name, default))
 
-    def _connector_done(self, run_id, sid, idx, event):
-        """The scatter connector job finished: its ``items`` output is the list to fan out over."""
-        try:
-            items = outputs_to_dict(event.get("workflow_outputs")).get(SCATTER_ITEMS_OUTPUT)
-            problem = None if isinstance(items, list) else (
-                "scatter connector output '%s' must be a list, got %s" % (
-                    SCATTER_ITEMS_OUTPUT, "nothing" if items is None else type(items).__name__))
-        except WorkflowRefError as e:
-            problem = "invalid workflow outputs: %s" % e
-        if problem:  # not retried: the same job would write the same thing
-            return self._failed(run_id, self._spec_of(run_id), sid, idx,
-                                dict(event, status="job-failed", error_class=ERROR_OUTPUTS, short_error=problem),
-                                retryable=False)
-        if (ws.get_run(self.r, run_id) or {}).get("status") == "halting":
-            return self._connector_halted(run_id, sid, idx)
-        return self._begin_fanout(run_id, sid, items, connector_idx=idx)
-
-    def _connector_halted(self, run_id, sid, idx):
-        """The scatter connector job finished while the run is ``halting``: nothing fans out; the step is cancelled
-        and the run ends if that was the last unsettled step."""
-        spec = self._spec_of(run_id)
-
-        def fn(d):
-            st = d["steps"][sid]
-            if d["status"] != "halting" or st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "connector" \
-                    or idx != len(st["attempts"]) - 1:
-                return None
-            new = mark_step_cancelled(end_attempt(d, sid, "completed"), sid, "failure", by_step=d.get("failed_step"),
-                                      reason=d.get("error_class"))
-            if not unsettled_steps(new):
-                new = _final_doc(new, spec, ws.settled_map(self.r, run_id))
-            return new, None, lambda pipe: ws.record_done(pipe, run_id, sid)
-        res = self._update(run_id, fn)
-        return "scatter %s: connector done while halting, step cancelled" % sid if res else "connector event ignored"
-
-    def _begin_fanout(self, run_id, sid, items, connector_idx=None):
+    def _begin_fanout(self, run_id, sid, items):
         """Record N and zero the counters (one transaction with the run-doc change that puts the step into
         phase ``children``), then submit the children. An empty list settles the step at once."""
         def fn(d):
             st = d["steps"][sid]
             if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES:
                 return None
-            if connector_idx is None:
-                if st["state"] != "waiting":
-                    return None
-                new = d
-            else:
-                if st["scatter"]["phase"] != "connector" or connector_idx != len(st["attempts"]) - 1:
-                    return None
-                new = end_attempt(d, sid, "completed")
-            return (mark_scatter_fanout(new, sid, len(items)), None,
+            if st["state"] != "waiting":
+                return None
+            return (mark_scatter_fanout(d, sid, len(items)), None,
                     lambda pipe: ws.scatter_begin(pipe, run_id, sid, items))
         if self._update(run_id, fn) is None:
             return "scatter %s ignored: already fanned out or run over" % sid
