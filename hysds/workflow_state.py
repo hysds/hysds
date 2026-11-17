@@ -25,6 +25,9 @@ Redis key layout (``R`` = run id, ``D`` = step id; every per-run key is scoped b
                               {"error", "error_class"} (failed): gather reads these, never job_status
     wf:scm:<R>:<D>    hash    scatter counters n (children), completed, failed, retries; updated atomically
                               with the per-child state by one Lua script (the barrier, PLAN 6.5)
+    wf:evt:<P>:<S>    string  the exact job event JSON the job worker published for payload id P with status S
+                              (``log_utils.publish_workflow_event``; TTL ``WORKFLOW_EVENT_TTL``, default 7 days;
+                              not run-scoped): what the reaper replays when the engine missed a completion
     wf:ver:<R>        string  last run-doc version (the monotonic external version of the snapshots)
     wf:active         zset    registry of active runs: member run id, score = heartbeat (epoch seconds,
                               refreshed by every state change); removed when the run ends
@@ -120,6 +123,16 @@ def k_ver(run_id):
 
 def k_task(run_id):
     return "wf:task:%s" % run_id
+
+
+def k_event(payload_id, status):
+    return "wf:evt:%s:%s" % (payload_id, status)
+
+
+def get_stored_event(r, payload_id, status):
+    """The job event stored by ``log_utils.publish_workflow_event`` (dict), or None (never stored or expired)."""
+    raw = r.get(k_event(payload_id, status))
+    return json.loads(raw) if raw is not None else None
 
 
 def _ttl(name, default):

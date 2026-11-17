@@ -15,11 +15,12 @@ left alone)
 ``halting``, no active attempt        finish the halt: the engine's ``finish_halting`` cancels the unsettled steps
                                       and ends the run through ``_final_doc`` (``completed`` for a completed
                                       halt, ``failed`` for a failure)
-active attempt, job status terminal   replay a synthetic job event (engine dedup makes it safe) once the
-in Redis, event not processed         status has stood for ``WORKFLOW_REAPER_EVENT_GRACE_SECONDS``. A
-                                      ``job-completed`` whose step declares outputs cannot be replayed (Redis
-                                      holds the status string only, not the outputs): the attempt is failed
-                                      ``lost`` and re-run within retries
+active attempt, job status terminal   replay the job event (engine dedup makes it safe) once the status
+in Redis, event not processed         has stood for ``WORKFLOW_REAPER_EVENT_GRACE_SECONDS``. The exact event
+                                      is stored by the job worker under ``wf:evt:<job>:<status>`` (outputs
+                                      included) and replayed as it was; if it is gone (expired) a failure or
+                                      an output-less completion is replayed synthetically, and a completion
+                                      whose step declares outputs is failed ``lost`` and re-run within retries
 attempt ``queued``, no job status     after ``WORKFLOW_REAPER_QUEUED_SECONDS``: ``job-failed`` event, error_class
                                       ``lost`` (engine retries within the step's policy, else fails the step)
 attempt ``running``, no job status    after ``WORKFLOW_REAPER_VANISHED_SECONDS``: ``job-offline`` event
@@ -182,10 +183,13 @@ class Reaper:
         if status in TERMINAL_JOB_STATUSES:
             if self._age(run_id, "term", jid, now) < s["WORKFLOW_REAPER_EVENT_GRACE_SECONDS"]:
                 return None
-            if status == "job-completed" and spec["steps"][sid].get("out"):
+            stored = ws.get_stored_event(self.r, jid, status)
+            if stored is not None:
+                ev, kind = dict(stored, replayed=True), "missed terminal event (%s): stored event replayed" % status
+            elif status == "job-completed" and spec["steps"][sid].get("out"):
                 ev = dict(base, status="job-failed", error_class="lost",
-                          short_error="job completed but its outputs are not recoverable from Redis")
-                kind = "missed completion with outputs: failed as lost"
+                          short_error="job completed but its stored event (and so its outputs) is gone")
+                kind = "missed completion with outputs, stored event missing: failed as lost"
             else:
                 ev, kind = dict(base, status=status), "missed terminal event (%s): replayed" % status
         elif status is None:

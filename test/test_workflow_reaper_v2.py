@@ -271,3 +271,36 @@ def test_halting_from_a_completed_halt_finishes_completed():
 def _end_r(d):
     from hysds_commons.workflow_run2 import end_attempt
     return end_attempt(d, "r", "cancelled"), None
+
+
+def _outputs_spec():
+    return make_spec(dict(LINEAR, a=_step(ins={"v": _src("$.inputs.x")}, out=("o",))))
+
+
+def test_missed_completion_with_outputs_replays_the_stored_event():
+    import json
+    g = rig(_outputs_spec())
+    pid = settle_a(g)
+    ev = {"run_id": "r1", "step_id": "a", "job_id": pid, "payload_id": pid, "status": "job-completed",
+          "workflow_outputs": [{"name": "o", "value_s": "OUT"}], "error_class": None, "child_index": None}
+    g.h.r.set(ws.k_event(pid, "job-completed"), json.dumps(ev))
+    g.age(700)
+    g.sweep()
+    g.age(200)
+    acts = g.sweep()
+    assert any("stored event replayed" in a for _, a in acts)
+    d = g.h.doc()
+    assert d["steps"]["a"]["state"] == "completed" and d["steps"]["b"]["state"] in ("queued", "running")
+    assert ws.settled_map(g.h.r, "r1")["a"]["outputs"] == {"o": "OUT"}
+
+
+def test_missed_completion_with_outputs_and_no_stored_event_is_lost():
+    g = rig(_outputs_spec())
+    settle_a(g)
+    g.age(700)
+    g.sweep()
+    g.age(200)
+    acts = g.sweep()
+    assert any("stored event missing" in a for _, a in acts)
+    d = g.h.doc()
+    assert d["status"] == "failed" and d["error_class"] == "lost"

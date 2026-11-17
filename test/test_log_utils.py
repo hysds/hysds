@@ -506,3 +506,22 @@ def test_read_pge_error_class_validation(tmp_path, content, expected):
 def test_read_pge_error_class_missing_file(tmp_path):
     assert lu.read_pge_error_class(str(tmp_path)) is None
     assert lu.read_pge_error_class(None) is None
+
+
+def test_workflow_event_stored_in_redis_for_replay(monkeypatch):
+    """The exact event JSON is kept under wf:evt:<payload_id>:<status> with WORKFLOW_EVENT_TTL (the reaper replays it)."""
+    import json as _json
+
+    monkeypatch.setattr(lu.app.conf, "WORKFLOW_EVENT_TTL", 1234, raising=False)
+    job = _workflow_job(status="job-completed")
+    job["job"] = {"job_info": {"workflow_outputs": [{"name": "o", "value_s": "x"}]}}
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    payload = producer.publish.call_args.args[0]
+    sets = [c for c in lu.StrictRedis.return_value.set.call_args_list if str(c.args[0]).startswith("wf:evt:")]
+    assert len(sets) == 1
+    c = sets[0]
+    assert c.args[0] == "wf:evt:uuid-1:job-completed"
+    assert _json.loads(c.args[1]) == payload and payload["workflow_outputs"] == [{"name": "o", "value_s": "x"}]
+    assert c.kwargs["ex"] == 1234
+    from hysds import workflow_state as ws
+    assert ws.k_event("uuid-1", "job-completed") == c.args[0]
