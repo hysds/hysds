@@ -261,6 +261,7 @@ def test_retry_then_success_and_then_exhausted():
     d = h.doc()
     assert d["status"] == "running" and len(d["steps"]["a"]["attempts"]) == 2
     assert d["steps"]["a"]["attempts"][0]["status"] == "failed" and len(h.jobs) == 2
+    assert "retry_count" not in h.jobs[0][1] and h.jobs[1][1]["retry_count"] == 1
     h.finish("a", status="job-failed", error_class="worker", short_error="x")  # retries used up
     assert h.doc()["status"] == "failed" and len(h.jobs) == 2
 

@@ -235,6 +235,8 @@ class Engine:
             job = self._build_job(doc, spec, sid, params)
         except Exception as e:  # FrozenJobError: a required param is missing / bad frozen definition
             return self._fail_waiting(run_id, sid, "cannot build job: %s" % e, ERROR_SUBMIT, retry_of=retry_of)
+        if retry_of:
+            job["retry_count"] = retry_of  # as lw-mozart-retry does: the PGE reads it from _job.json
         payload_id = self.new_id()
 
         def fn(d):

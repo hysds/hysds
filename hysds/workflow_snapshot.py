@@ -32,7 +32,8 @@ def _conf(name, default):
     try:
         from hysds.celery import app
 
-        return app.conf.get(name, default)
+        value = app.conf.get(name, default)
+        return value if isinstance(value, type(default)) else default  # (a mocked celery app yields junk)
     except Exception:  # noqa: BLE001  (unit tests / no celeryconfig)
         return default
 
