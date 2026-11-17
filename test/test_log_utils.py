@@ -525,3 +525,13 @@ def test_workflow_event_stored_in_redis_for_replay(monkeypatch):
     assert c.kwargs["ex"] == 1234
     from hysds import workflow_state as ws
     assert ws.k_event("uuid-1", "job-completed") == c.args[0]
+
+
+def test_only_terminal_events_are_stored(monkeypatch):
+    for status in ("job-started", "job-queued"):
+        _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status=status))
+        assert not [c for c in lu.StrictRedis.return_value.set.call_args_list if str(c.args[0]).startswith("wf:evt:")]
+    monkeypatch.delattr(lu.app.conf, "WORKFLOW_EVENT_TTL", raising=False)
+    _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-failed"))
+    c = [c for c in lu.StrictRedis.return_value.set.call_args_list if str(c.args[0]).startswith("wf:evt:")][0]
+    assert c.kwargs["ex"] == 86400

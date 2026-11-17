@@ -302,12 +302,25 @@ class Engine:
         failure (the shell requeues once) or :class:`EventRejected` (dead letter)."""
         kind = event.get("kind")
         if kind is None:
-            return self._job_event(event)
+            note = self._job_event(event)
+            self._drop_stored_event(event)
+            return note
         handler = {"run_started": self._run_started, "cancel_requested": self._cancel,
                    "step_skipped": self._step_skipped}.get(kind)
         if handler is None:
             raise EventRejected("unknown event kind %r" % (kind,))
         return handler(event)
+
+    def _drop_stored_event(self, event):
+        """The engine has applied (or knowingly ignored) a terminal job event: its copy stored by the job worker
+        (``wf:evt:<payload>:<status>``, for the reaper) is no longer needed, so the keys only cover in-flight jobs.
+        Done right after the state change commits; a replayed duplicate is a state-guarded no-op as before."""
+        pid, status = event.get("payload_id") or event.get("job_id"), event.get("status")
+        if pid and status in ws.STORED_EVENT_STATUSES:
+            try:
+                self.r.delete(ws.k_event(pid, status))
+            except Exception:  # noqa: BLE001  (the TTL removes it)
+                log.warning("could not delete stored event %s:%s", pid, status)
 
     # ------------------------------------------------------------------ run_started
     def _run_started(self, event):

@@ -497,17 +497,19 @@ def publish_workflow_event(job_for_indexing):
         "retry_count": (job_for_indexing.get("job") or {}).get("retry_count") or 0,
         "timestamp": f"{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z",
     }
-    # keep the exact event (the workflow reaper replays it if the engine never processes it; the job status key
-    # holds the status string only, not the outputs): wf:evt:<payload_id>:<status>, see hysds.workflow_state
-    set_redis_job_status_pool()
-    StrictRedis(
-        connection_pool=JOB_STATUS_POOL,
-        ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"),
-    ).set(
-        "wf:evt:%s:%s" % (payload["payload_id"], payload["status"]),
-        json.dumps(payload),
-        ex=int(getattr(app.conf, "WORKFLOW_EVENT_TTL", 7 * 24 * 3600)),
-    )
+    # keep the exact terminal event (the workflow reaper replays it if the engine never processes it; the job
+    # status key holds the status string only, not the outputs): wf:evt:<payload_id>:<status>, see
+    # hysds.workflow_state. The engine deletes it once applied.
+    if payload["status"] in TERMINAL_JOB_STATUSES:
+        set_redis_job_status_pool()
+        StrictRedis(
+            connection_pool=JOB_STATUS_POOL,
+            ssl_ciphers=app.conf.get("broker_use_ssl", {}).get("ciphers"),
+        ).set(
+            "wf:evt:%s:%s" % (payload["payload_id"], payload["status"]),
+            json.dumps(payload),
+            ex=int(getattr(app.conf, "WORKFLOW_EVENT_TTL", 86400)),
+        )
     queue_name = app.conf.WORKFLOW_QUEUE
     exchange = Exchange(queue_name, type="direct")
     queue = Queue(queue_name, exchange, routing_key=queue_name)

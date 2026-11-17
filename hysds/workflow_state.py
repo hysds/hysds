@@ -25,9 +25,10 @@ Redis key layout (``R`` = run id, ``D`` = step id; every per-run key is scoped b
                               {"error", "error_class"} (failed): gather reads these, never job_status
     wf:scm:<R>:<D>    hash    scatter counters n (children), completed, failed, retries; updated atomically
                               with the per-child state by one Lua script (the barrier, PLAN 6.5)
-    wf:evt:<P>:<S>    string  the exact job event JSON the job worker published for payload id P with status S
-                              (``log_utils.publish_workflow_event``; TTL ``WORKFLOW_EVENT_TTL``, default 7 days;
-                              not run-scoped): what the reaper replays when the engine missed a completion
+    wf:evt:<P>:<S>    string  the exact job event JSON the job worker published for payload id P with TERMINAL
+                              status S (``log_utils.publish_workflow_event``; TTL ``WORKFLOW_EVENT_TTL``, default
+                              1 day; not run-scoped): what the reaper replays when the engine missed a completion.
+                              The engine DELs it once it has applied the event, so only in-flight jobs have one
     wf:ver:<R>        string  last run-doc version (the monotonic external version of the snapshots)
     wf:active         zset    registry of active runs: member run id, score = heartbeat (epoch seconds,
                               refreshed by every state change); removed when the run ends
@@ -123,6 +124,9 @@ def k_ver(run_id):
 
 def k_task(run_id):
     return "wf:task:%s" % run_id
+
+
+STORED_EVENT_STATUSES = frozenset({"job-completed", "job-failed", "job-offline", "job-revoked", "job-deduped"})
 
 
 def k_event(payload_id, status):

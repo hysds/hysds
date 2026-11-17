@@ -304,3 +304,24 @@ def test_missed_completion_with_outputs_and_no_stored_event_is_lost():
     assert any("stored event missing" in a for _, a in acts)
     d = g.h.doc()
     assert d["status"] == "failed" and d["error_class"] == "lost"
+
+
+def test_engine_deletes_the_stored_event_once_applied_and_a_replay_is_a_noop():
+    import json
+    g = rig(_outputs_spec())
+    pid, _ = g.h.job_of("a")
+    ev = {"run_id": "r1", "step_id": "a", "job_id": pid, "payload_id": pid, "status": "job-completed",
+          "workflow_outputs": [{"name": "o", "value_s": "OUT"}], "error_class": None, "child_index": None}
+    key = ws.k_event(pid, "job-completed")
+    g.h.r.set(key, json.dumps(ev))
+    g.h.send(ev)
+    g.h.pump()
+    assert g.h.r.get(key) is None and g.h.doc()["steps"]["a"]["state"] == "completed"
+    before = g.h.doc()
+    g.h.send(ev)  # duplicate / replay
+    g.h.pump()
+    assert g.h.doc()["steps"]["b"] == before["steps"]["b"] and g.h.doc()["steps"]["a"]["state"] == "completed"
+    # a non-terminal event never touches it
+    g.h.r.set(key, "x")
+    g.h.send(dict(ev, status="job-started"))
+    assert g.h.r.get(key) == b"x"
