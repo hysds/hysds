@@ -27,12 +27,24 @@ independent branches on. A halt always stops the run (``continue`` behaves like 
 cancel is always ``kill``. Every end of a run goes through :func:`_final_doc`, the one place that decides
 failed/completed from the step states, so ``halting`` -> final and the settled-set finalize agree.
 
-Extension points: ``FAILURE_HANDLERS``, the ``_release`` scatter branch (S5), the run-level reaper
-recovery (S8) reads ``wf:active``.
+
+Scatter (PLAN 6.5, B14): a scattered step is ONE node. When released it (optionally first runs the mission's
+``hysds:ScatterConnector`` job, whose ``items`` output is the list) reads the item list, records N and submits
+one child job per item (workflow tag ``child_index``/``child_total``). Each child's state, outputs and the
+barrier counters live in Redis (``wf:sc*`` keys, one Lua script per transition): a child settling touches no
+run doc, so a big scatter does not flood the snapshot queue; the doc gets counters at most
+``WORKFLOW_SCATTER_MAX_SNAPSHOTS`` (default 20) times plus the fan-out and the final settle. Retries are per
+child. Individual child failures never fail the run: when every child has settled only the threshold decides
+(completed fraction >= threshold: the step completes with index-aligned output arrays, ``null`` at failed
+indices; else it fails with ``scatter_threshold``). Gather is done here, from Redis, with no extra job.
+
+Run-level recovery is the reaper's (S8), which reads ``wf:active``.
 """
 
 import copy
+import json
 import logging
+import math
 import uuid
 
 from hysds import workflow_state as ws
@@ -41,6 +53,8 @@ from hysds_commons.workflow_refs2 import evaluate_when, resolve_outputs, resolve
 from hysds_commons.workflow_run2 import (
     TERMINAL_STEP_STATES,
     end_attempt,
+    mark_scatter_connector,
+    mark_scatter_fanout,
     mark_step_cancelled,
     mark_step_completed,
     mark_step_failed,
@@ -52,6 +66,7 @@ from hysds_commons.workflow_run2 import (
     set_run_status,
     short_error,
     unsettled_steps,
+    update_scatter,
 )
 from hysds_commons.workflow_spec import is_retryable
 from hysds_commons.workflow_spec2 import dependents_index, retry_policy2, step_queue
@@ -67,6 +82,11 @@ ERROR_NOT_IMPLEMENTED = "not_implemented"
 ERROR_SUBMIT = "submit"
 ERROR_OUTPUTS = "outputs"
 ERROR_HALTED = "halted"
+ERROR_SCATTER_THRESHOLD = "scatter_threshold"
+SCATTER_ITEMS_OUTPUT = "items"  # the output a hysds:ScatterConnector job writes: the list to fan out over
+DEFAULT_SCATTER_MAX_SNAPSHOTS = 20  # WORKFLOW_SCATTER_MAX_SNAPSHOTS: progress snapshots per scatter step
+DEFAULT_SCATTER_DOC_CHILDREN_MAX = 500  # WORKFLOW_SCATTER_DOC_CHILDREN_MAX: child job ids kept in the run doc
+SCATTER_CANCEL_CHECK = 50  # re-read the run status every this many child submits
 ACTIVE_ATTEMPT = ("queued", "running")
 LIVE_RUN_STATUSES = ("running", "halting")  # the run still takes job events
 
@@ -290,7 +310,10 @@ class Engine:
     def _release(self, run_id, sid):
         """D's deps are all settled: evaluate ``when``, then skip it, fail it or submit it."""
         doc, spec = self._load(run_id)
-        if doc["status"] != "running" or doc["steps"][sid]["state"] != "waiting":
+        st = doc["steps"][sid]
+        if doc["status"] == "running" and st["state"] == "running" and (st.get("scatter") or {}).get("phase") == "children":
+            return self._fanout(run_id, sid)  # a replayed release finishes a fan-out a crash interrupted
+        if doc["status"] != "running" or st["state"] != "waiting":
             return "release %s ignored" % sid
         step = spec["steps"][sid]
         settled = ws.settled_map(self.r, run_id)
@@ -305,12 +328,18 @@ class Engine:
                 return "release %s: when false, skip event published" % sid
         if "halt" in step:
             return self._fire_halt(run_id, sid, settled)
-        if "scatter" in step:  # S5 extension point
-            return self._fail_waiting(run_id, sid, "scatter not implemented yet", ERROR_NOT_IMPLEMENTED)
         try:
             params = resolve_step_inputs(step, settled, doc["inputs"])
         except WorkflowRefError as e:
             return self._fail_waiting(run_id, sid, str(e), ERROR_INPUT_RESOLUTION)
+        if "scatter" in step:
+            if step["scatter"].get("connector"):  # the mission lists the items first (hysds:ScatterConnector)
+                return self._queue_and_submit(run_id, sid, params, connector=True)
+            items = params.get(step["scatter"]["input"])
+            if not isinstance(items, list):  # B20: a null (or non-list) scatter input is a run-time error
+                return self._fail_waiting(run_id, sid, "scatter input '%s' must be a list, got %s" % (
+                    step["scatter"]["input"], "null" if items is None else type(items).__name__), ERROR_INPUT_RESOLUTION)
+            return self._begin_fanout(run_id, sid, items)
         return self._queue_and_submit(run_id, sid, params)
 
     def _publish(self, event):
@@ -321,14 +350,21 @@ class Engine:
                                  {k: v for k, v in event.items() if k not in ("kind", "run_id")})
 
     # ------------------------------------------------------------------ submit
-    def _build_job(self, doc, spec, sid, params):
+    def _build_job(self, doc, spec, sid, params, child_index=None, child_total=None, connector=False):
+        """The job JSON of a step; of one scatter child (``child_index``/``child_total`` in its workflow tag);
+        or of the step's scatter connector job (``connector=True``: its own job type and queue)."""
         step = spec["steps"][sid]
-        jt = step["job_type"]
-        definition = (doc.get("job_definitions") or {}).get(jt) or {}
-        queue = step_queue(spec, sid, definition.get("queue"))
+        if connector:
+            jt = step["scatter"]["connector"]["job_type"]
+            definition = (doc.get("job_definitions") or {}).get(jt) or {}
+            queue = step["scatter"]["connector"].get("queue") or definition.get("queue")
+        else:
+            jt = step["job_type"]
+            definition = (doc.get("job_definitions") or {}).get(jt) or {}
+            queue = step_queue(spec, sid, definition.get("queue"))
         workflow = {"run_id": doc["run_id"], "step_id": sid, "spec_id": doc["spec_id"],
-                    "child_index": None, "child_total": None}
-        tl = step.get("time_limit")
+                    "child_index": child_index, "child_total": child_total}
+        tl = None if connector else step.get("time_limit")
         kwargs = dict(workflow=workflow, tags=[step.get("tag") or sid], priority=self.priority,
                       time_limit=tl if tl else None, enable_dedup=False)
         if self.build_job_fn is not None:
@@ -336,15 +372,21 @@ class Engine:
         from hysds_commons.workflow_job2 import resolve_frozen_job
         return resolve_frozen_job(definition, jt, queue, params, **kwargs)
 
-    def _queue_and_submit(self, run_id, sid, params, retry_of=None):
+    def _queue_and_submit(self, run_id, sid, params, retry_of=None, connector=False):
         """Record the attempt (compare-and-set), then send the job. ``retry_of`` is the number of attempts
-        the step had when the retry was decided (a concurrent duplicate loses the race)."""
+        the step had when the retry was decided (a concurrent duplicate loses the race). ``connector``: the
+        job is the step's scatter connector (the step's attempts are the connector's)."""
         doc, spec = self._load(run_id)
-        if not spec["steps"][sid].get("queue") and not (doc.get("job_definitions") or {}).get(
-                spec["steps"][sid].get("job_type"), {}).get("queue"):
+        if connector:
+            conn = spec["steps"][sid]["scatter"]["connector"]
+            has_queue = conn.get("queue") or (doc.get("job_definitions") or {}).get(conn["job_type"], {}).get("queue")
+        else:
+            has_queue = spec["steps"][sid].get("queue") or (doc.get("job_definitions") or {}).get(
+                spec["steps"][sid].get("job_type"), {}).get("queue")
+        if not has_queue:
             return self._fail_waiting(run_id, sid, "no queue for step %s" % sid, "no_queue", retry_of=retry_of)
         try:
-            job = self._build_job(doc, spec, sid, params)
+            job = self._build_job(doc, spec, sid, params, connector=connector)
         except Exception as e:  # FrozenJobError: a required param is missing / bad frozen definition
             return self._fail_waiting(run_id, sid, "cannot build job: %s" % e, ERROR_SUBMIT, retry_of=retry_of)
         if retry_of:
@@ -360,6 +402,8 @@ class Engine:
                     return None
             elif len(st["attempts"]) != retry_of or st["attempts"][-1]["status"] != "failed":
                 return None
+            if connector:
+                return mark_scatter_connector(d, sid, payload_id), payload_id
             return mark_step_queued(d, sid, payload_id), payload_id
 
         if self._update(run_id, fn) is None:
@@ -447,10 +491,24 @@ class Engine:
     def _spec_of(self, run_id):
         return ws.get_spec(self.r, run_id)
 
+    def _live_scatter_children(self, run_id):
+        """Job ids of the queued/running children of every scatter step the run doc now says is cancelled or failed
+        (children are tracked in Redis, so the doc-pure cancel helpers cannot list them)."""
+        doc, spec = ws.get_run(self.r, run_id), ws.get_spec(self.r, run_id)
+        ids = []
+        for sid, step in ((spec or {}).get("steps") or {}).items():
+            if "scatter" in step and doc and doc["steps"][sid]["state"] in ("cancelled", "failed"):
+                ids += [c["job"] for _, c in sorted(ws.scatter_children(self.r, run_id, sid).items())
+                        if c["state"] in ws.CHILD_ACTIVE_STATES]
+        return ids
+
     def _revoke(self, run_id, payload_ids, username):
-        if not payload_ids or self.revoke_fn is None:
+        if self.revoke_fn is None:
             return
         try:
+            payload_ids = list(payload_ids or []) + self._live_scatter_children(run_id)
+            if not payload_ids:
+                return
             self.revoke_fn(run_id, list(payload_ids), username)
         except Exception:  # noqa: BLE001  (state is committed; the reaper sweeps leftovers)
             log.exception("run %s: could not revoke %s", run_id, payload_ids)
@@ -528,8 +586,8 @@ class Engine:
         if sid not in spec["steps"]:
             raise EventRejected("unknown step_id %r for run %s" % (sid, run_id))
         self._note_task(run_id, event)
-        if event.get("child_index") is not None:  # S5 extension point (scatter children)
-            return "ignored: scatter child event for %s (scatter not implemented yet)" % sid
+        if event.get("child_index") is not None:
+            return self._child_event(run_id, spec, doc, sid, event)
         st = doc["steps"][sid]
         ids = {i for i in (event.get("payload_id"), event.get("job_id")) if i}
         idx = next((i for i, a in enumerate(st["attempts"]) if a["job_id"] in ids), None)
@@ -550,8 +608,14 @@ class Engine:
             return "ignored: %s event for %s matches no attempt (stale or foreign)" % (status, sid)
         if status == "job-queued":
             return "queued %s (task id recorded)" % sid
+        sc = st.get("scatter")
+        if sc and sc["phase"] == "children":  # an event of the (finished) connector job: a duplicate
+            return "ignored: %s of the connector of %s (already fanned out): %s" % (
+                status, sid, self._fanout(run_id, sid) if status == "job-completed" else "")
         if status == "job-started":
             return self._started(run_id, sid, idx, event)
+        if status == "job-completed" and sc and sc["phase"] == "connector":
+            return self._connector_done(run_id, sid, idx, event)
         if status == "job-completed":
             return self._completed(run_id, sid, idx, event)
         if status in FAILURE_STATUSES:
@@ -630,5 +694,244 @@ class Engine:
             params = resolve_step_inputs(spec["steps"][sid], settled, doc["inputs"])
         except WorkflowRefError as e:
             return self._fail_waiting(run_id, sid, str(e), ERROR_INPUT_RESOLUTION)
-        return "retry %s (attempt %d, after %s): %s" % (sid, n_attempts + 1, ec,
-                                                         self._queue_and_submit(run_id, sid, params, retry_of=n_attempts))
+        connector = (doc["steps"][sid].get("scatter") or {}).get("phase") == "connector"
+        return "retry %s (attempt %d, after %s): %s" % (
+            sid, n_attempts + 1, ec, self._queue_and_submit(run_id, sid, params, retry_of=n_attempts, connector=connector))
+
+    # ------------------------------------------------------------------ scatter (PLAN 6.5, B14)
+    @staticmethod
+    def _scatter_conf(name, default):
+        from hysds import workflow_snapshot
+        return int(workflow_snapshot._conf(name, default))
+
+    def _connector_done(self, run_id, sid, idx, event):
+        """The scatter connector job finished: its ``items`` output is the list to fan out over."""
+        try:
+            items = outputs_to_dict(event.get("workflow_outputs")).get(SCATTER_ITEMS_OUTPUT)
+            problem = None if isinstance(items, list) else (
+                "scatter connector output '%s' must be a list, got %s" % (
+                    SCATTER_ITEMS_OUTPUT, "nothing" if items is None else type(items).__name__))
+        except WorkflowRefError as e:
+            problem = "invalid workflow outputs: %s" % e
+        if problem:  # not retried: the same job would write the same thing
+            return self._failed(run_id, self._spec_of(run_id), sid, idx,
+                                dict(event, status="job-failed", error_class=ERROR_OUTPUTS, short_error=problem),
+                                retryable=False)
+        return self._begin_fanout(run_id, sid, items, connector_idx=idx)
+
+    def _begin_fanout(self, run_id, sid, items, connector_idx=None):
+        """Record N and zero the counters (one transaction with the run-doc change that puts the step into
+        phase ``children``), then submit the children. An empty list settles the step at once."""
+        def fn(d):
+            st = d["steps"][sid]
+            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES:
+                return None
+            if connector_idx is None:
+                if st["state"] != "waiting":
+                    return None
+                new = d
+            else:
+                if st["scatter"]["phase"] != "connector" or connector_idx != len(st["attempts"]) - 1:
+                    return None
+                new = end_attempt(d, sid, "completed")
+            return (mark_scatter_fanout(new, sid, len(items)), None,
+                    lambda pipe: ws.scatter_begin(pipe, run_id, sid, items))
+        if self._update(run_id, fn) is None:
+            return "scatter %s ignored: already fanned out or run over" % sid
+        if not items:
+            return "scatter %s: empty list; %s" % (sid, self._scatter_finish(run_id, sid))
+        return self._fanout(run_id, sid)
+
+    def _fanout(self, run_id, sid):
+        """Submit every child that has no job yet (idempotent: a replay resumes where a crash stopped)."""
+        doc, spec = self._load(run_id)
+        step = spec["steps"][sid]
+        items = ws.scatter_items(self.r, run_id, sid)
+        if items is None:
+            raise EventRejected("scatter %s of run %s has no recorded items" % (sid, run_id))
+        n = len(items)
+        try:
+            base = resolve_step_inputs(step, ws.settled_map(self.r, run_id), doc["inputs"])
+        except WorkflowRefError as e:
+            return self._fail_waiting(run_id, sid, str(e), ERROR_INPUT_RESOLUTION)
+        submitted = 0
+        for i in range(n):
+            if i and i % SCATTER_CANCEL_CHECK == 0:
+                cur = ws.get_run(self.r, run_id)
+                if cur is None or cur["status"] != "running" or cur["steps"][sid]["state"] in TERMINAL_STEP_STATES:
+                    return "scatter %s: run ended after %d children; fan-out stopped" % (sid, submitted)
+            pid = self.new_id()
+            if not ws.scatter_op(self.r, run_id, sid, "claim", i, pid)[0]:
+                continue  # already submitted (a replay)
+            params = dict(base, **{step["scatter"]["input"]: items[i]})
+            try:
+                job = self._build_job(doc, spec, sid, params, child_index=i, child_total=n)
+            except Exception as e:  # FrozenJobError etc.: the step itself is misconfigured, not one child
+                ws.scatter_op(self.r, run_id, sid, "unclaim", i, pid)
+                return self._fail_waiting(run_id, sid, "cannot build job: %s" % e, ERROR_SUBMIT)
+            try:
+                self.submit_fn(job, pid)
+            except Exception:
+                ws.scatter_op(self.r, run_id, sid, "unclaim", i, pid)
+                raise
+            submitted += 1
+        self._scatter_sync(run_id, sid, with_children=True)
+        return "scatter %s: %d children submitted" % (sid, submitted)
+
+    def _scatter_sync(self, run_id, sid, with_children=False):
+        """Write the Redis counters (and the child job ids, for scatters small enough) into the run doc.
+        Counters never go backwards (concurrent consumers may write out of order)."""
+        c = ws.scatter_counts(self.r, run_id, sid)
+        cap = self._scatter_conf("WORKFLOW_SCATTER_DOC_CHILDREN_MAX", DEFAULT_SCATTER_DOC_CHILDREN_MAX)
+        children = None
+        if with_children and 0 < c["n"] <= cap:
+            recs = ws.scatter_children(self.r, run_id, sid)
+            children = [(recs[i]["job"] if i in recs else None) for i in range(c["n"])]
+
+        def fn(d):
+            st = d["steps"][sid]
+            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES:
+                return None
+            sc = st["scatter"]
+            if children is None and c["completed"] <= sc["n_completed"] and c["failed"] <= sc["n_failed"]:
+                return None
+            return update_scatter(d, sid, n_completed=max(c["completed"], sc["n_completed"]),
+                                  n_failed=max(c["failed"], sc["n_failed"]), children=children), None
+        self._update(run_id, fn)
+
+    def _child_event(self, run_id, spec, doc, sid, event):
+        status = event.get("status")
+        st = doc["steps"][sid]
+        if "scatter" not in spec["steps"][sid]:
+            raise EventRejected("child event for step %s, which is not a scatter step" % sid)
+        try:
+            idx = int(event["child_index"])
+        except (TypeError, ValueError):
+            raise EventRejected("bad child_index %r" % (event.get("child_index"),))
+        if status == "job-completed" and st["state"] == "completed":  # duplicate: heal a crash after settle
+            return "duplicate child completion of %s: %s" % (sid, self._after_settle(run_id, sid, replay=True))
+        if doc["status"] != "running":
+            return "ignored: run %s is %s" % (run_id, doc["status"])
+        if st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "children":
+            return "ignored: child event for %s, which is %s" % (sid, st["state"])
+        rec = ws.scatter_child(self.r, run_id, sid, idx)
+        ids = {i for i in (event.get("payload_id"), event.get("job_id")) if i}
+        if rec is None or rec["job"] not in ids:
+            return "ignored: %s event for %s[%d] matches no attempt (stale or foreign)" % (status, sid, idx)
+        if status == "job-started":
+            ws.scatter_op(self.r, run_id, sid, "started", idx, rec["job"])
+            return "started %s[%d]" % (sid, idx)
+        if status == "job-completed":
+            try:
+                outputs = outputs_to_dict(event.get("workflow_outputs"))
+            except WorkflowRefError as e:
+                return self._child_failed(run_id, spec, sid, idx, rec, dict(
+                    event, status="job-failed", error_class=ERROR_OUTPUTS,
+                    short_error="invalid workflow outputs: %s" % e), retryable=False)
+            return self._child_settle(run_id, sid, idx, rec, "completed", {"ok": True, "outputs": outputs})
+        if status in FAILURE_STATUSES:
+            return self._child_failed(run_id, spec, sid, idx, rec, event)
+        return "ignored: status %r" % (status,)
+
+    def _child_settle(self, run_id, sid, idx, rec, state, result):
+        ok, c, f, n = ws.scatter_op(self.r, run_id, sid, "settle", idx, rec["job"], state, json.dumps(result))
+        return "%s %s[%d] (%d ok, %d failed of %d): %s" % (
+            state, sid, idx, c, f, n, self._scatter_after(run_id, sid, c, f, n, changed=ok))
+
+    def _child_failed(self, run_id, spec, sid, idx, rec, event, retryable=True):
+        ec = event.get("error_class") or DEFAULT_ERROR_CLASS.get(event.get("status"), "worker")
+        error = short_error(event.get("short_error") or event.get("status"))
+        if rec["state"] in ("completed", "failed"):
+            return "ignored: failure of %s[%d], already %s" % (sid, idx, rec["state"])
+        if retryable and is_retryable(retry_policy2(spec, sid), ec, rec["attempt"] - 1):
+            if not ws.scatter_op(self.r, run_id, sid, "retry_mark", idx, rec["job"])[0]:
+                return "failure of %s[%d] ignored" % (sid, idx)
+            return "retry %s[%d] (attempt %d, after %s): %s" % (
+                sid, idx, rec["attempt"] + 1, ec, self._retry_child(run_id, sid, idx, rec["job"], rec["attempt"]))
+        return self._child_settle(run_id, sid, idx, rec, "failed", {"ok": False, "error": error, "error_class": ec})
+
+    def _retry_child(self, run_id, sid, idx, old_job, attempt):
+        doc, spec = self._load(run_id)
+        step = spec["steps"][sid]
+        items = ws.scatter_items(self.r, run_id, sid)
+        try:
+            params = dict(resolve_step_inputs(step, ws.settled_map(self.r, run_id), doc["inputs"]),
+                          **{step["scatter"]["input"]: items[idx]})
+            job = self._build_job(doc, spec, sid, params, child_index=idx, child_total=len(items))
+            job["retry_count"] = attempt  # as for a linear retry: the PGE reads it from _job.json
+        except Exception as e:  # cannot be re-submitted: this child fails for good
+            return self._child_settle(run_id, sid, idx, {"job": old_job}, "failed", {
+                "ok": False, "error": short_error("cannot build retry job: %s" % e), "error_class": ERROR_SUBMIT})
+        new_job = self.new_id()
+        if not ws.scatter_op(self.r, run_id, sid, "requeue", idx, old_job, new_job)[0]:
+            return "already requeued"
+        try:
+            self.submit_fn(job, new_job)
+        except Exception:
+            ws.scatter_op(self.r, run_id, sid, "revert", idx, new_job, old_job)
+            raise
+        return "submitted as %s" % new_job
+
+    def _scatter_after(self, run_id, sid, c, f, n, changed):
+        """After a child settled (or a duplicate event): finish when every child has settled, else write a
+        throttled progress snapshot."""
+        if c + f >= n:
+            return self._scatter_finish(run_id, sid)
+        if changed:
+            stride = max(1, math.ceil(n / max(1, self._scatter_conf("WORKFLOW_SCATTER_MAX_SNAPSHOTS",
+                                                                     DEFAULT_SCATTER_MAX_SNAPSHOTS))))
+            if (c + f) % stride == 0:
+                self._scatter_sync(run_id, sid)
+                return "progress snapshot"
+        return "no snapshot (throttled)"
+
+    def _scatter_finish(self, run_id, sid):
+        """Every child settled. completed/N >= threshold: the step completes with one index-aligned array per
+        output (``null`` where the child failed, B14); else it fails ``scatter_threshold``. Idempotent."""
+        spec = self._spec_of(run_id)
+        step = spec["steps"][sid]
+        cnt = ws.scatter_counts(self.r, run_id, sid)
+        n, c, f = cnt["n"], cnt["completed"], cnt["failed"]
+        if c + f < n:
+            return "scatter %s not finished (%d of %d settled)" % (sid, c + f, n)
+        results = ws.scatter_results(self.r, run_id, sid)
+        threshold = step["scatter"].get("threshold", 1.0)
+        passed = n == 0 or c / n >= threshold - 1e-9
+        cap = self._scatter_conf("WORKFLOW_SCATTER_DOC_CHILDREN_MAX", DEFAULT_SCATTER_DOC_CHILDREN_MAX)
+        recs = ws.scatter_children(self.r, run_id, sid) if 0 < n <= cap else {}
+        children = [(recs[i]["job"] if i in recs else None) for i in range(n)] if recs else None
+        outputs = {name: [((results.get(i) or {}).get("outputs") or {}).get(name) if (results.get(i) or {}).get("ok")
+                          else None for i in range(n)] for name in step.get("out") or []}
+        first_error = next(((i, r) for i, r in sorted(results.items()) if not r.get("ok")), None)
+        error = None
+        if not passed:
+            error = "scatter %s: %d of %d children completed (%.4g%%), below the threshold of %.4g%%" % (
+                sid, c, n, 100.0 * c / n, 100.0 * threshold)
+            if first_error:
+                error += "; first failure: child %d (%s): %s" % (
+                    first_error[0], first_error[1].get("error_class"), first_error[1].get("error"))
+        box = {}
+
+        def fn(d):
+            st = d["steps"][sid]
+            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "children":
+                return None
+            new = update_scatter(d, sid, n_completed=c, n_failed=f, children=children)
+            if passed:
+                return (mark_step_completed(new, sid), None,
+                        lambda pipe: ws.record_settle(pipe, run_id, sid, "completed", outputs))
+            new, revoke, cancelled = apply_failure(new, sid, error, ERROR_SCATTER_THRESHOLD)
+
+            def extra(pipe):
+                ws.record_done(pipe, run_id, sid)
+                for x in cancelled:
+                    ws.record_done(pipe, run_id, x)
+            box["failed"] = True
+            return new, revoke, extra
+        res = self._update(run_id, fn)
+        if res is None:
+            return "scatter %s finish ignored" % sid
+        if box.get("failed"):
+            self._revoke(run_id, res[1], None)
+            return "step %s failed (%s): %s" % (sid, ERROR_SCATTER_THRESHOLD, error)
+        return "scatter %s completed (%d ok, %d failed of %d): %s" % (sid, c, f, n, self._after_settle(run_id, sid))

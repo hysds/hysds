@@ -375,13 +375,13 @@ def test_cancel_kills_and_marks_cancelled_idempotently():
     assert h.doc()["status"] == "cancelled"
 
 
-def test_scatter_step_fails_clearly():
+def test_scatter_with_a_non_list_input_fails_as_input_resolution():
     steps = {"a": _step(ins={"v": _src("$.inputs.x")}, scatter={"input": "v"})}
     h = Harness(make_spec(steps))
     h.start()
     d = h.doc()
-    assert d["status"] == "failed" and d["error_class"] == "not_implemented"
-    assert "scatter not implemented yet" in d["steps"]["a"]["error"]
+    assert d["status"] == "failed" and d["error_class"] == "input_resolution"
+    assert "must be a list" in d["steps"]["a"]["error"]
 
 
 def test_halt_failed_fires_and_fails_run():

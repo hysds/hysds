@@ -18,6 +18,13 @@ Redis key layout (``R`` = run id, ``D`` = step id; every per-run key is scoped b
                               SCARD == number of steps
     wf:task:<R>       hash    payload id (the attempt's job_id) -> celery run_job task id, recorded from the
                               job-queued/job-started events; what a direct revoke needs (S6)
+    wf:sci:<R>:<D>    string  scattered step D: JSON list of the items being fanned out (children re-read it on retry)
+    wf:sc:<R>:<D>     hash    scattered step D, one field per child index -> "<attempt>, <state>, <job id>" joined by TAB
+                              (state: queued|running|retry_wait|completed|failed); the per-child state
+    wf:sco:<R>:<D>    hash    child index -> JSON of the child's recorded outputs (completed) or of
+                              {"error", "error_class"} (failed): gather reads these, never job_status
+    wf:scm:<R>:<D>    hash    scatter counters n (children), completed, failed, retries; updated atomically
+                              with the per-child state by one Lua script (the barrier, PLAN 6.5)
     wf:ver:<R>        string  last run-doc version (the monotonic external version of the snapshots)
     wf:active         zset    registry of active runs: member run id, score = heartbeat (epoch seconds,
                               refreshed by every state change); removed when the run ends
@@ -91,6 +98,22 @@ def k_done(run_id):
     return "wf:done:%s" % run_id
 
 
+def k_sc_items(run_id, step_id):
+    return "wf:sci:%s:%s" % (run_id, step_id)
+
+
+def k_sc(run_id, step_id):
+    return "wf:sc:%s:%s" % (run_id, step_id)
+
+
+def k_sc_out(run_id, step_id):
+    return "wf:sco:%s:%s" % (run_id, step_id)
+
+
+def k_sc_meta(run_id, step_id):
+    return "wf:scm:%s:%s" % (run_id, step_id)
+
+
 def k_ver(run_id):
     return "wf:ver:%s" % run_id
 
@@ -112,6 +135,9 @@ def run_keys(run_id, spec):
     keys = [k_run(run_id), k_spec(run_id), k_out(run_id), k_done(run_id), k_ver(run_id), k_task(run_id)]
     for sid in (spec or {}).get("steps") or {}:
         keys += [k_join(run_id, sid), k_rel(run_id, sid)]
+    for sid, step in ((spec or {}).get("steps") or {}).items():
+        if "scatter" in step:
+            keys += [k_sc_items(run_id, sid), k_sc(run_id, sid), k_sc_out(run_id, sid), k_sc_meta(run_id, sid)]
     return keys
 
 
@@ -307,6 +333,119 @@ def claim_release(r, run_id, step_id):
 
 def drop_release_claim(r, run_id, step_id):
     r.delete(k_rel(run_id, step_id))
+
+
+# --------------------------------------------------------------------------- scatter (PLAN 6.5, B14)
+
+SCATTER_LUA = """
+-- KEYS: per-child state hash (sc), child results hash (sco), counters hash (scm).
+-- ARGV: op, idx, then per op. A child record is attempt, state, job id joined by TAB.
+-- Returns {ok, completed, failed, n}; ok = 1 when the op changed something (0: stale, duplicate or unknown).
+local sc, sco, scm = KEYS[1], KEYS[2], KEYS[3]
+local op, idx = ARGV[1], ARGV[2]
+local function parse(rec)
+  if not rec then return nil end
+  local a, st, job = string.match(rec, "^(%d+)\t([%a_]+)\t(.*)$")
+  return {tonumber(a), st, job}
+end
+local function put(a, st, job) redis.call('HSET', sc, idx, a .. "\t" .. st .. "\t" .. job) end
+local function counts(ok)
+  local m = redis.call('HMGET', scm, 'completed', 'failed', 'n')
+  return {ok, tonumber(m[1]) or 0, tonumber(m[2]) or 0, tonumber(m[3]) or 0}
+end
+local rec = parse(redis.call('HGET', sc, idx))
+local ok = 0
+if op == 'claim' then          -- ARGV: job, ttl
+  if not rec then
+    put(1, 'queued', ARGV[3]); redis.call('EXPIRE', sc, tonumber(ARGV[4])); ok = 1
+  end
+elseif op == 'unclaim' then    -- ARGV: job   (the first submit failed)
+  if rec and rec[1] == 1 and rec[2] == 'queued' and rec[3] == ARGV[3] then redis.call('HDEL', sc, idx); ok = 1 end
+elseif op == 'started' then    -- ARGV: job
+  if rec and rec[3] == ARGV[3] and rec[2] == 'queued' then put(rec[1], 'running', rec[3]); ok = 1 end
+elseif op == 'settle' then     -- ARGV: job, final state (completed|failed), result json, ttl
+  if rec and rec[3] == ARGV[3] and (rec[2] == 'queued' or rec[2] == 'running' or rec[2] == 'retry_wait') then
+    put(rec[1], ARGV[4], rec[3])
+    redis.call('HSET', sco, idx, ARGV[5]); redis.call('EXPIRE', sco, tonumber(ARGV[6]))
+    redis.call('HINCRBY', scm, ARGV[4], 1)
+    ok = 1
+  end
+elseif op == 'retry_mark' then -- ARGV: job   (an attempt failed and will be retried; replays are fine)
+  if rec and rec[3] == ARGV[3] then
+    if rec[2] == 'queued' or rec[2] == 'running' then put(rec[1], 'retry_wait', rec[3]); ok = 1
+    elseif rec[2] == 'retry_wait' then ok = 1 end
+  end
+elseif op == 'requeue' then    -- ARGV: old job, new job
+  if rec and rec[3] == ARGV[3] and rec[2] == 'retry_wait' then
+    put(rec[1] + 1, 'queued', ARGV[4]); redis.call('HINCRBY', scm, 'retries', 1); ok = 1
+  end
+elseif op == 'revert' then     -- ARGV: new job, old job   (the retry could not be submitted)
+  if rec and rec[3] == ARGV[3] and rec[2] == 'queued' and rec[1] > 1 then
+    put(rec[1] - 1, 'retry_wait', ARGV[4]); redis.call('HINCRBY', scm, 'retries', -1); ok = 1
+  end
+end
+return counts(ok)
+"""
+
+CHILD_ACTIVE_STATES = ("queued", "running", "retry_wait")
+
+
+def parse_child(raw):
+    """``"<attempt>\\t<state>\\t<job id>"`` -> ``{"attempt", "state", "job"}`` (None for no record)."""
+    if raw is None:
+        return None
+    raw = raw.decode() if isinstance(raw, bytes) else raw
+    a, st, job = raw.split("\t", 2)
+    return {"attempt": int(a), "state": st, "job": job}
+
+
+def scatter_begin(pipe, run_id, step_id, items):
+    """Queue (in the ``update_run`` transaction that moves the step into its fan-out) the item list and the
+    zeroed counters. Replaces any earlier state of the step (a step fans out once)."""
+    ttl = _ttl("WORKFLOW_RUN_MAX_TTL", DEFAULT_RUN_MAX_TTL)
+    for k in (k_sc(run_id, step_id), k_sc_out(run_id, step_id), k_sc_meta(run_id, step_id)):
+        pipe.delete(k)
+    pipe.set(k_sc_items(run_id, step_id), json.dumps(items), ex=ttl)
+    pipe.hset(k_sc_meta(run_id, step_id), mapping={"n": len(items), "completed": 0, "failed": 0, "retries": 0})
+    pipe.expire(k_sc_meta(run_id, step_id), ttl)
+
+
+def scatter_items(r, run_id, step_id):
+    raw = r.get(k_sc_items(run_id, step_id))
+    return json.loads(raw) if raw is not None else None
+
+
+def scatter_op(r, run_id, step_id, op, idx, *args):
+    """Run one atomic per-child transition (see ``SCATTER_LUA``). Returns ``(ok, n_completed, n_failed, n)``."""
+    ttl = _ttl("WORKFLOW_RUN_MAX_TTL", DEFAULT_RUN_MAX_TTL)
+    if op == "claim":
+        args = args + (ttl,)
+    elif op == "settle":
+        args = args + (ttl,)
+    res = r.eval(SCATTER_LUA, 3, k_sc(run_id, step_id), k_sc_out(run_id, step_id), k_sc_meta(run_id, step_id),
+                 op, idx, *args)
+    return bool(int(res[0])), int(res[1]), int(res[2]), int(res[3])
+
+
+def scatter_child(r, run_id, step_id, idx):
+    return parse_child(r.hget(k_sc(run_id, step_id), str(idx)))
+
+
+def scatter_counts(r, run_id, step_id):
+    """``{"n", "completed", "failed", "retries"}`` (all 0 before the fan-out starts)."""
+    m = _decode_hash(r.hgetall(k_sc_meta(run_id, step_id)))
+    return {k: int(m.get(k, 0)) for k in ("n", "completed", "failed", "retries")}
+
+
+def scatter_children(r, run_id, step_id):
+    """``{index: {"attempt", "state", "job"}}`` of every claimed child."""
+    return {int(k): parse_child(v) for k, v in _decode_hash(r.hgetall(k_sc(run_id, step_id))).items()}
+
+
+def scatter_results(r, run_id, step_id):
+    """``{index: result}`` of the settled children (outputs dict for completed, ``{"error", "error_class"}``
+    for failed)."""
+    return {int(k): json.loads(v) for k, v in _decode_hash(r.hgetall(k_sc_out(run_id, step_id))).items()}
 
 
 # --------------------------------------------------------------------------- events
