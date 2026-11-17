@@ -428,7 +428,7 @@ def test_keys_get_ttl_when_the_run_ends_and_are_listed():
     assert h.doc()["status"] == "completed"
     for k in ws.run_keys("r1", h.spec):
         if h.r.exists(k):
-            assert 0 < h.r.ttl(k) <= 7 * 24 * 3600, k
+            assert 0 < h.r.ttl(k) <= 24 * 3600, k
 
 
 def test_two_runs_scatter_independently():

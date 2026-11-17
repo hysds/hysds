@@ -506,3 +506,23 @@ def test_shell_requeue_once_then_dead_letter_and_reject():
     m = _Msg()
     c.on_message({"bad": 1}, m)
     assert m.acked and "malformed" in dl[0]["reason"]
+
+
+def test_run_keys_expire_after_end_with_the_configured_ttl(monkeypatch):
+    from hysds import workflow_snapshot
+    h = Harness(make_spec(LINEAR))
+    h.start()
+    assert all(h.r.ttl(k) > 24 * 3600 for k in ws.run_keys("r1", h.spec) if h.r.exists(k))  # active: safety TTL
+    h.finish("a", {"o": "A"})
+    h.finish("b", {"o": "B"})
+    h.finish("c")
+    assert h.doc()["status"] == "completed"
+    assert all(0 < h.r.ttl(k) <= 24 * 3600 for k in ws.run_keys("r1", h.spec) if h.r.exists(k))  # default: 1 day
+    # the setting overrides it
+    real = workflow_snapshot._conf
+    monkeypatch.setattr(workflow_snapshot, "_conf", lambda n, d: 600 if n == "WORKFLOW_RUN_TTL_AFTER_END" else real(n, d))
+    h2 = Harness(make_spec(LINEAR))
+    h2.start()
+    for s in "abc":
+        h2.finish(s, {"o": s})
+    assert all(0 < h2.r.ttl(k) <= 600 for k in ws.run_keys("r1", h2.spec) if h2.r.exists(k))

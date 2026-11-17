@@ -39,7 +39,7 @@ set when the change settles a step, and RPUSHes the snapshot. A concurrent chang
 retry from a fresh read, so readiness and state updates are atomic and replays are no-ops.
 
 When a run ends (completed, failed, cancelled) every key above except ``wf:active`` gets a TTL
-(``WORKFLOW_RUN_TTL``, default 7 days) and the run leaves the registry. Until then each key carries a safety
+(``WORKFLOW_RUN_TTL_AFTER_END``, default 1 day) and the run leaves the registry. Until then each key carries a safety
 TTL (``WORKFLOW_RUN_MAX_TTL``, default 30 days) set at ``init_run``.
 
 Events (kombu queue ``WORKFLOW_QUEUE``): job status events come from log_utils (no ``kind``); engine events
@@ -59,7 +59,7 @@ from hysds import workflow_snapshot
 log = logging.getLogger("hysds.workflow_state")
 
 ACTIVE_KEY = "wf:active"
-DEFAULT_RUN_TTL = 7 * 24 * 3600
+DEFAULT_RUN_TTL_AFTER_END = 24 * 3600
 DEFAULT_RUN_MAX_TTL = 30 * 24 * 3600
 MAX_CAS_ATTEMPTS = 50
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
@@ -277,7 +277,7 @@ def update_run(r, run_id, fn, list_key=None):
                     extra(pipe)
                 pipe.rpush(list_key, workflow_snapshot.build_snapshot(new_doc, new_doc["version"]))
                 if ended:
-                    ttl = _ttl("WORKFLOW_RUN_TTL", DEFAULT_RUN_TTL)
+                    ttl = _ttl("WORKFLOW_RUN_TTL_AFTER_END", DEFAULT_RUN_TTL_AFTER_END)
                     pipe.zrem(ACTIVE_KEY, run_id)
                     spec = json.loads(spec_raw) if spec_raw else {"steps": new_doc["steps"]}
                     for key in run_keys(run_id, spec):
