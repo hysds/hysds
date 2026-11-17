@@ -20,8 +20,15 @@ the run doc (``waiting -> queued``, or ``failed attempt -> new attempt``), done 
 replayed events are state-guarded no-ops; a duplicate settle event re-runs the join so a crash between
 settle and release heals.
 
-Extension points: ``FAILURE_HANDLERS`` (S6: drain, continue, ``halting``), ``_release`` scatter branch
-(S5), ``_fire_halt`` (S6 refines halts), the run-level reaper recovery (S8) reads ``wf:active``.
+On-error modes (PLAN 6.6, S6), chosen by the run's ``on_error``: ``kill`` ends the run at once; ``drain``
+revokes queued jobs, cancels steps not started and lets running jobs finish (run ``halting``, then final);
+``continue`` cancels only the transitive dependents of the failure (``upstream_failed``) and runs the
+independent branches on. A halt always stops the run (``continue`` behaves like ``drain`` for it). A user
+cancel is always ``kill``. Every end of a run goes through :func:`_final_doc`, the one place that decides
+failed/completed from the step states, so ``halting`` -> final and the settled-set finalize agree.
+
+Extension points: ``FAILURE_HANDLERS``, the ``_release`` scatter branch (S5), the run-level reaper
+recovery (S8) reads ``wf:active``.
 """
 
 import copy
@@ -44,6 +51,7 @@ from hysds_commons.workflow_run2 import (
     set_run_outputs,
     set_run_status,
     short_error,
+    unsettled_steps,
 )
 from hysds_commons.workflow_spec import is_retryable
 from hysds_commons.workflow_spec2 import dependents_index, retry_policy2, step_queue
@@ -60,6 +68,7 @@ ERROR_SUBMIT = "submit"
 ERROR_OUTPUTS = "outputs"
 ERROR_HALTED = "halted"
 ACTIVE_ATTEMPT = ("queued", "running")
+LIVE_RUN_STATUSES = ("running", "halting")  # the run still takes job events
 
 
 class EventRejected(Exception):
@@ -70,13 +79,17 @@ def _is_active_attempt(att):
     return att["status"] in ACTIVE_ATTEMPT
 
 
-def _cancel_rest(doc, kind, by_step, reason):
-    """Cancel every non-settled step of ``doc`` (kill semantics, PLAN 6.6): the active attempt ends
-    ``cancelled`` and the step ``cancelled``. Returns ``(doc, payload_ids_to_revoke, cancelled_steps)``."""
+def _cancel_rest(doc, kind, by_step, reason, keep_running=False):
+    """Cancel every non-settled step of ``doc``: the active attempt ends ``cancelled`` and the step
+    ``cancelled``. ``keep_running`` (drain) spares the steps whose job is running (their attempt is
+    ``running``); a queued job, or a step between retries, is still cancelled.
+    Returns ``(doc, payload_ids_to_revoke, cancelled_steps)``."""
     revoke, cancelled = [], []
     for sid in sorted(doc["steps"]):
         st = doc["steps"][sid]
         if st["state"] in TERMINAL_STEP_STATES:
+            continue
+        if keep_running and st["attempts"] and st["attempts"][-1]["status"] == "running":
             continue
         if st["attempts"] and _is_active_attempt(st["attempts"][-1]):
             revoke.append(st["attempts"][-1]["job_id"])
@@ -86,30 +99,129 @@ def _cancel_rest(doc, kind, by_step, reason):
     return doc, revoke, cancelled
 
 
-def _fail_kill(doc, sid, error, error_class):
-    """``kill`` (the default and, in S4, the only mode): the step fails permanently, the run fails, every
-    other queued/running job is revoked and every other unsettled step is cancelled. Pure.
-    Returns ``(doc, revoke_ids, cancelled_steps)``."""
+def _descendants(spec, sid):
+    """Every step that transitively depends on ``sid``."""
+    idx, seen, todo = dependents_index(spec), set(), [sid]
+    while todo:
+        for d in idx.get(todo.pop(), []):
+            if d not in seen:
+                seen.add(d)
+                todo.append(d)
+    return sorted(seen)
+
+
+def _note_failure(doc, sid, error, error_class):
+    """Record the FIRST failure on the run doc (``failed_step``/``error_class``/``reason``) without changing
+    its status, so a ``halting`` or ``running`` run already shows why it will fail."""
+    if doc.get("failed_step") or doc.get("error_class"):
+        return doc
+    return set_run_status(doc, doc["status"], error_class=error_class, reason=short_error(error), failed_step=sid)
+
+
+def _final_doc(doc, spec, settled):
+    """The terminal doc of a run whose steps have all settled (or that a kill/halt just ended). Pure. The
+    outcome comes from the step states, in this order: a failed step -> ``failed`` (a failure outranks a
+    halt that would have completed the run); a fired halt with status ``failed`` -> ``failed``/``halted``;
+    a fired halt with status ``completed`` -> ``completed`` with the halt's reason; otherwise ``completed``.
+    Workflow outputs are resolved and type checked only for the completed outcomes (PLAN 6.7, B21): under a
+    completed halt a step that never produced a result reads as null, so an optional output is null and a
+    required one fails the run with ``output_resolution``."""
+    steps = doc["steps"]
+    failed = sorted((sid for sid, st in steps.items() if st["state"] == "failed"),
+                    key=lambda i: (steps[i].get("ended_at") or "", i))
+    if failed:
+        sid = doc.get("failed_step") if doc.get("failed_step") in failed else failed[0]
+        st = steps[sid]
+        return set_run_status(doc, "failed", error_class=st.get("error_class") or doc.get("error_class") or "worker",
+                              reason=st.get("error") or doc.get("reason"), failed_step=sid)
+    fired = [(sid, st["halt"]) for sid, st in sorted(steps.items()) if st.get("halt", {}).get("fired")]
+    bad = [(sid, h) for sid, h in fired if h["status"] != "completed"]
+    if bad:
+        sid, h = bad[0]
+        return set_run_status(doc, "failed", error_class=ERROR_HALTED, reason=h.get("reason") or "halted",
+                              failed_step=sid)
+    completed_halt = [h for _, h in fired]
+    try:
+        outs = resolve_outputs(spec, complete_settled(settled, doc) if completed_halt else settled, doc["inputs"])
+    except WorkflowRefError as e:
+        return set_run_status(doc, "failed", error_class=ERROR_OUTPUT_RESOLUTION, reason=short_error(e),
+                              failed_step=(fired[0][0] if fired else None))
+    reason = completed_halt[0].get("reason") if completed_halt else None
+    return set_run_status(set_run_outputs(doc, outs), "completed", reason=reason)
+
+
+def _end_or_halting(doc, spec, settled_fn, error_class=None, reason=None, failed_step=None):
+    """After the steps that need not run were cancelled: if jobs are still running the run is ``halting``
+    (drain), otherwise it ends now."""
+    if unsettled_steps(doc):
+        return set_run_status(doc, "halting", error_class=error_class, reason=reason, failed_step=failed_step)
+    return _final_doc(doc, spec, settled_fn())
+
+
+def _fail_step(doc, sid, error, error_class):
     st = doc["steps"][sid]
     if st["attempts"] and _is_active_attempt(st["attempts"][-1]):
         doc = end_attempt(doc, sid, "failed", error=error)
-    doc = mark_step_failed(doc, sid, error=error, error_class=error_class)
+    return mark_step_failed(doc, sid, error=error, error_class=error_class)
+
+
+def _fail_kill(doc, sid, error, error_class, spec=None, settled_fn=None):
+    """``kill`` (the default): the step fails permanently, the run fails, every other queued/running job
+    is revoked and every other unsettled step is cancelled. Pure.
+    Returns ``(doc, revoke_ids, cancelled_steps)``."""
+    doc = _fail_step(doc, sid, error, error_class)
     doc, revoke, cancelled = _cancel_rest(doc, "failure", sid, error_class)
     doc = set_run_status(doc, "failed", error_class=error_class, reason=short_error(error), failed_step=sid)
     return doc, revoke, cancelled
 
 
-# S6 extension point: add "drain" (-> "halting") and "continue" here with the same signature.
-FAILURE_HANDLERS = {"kill": _fail_kill}
+def _fail_drain(doc, sid, error, error_class, spec=None, settled_fn=None):
+    """``drain``: queued jobs are revoked and steps not started are cancelled; running jobs finish and keep
+    their outputs. The run is ``halting`` until they settle, then ``failed`` (via :func:`_final_doc`)."""
+    doc = _note_failure(_fail_step(doc, sid, error, error_class), sid, error, error_class)
+    doc, revoke, cancelled = _cancel_rest(doc, "failure", sid, error_class, keep_running=True)
+    return _end_or_halting(doc, spec, settled_fn, error_class, short_error(error), sid), revoke, cancelled
 
 
-def apply_failure(doc, sid, error, error_class):
-    mode = doc.get("on_error", "kill")
-    handler = FAILURE_HANDLERS.get(mode)
-    if handler is None:
-        log.warning("run %s: on_error %r is not implemented yet; using kill", doc["run_id"], mode)
-        handler = FAILURE_HANDLERS["kill"]
-    return handler(doc, sid, error, error_class)
+def _fail_continue(doc, sid, error, error_class, spec=None, settled_fn=None):
+    """``continue``: only the transitive dependents of the failure are cancelled (``upstream_failed``; a
+    failed step never reads as null downstream). Nothing is revoked; the run stays ``running`` until every
+    step settled, then it is ``failed``."""
+    doc = _note_failure(_fail_step(doc, sid, error, error_class), sid, error, error_class)
+    cancelled = []
+    for d in _descendants(spec, sid):
+        if doc["steps"][d]["state"] not in TERMINAL_STEP_STATES:
+            doc = mark_step_cancelled(doc, d, "upstream_failed", by_step=sid, reason=error_class)
+            cancelled.append(d)
+    if not unsettled_steps(doc):
+        doc = _final_doc(doc, spec, settled_fn())
+    return doc, [], cancelled
+
+
+def _fail_halting(doc, sid, error, error_class, spec=None, settled_fn=None):
+    """A job that was left running by a drain/halt failed: record it (no retry, nothing else to cancel); the
+    run ends once the last running job settles and is ``failed`` whatever the halt's status was."""
+    doc = _note_failure(_fail_step(doc, sid, error, error_class), sid, error, error_class)
+    if not unsettled_steps(doc):
+        doc = _final_doc(doc, spec, settled_fn())
+    return doc, [], []
+
+
+FAILURE_HANDLERS = {"kill": _fail_kill, "drain": _fail_drain, "continue": _fail_continue}
+
+
+def apply_failure(doc, sid, error, error_class, spec=None, settled_fn=None):
+    """Step ``sid`` failed permanently: apply the run's ``on_error`` mode. Pure. ``settled_fn()`` returns the
+    recorded step results (only read when the run ends). Returns ``(doc, payload_ids_to_revoke, cancelled)``."""
+    if doc["status"] == "halting":
+        handler = _fail_halting
+    else:
+        mode = doc.get("on_error", "kill")
+        handler = FAILURE_HANDLERS.get(mode)
+        if handler is None:
+            log.warning("run %s: unknown on_error %r; using kill", doc["run_id"], mode)
+            handler = FAILURE_HANDLERS["kill"]
+    return handler(doc, sid, error, error_class, spec=spec, settled_fn=settled_fn)
 
 
 def complete_settled(settled, doc):
@@ -286,7 +398,8 @@ class Engine:
             st = d["steps"][sid]
             if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES:
                 return None
-            new, revoke, cancelled = apply_failure(d, sid, error, error_class)
+            new, revoke, cancelled = apply_failure(d, sid, error, error_class, self._spec_of(run_id),
+                                                   lambda: ws.settled_map(self.r, run_id))
 
             def extra(pipe):
                 ws.record_done(pipe, run_id, sid)
@@ -299,24 +412,26 @@ class Engine:
         self._revoke(run_id, res[1], None)
         return "step %s failed (%s): %s" % (sid, error_class, error)
 
-    def _fire_halt(self, run_id, sid, settled):
-        """A halt step's ``when`` held: it is never submitted, its settle IS the trigger (S6 refines)."""
+    def _fire_halt(self, run_id, sid, settled=None):
+        """A halt step's ``when`` held: it is never submitted, its settle IS the trigger (B19: a halt always
+        stops the run). ``kill`` ends the run at once; ``drain`` and ``continue`` (which behaves like drain
+        for a halt) revoke queued jobs, cancel steps not started and let running jobs finish: the run is
+        ``halting`` until they settle. The outcome (the halt's status) is decided by :func:`_final_doc`."""
         def fn(d):
             if d["status"] != "running" or d["steps"][sid]["state"] != "waiting":
                 return None
             h = d["steps"][sid]["halt"]
+            spec = self._spec_of(run_id)
+            settled_fn = lambda: ws.settled_map(self.r, run_id)  # noqa: E731
             new = mark_step_halted(d, sid)
-            new, revoke, cancelled = _cancel_rest(new, "halt", sid, h.get("reason"))
-            if h["status"] == "completed":
-                try:
-                    outs = resolve_outputs(self._spec_of(run_id), complete_settled(settled, new), new["inputs"])
-                    new = set_run_status(set_run_outputs(new, outs), "completed", reason=h.get("reason"))
-                except WorkflowRefError as e:
-                    new = set_run_status(new, "failed", error_class=ERROR_OUTPUT_RESOLUTION,
-                                         reason=short_error(e), failed_step=sid)
+            if d.get("on_error", "kill") == "kill":
+                new, revoke, cancelled = _cancel_rest(new, "halt", sid, h.get("reason"))
+                new = _final_doc(new, spec, settled_fn())
             else:
-                new = set_run_status(new, "failed", error_class=ERROR_HALTED, reason=h.get("reason") or "halted",
-                                     failed_step=sid)
+                new, revoke, cancelled = _cancel_rest(new, "halt", sid, h.get("reason"), keep_running=True)
+                failing = h["status"] != "completed"
+                new = _end_or_halting(new, spec, settled_fn, ERROR_HALTED if failing else None,
+                                      h.get("reason") or ("halted" if failing else None), sid if failing else None)
 
             def extra(pipe):
                 ws.record_settle(pipe, run_id, sid, "completed")
@@ -353,18 +468,12 @@ class Engine:
         return "; ".join(n for n in notes if n)
 
     def _finalize(self, run_id):
-        """Every step settled: resolve the workflow outputs (type checked) and end the run."""
-        settled = ws.settled_map(self.r, run_id)
-
+        """Every step settled (the done set reached the step count): end the run, from ``running`` or from
+        ``halting`` (drain: the last running job settled). The outcome comes from :func:`_final_doc`."""
         def fn(d):
-            if d["status"] != "running":
+            if d["status"] not in LIVE_RUN_STATUSES or unsettled_steps(d):
                 return None
-            spec = self._spec_of(run_id)
-            try:
-                outs = resolve_outputs(spec, settled, d["inputs"])
-                new = set_run_status(set_run_outputs(d, outs), "completed")
-            except WorkflowRefError as e:
-                new = set_run_status(d, "failed", error_class=ERROR_OUTPUT_RESOLUTION, reason=short_error(e))
+            new = _final_doc(d, self._spec_of(run_id), ws.settled_map(self.r, run_id))
             return new, new["status"]
         res = self._update(run_id, fn)
         return "finalize: run %s" % res[1] if res else None
@@ -418,6 +527,7 @@ class Engine:
         doc, spec = self._load(run_id)
         if sid not in spec["steps"]:
             raise EventRejected("unknown step_id %r for run %s" % (sid, run_id))
+        self._note_task(run_id, event)
         if event.get("child_index") is not None:  # S5 extension point (scatter children)
             return "ignored: scatter child event for %s (scatter not implemented yet)" % sid
         st = doc["steps"][sid]
@@ -426,12 +536,20 @@ class Engine:
 
         if status == "job-completed" and st["state"] == "completed":  # duplicate: heal a crash after settle
             return "duplicate completion of %s: %s" % (sid, self._after_settle(run_id, sid, replay=True))
-        if doc["status"] != "running":
+        if idx is not None and status in ("job-queued", "job-started") and st["attempts"][idx]["status"] == "cancelled":
+            # the attempt was cancelled before its celery task id was known (or the job started anyway):
+            # now that the task exists, revoke it (marker + terminate), so a cancelled job never runs on
+            ids_ = [st["attempts"][idx]["job_id"]]
+            self._revoke(run_id, ids_, None)
+            return "late revoke of cancelled attempt %s of %s" % (ids_[0], sid)
+        if doc["status"] not in LIVE_RUN_STATUSES:
             return "ignored: run %s is %s" % (run_id, doc["status"])
         if st["state"] in TERMINAL_STEP_STATES:
             return "ignored: step %s already %s" % (sid, st["state"])
         if idx is None:
             return "ignored: %s event for %s matches no attempt (stale or foreign)" % (status, sid)
+        if status == "job-queued":
+            return "queued %s (task id recorded)" % sid
         if status == "job-started":
             return self._started(run_id, sid, idx, event)
         if status == "job-completed":
@@ -440,10 +558,15 @@ class Engine:
             return self._failed(run_id, spec, sid, idx, event)
         return "ignored: status %r" % (status,)
 
+    def _note_task(self, run_id, event):
+        """Remember the celery task id of an attempt (job-queued / job-started carry it)."""
+        if event.get("task_id") and event.get("payload_id"):
+            ws.record_task_id(self.r, run_id, event["payload_id"], event["task_id"])
+
     def _started(self, run_id, sid, idx, event):
         def fn(d):
             st = d["steps"][sid]
-            if d["status"] != "running" or idx != len(st["attempts"]) - 1 or st["attempts"][idx]["status"] != "queued":
+            if d["status"] not in LIVE_RUN_STATUSES or idx != len(st["attempts"]) - 1 or st["attempts"][idx]["status"] != "queued":
                 return None
             return mark_step_running(d, sid, job_id=st["attempts"][idx]["job_id"]), None
         self._update(run_id, fn)
@@ -459,7 +582,8 @@ class Engine:
 
         def fn(d):
             st = d["steps"][sid]
-            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES or idx != len(st["attempts"]) - 1:
+            if d["status"] not in LIVE_RUN_STATUSES or st["state"] in TERMINAL_STEP_STATES \
+                    or idx != len(st["attempts"]) - 1:
                 return None
             new = mark_step_completed(end_attempt(d, sid, "completed"), sid)
             return new, None, lambda pipe: ws.record_settle(pipe, run_id, sid, "completed", outputs)
@@ -475,14 +599,16 @@ class Engine:
 
         def fn(d):
             st = d["steps"][sid]
-            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES or idx != len(st["attempts"]) - 1:
+            if d["status"] not in LIVE_RUN_STATUSES or st["state"] in TERMINAL_STEP_STATES \
+                    or idx != len(st["attempts"]) - 1:
                 return None
             n = len(st["attempts"])
             active = _is_active_attempt(st["attempts"][-1])
-            if retryable and is_retryable(retry_policy2(spec, sid), ec, n - 1):
+            # a halting run (drain/halt) does not retry: its remaining jobs only settle
+            if retryable and d["status"] == "running" and is_retryable(retry_policy2(spec, sid), ec, n - 1):
                 box["retry_of"] = n
                 return (end_attempt(d, sid, "failed", error=error), None) if active else None
-            new, revoke, cancelled = apply_failure(d, sid, error, ec)
+            new, revoke, cancelled = apply_failure(d, sid, error, ec, spec, lambda: ws.settled_map(self.r, run_id))
 
             def extra(pipe):
                 ws.record_done(pipe, run_id, sid)

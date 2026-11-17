@@ -16,6 +16,8 @@ Redis key layout (``R`` = run id, ``D`` = step id; every per-run key is scoped b
     wf:rel:<R>:<D>    string  release claim of D (epoch seconds); D is released once (Lua)
     wf:done:<R>       set     settled step ids (completed, skipped, failed, cancelled): finalize when
                               SCARD == number of steps
+    wf:task:<R>       hash    payload id (the attempt's job_id) -> celery run_job task id, recorded from the
+                              job-queued/job-started events; what a direct revoke needs (S6)
     wf:ver:<R>        string  last run-doc version (the monotonic external version of the snapshots)
     wf:active         zset    registry of active runs: member run id, score = heartbeat (epoch seconds,
                               refreshed by every state change); removed when the run ends
@@ -93,6 +95,10 @@ def k_ver(run_id):
     return "wf:ver:%s" % run_id
 
 
+def k_task(run_id):
+    return "wf:task:%s" % run_id
+
+
 def _ttl(name, default):
     return int(workflow_snapshot._conf(name, default))
 
@@ -103,7 +109,7 @@ def _now():
 
 def run_keys(run_id, spec):
     """Every per-run key (for TTLs/cleanup); ``spec`` supplies the step ids."""
-    keys = [k_run(run_id), k_spec(run_id), k_out(run_id), k_done(run_id), k_ver(run_id)]
+    keys = [k_run(run_id), k_spec(run_id), k_out(run_id), k_done(run_id), k_ver(run_id), k_task(run_id)]
     for sid in (spec or {}).get("steps") or {}:
         keys += [k_join(run_id, sid), k_rel(run_id, sid)]
     return keys
@@ -131,6 +137,23 @@ def settled_map(r, run_id):
 def _decode_hash(h):
     return {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
             for k, v in h.items()}
+
+
+def record_task_id(r, run_id, payload_id, task_id):
+    """Remember the celery task id of an attempt (idempotent; not part of the run-doc transaction: the id
+    only ever matters for revoking). The key gets the same safety TTL as the rest of the run."""
+    if not (payload_id and task_id):
+        return
+    key = k_task(run_id)
+    r.hset(key, payload_id, task_id)
+    if r.ttl(key) < 0:
+        r.expire(key, _ttl("WORKFLOW_RUN_MAX_TTL", DEFAULT_RUN_MAX_TTL))
+
+
+def get_task_id(r, run_id, payload_id):
+    """The celery task id recorded for ``payload_id``, or None (not queued by the orchestrator yet)."""
+    v = r.hget(k_task(run_id), payload_id)
+    return v.decode() if isinstance(v, bytes) else v
 
 
 def n_done(r, run_id):
