@@ -176,7 +176,9 @@ class Reaper:
 
     def _recover_attempt(self, run_id, spec, sid, state, att, now):
         jid = att["job_id"]
-        status = self.status_fn(jid)
+        # the Redis job status is keyed by the celery task id of the run_job task (recorded from the job-queued /
+        # job-started event), not by the attempt's payload id; without a recorded task id nothing is known yet
+        status = self.status_fn(ws.get_task_id(self.r, run_id, jid) or jid)
         s = self.s
         base = {"run_id": run_id, "step_id": sid, "job_id": jid, "payload_id": jid, "child_index": None,
                 "workflow_outputs": None, "error_class": None, "replayed": True}

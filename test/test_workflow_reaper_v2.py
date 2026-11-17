@@ -325,3 +325,17 @@ def test_engine_deletes_the_stored_event_once_applied_and_a_replay_is_a_noop():
     g.h.r.set(key, "x")
     g.h.send(dict(ev, status="job-started"))
     assert g.h.r.get(key) == b"x"
+
+
+def test_job_status_is_looked_up_by_the_recorded_task_id_not_the_payload_id():
+    """Redis job status keys are the run_job task id (what job-queued/job-started carry), not the payload id."""
+    g = rig()
+    pid, _ = g.h.job_of("a")
+    ws.record_task_id(g.h.r, "r1", pid, "task-of-a")
+    g.status["task-of-a"] = "job-failed"  # keyed by the task id only; the payload id has no status
+    g.age(700)
+    g.sweep()
+    g.age(200)
+    acts = g.sweep()
+    assert any("missed terminal event (job-failed)" in a for _, a in acts)
+    assert g.h.doc()["steps"]["a"]["state"] == "failed"
