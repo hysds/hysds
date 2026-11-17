@@ -38,6 +38,13 @@ child. Individual child failures never fail the run: when every child has settle
 (completed fraction >= threshold: the step completes with index-aligned output arrays, ``null`` at failed
 indices; else it fails with ``scatter_threshold``). Gather is done here, from Redis, with no extra job.
 
+Scatter under drain (and a halt under continue): the run is ``halting``. The scatter step is NOT cancelled while
+it is in its children phase. Its queued children (and those between retries, or not yet submitted) are revoked and
+settled as failed children with error class ``cancelled`` (:meth:`Engine._drain_scatters`, run after every state
+change that makes a run halting); its running children finish and keep their outputs, and no child retries. The
+step then settles by the normal threshold rule, so cancelled children count as failed ones. Under kill and user
+cancel the scatter step is cancelled and all its live children are revoked (``_live_scatter_children``).
+
 Run-level recovery is the reaper's (S8), which reads ``wf:active``.
 """
 
@@ -525,14 +532,50 @@ class Engine:
                         if c["state"] in ws.CHILD_ACTIVE_STATES]
         return ids
 
+    def _drain_scatters(self, run_id):
+        """A ``halting`` run (drain, or a halt under drain/continue) keeps its running scatter steps: the children
+        still ``queued`` (or between retries, or not yet submitted when the halt came) are cancelled now, each
+        settled as a failed child with error class ``cancelled``; the children already running finish and keep
+        their outputs, and nothing retries. Once every child has settled the step is settled by the ordinary
+        threshold rule (so cancelled children count as failures: a step that cannot meet its threshold fails
+        ``scatter_threshold``, and that failure outranks a completed halt). Idempotent. Returns the job ids of
+        the queued children, which the caller revokes."""
+        doc = ws.get_run(self.r, run_id)
+        if not doc or doc["status"] != "halting":
+            return []
+        revoke = []
+        result = json.dumps({"ok": False, "error": "cancelled: the run is halting", "error_class": "cancelled"})
+        for sid, st in sorted(doc["steps"].items()):
+            if not _scatter_in_children(st):
+                continue
+            n = ws.scatter_counts(self.r, run_id, sid)["n"]
+            recs = ws.scatter_children(self.r, run_id, sid)
+            last = None
+            for i in range(n):
+                rec = recs.get(i)
+                if rec is None:  # the fan-out was interrupted before this child: it never starts
+                    job = self.new_id()
+                    if not ws.scatter_op(self.r, run_id, sid, "claim", i, job)[0]:
+                        continue
+                elif rec["state"] == "queued":
+                    job = rec["job"]
+                    revoke.append(job)
+                elif rec["state"] == "retry_wait":
+                    job = rec["job"]
+                else:
+                    continue
+                ok, c, f, n_ = ws.scatter_op(self.r, run_id, sid, "settle", i, job, "failed", result)
+                last = (c, f, n_) if ok else last
+            if last:
+                self._scatter_after(run_id, sid, *last, changed=True)
+        return revoke
+
     def _revoke(self, run_id, payload_ids, username):
-        if self.revoke_fn is None:
-            return
         try:
-            payload_ids = list(payload_ids or []) + self._live_scatter_children(run_id)
-            if not payload_ids:
+            payload_ids = list(payload_ids or []) + self._live_scatter_children(run_id) + self._drain_scatters(run_id)
+            if not payload_ids or self.revoke_fn is None:
                 return
-            self.revoke_fn(run_id, list(payload_ids), username)
+            self.revoke_fn(run_id, list(dict.fromkeys(payload_ids)), username)
         except Exception:  # noqa: BLE001  (state is committed; the reaper sweeps leftovers)
             log.exception("run %s: could not revoke %s", run_id, payload_ids)
 
@@ -741,7 +784,27 @@ class Engine:
             return self._failed(run_id, self._spec_of(run_id), sid, idx,
                                 dict(event, status="job-failed", error_class=ERROR_OUTPUTS, short_error=problem),
                                 retryable=False)
+        if (ws.get_run(self.r, run_id) or {}).get("status") == "halting":
+            return self._connector_halted(run_id, sid, idx)
         return self._begin_fanout(run_id, sid, items, connector_idx=idx)
+
+    def _connector_halted(self, run_id, sid, idx):
+        """The scatter connector job finished while the run is ``halting``: nothing fans out; the step is cancelled
+        and the run ends if that was the last unsettled step."""
+        spec = self._spec_of(run_id)
+
+        def fn(d):
+            st = d["steps"][sid]
+            if d["status"] != "halting" or st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "connector" \
+                    or idx != len(st["attempts"]) - 1:
+                return None
+            new = mark_step_cancelled(end_attempt(d, sid, "completed"), sid, "failure", by_step=d.get("failed_step"),
+                                      reason=d.get("error_class"))
+            if not unsettled_steps(new):
+                new = _final_doc(new, spec, ws.settled_map(self.r, run_id))
+            return new, None, lambda pipe: ws.record_done(pipe, run_id, sid)
+        res = self._update(run_id, fn)
+        return "scatter %s: connector done while halting, step cancelled" % sid if res else "connector event ignored"
 
     def _begin_fanout(self, run_id, sid, items, connector_idx=None):
         """Record N and zero the counters (one transaction with the run-doc change that puts the step into
@@ -814,7 +877,7 @@ class Engine:
 
         def fn(d):
             st = d["steps"][sid]
-            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES:
+            if d["status"] not in LIVE_RUN_STATUSES or st["state"] in TERMINAL_STEP_STATES:
                 return None
             sc = st["scatter"]
             if children is None and c["completed"] <= sc["n_completed"] and c["failed"] <= sc["n_failed"]:
@@ -834,7 +897,7 @@ class Engine:
             raise EventRejected("bad child_index %r" % (event.get("child_index"),))
         if status == "job-completed" and st["state"] == "completed":  # duplicate: heal a crash after settle
             return "duplicate child completion of %s: %s" % (sid, self._after_settle(run_id, sid, replay=True))
-        if doc["status"] != "running":
+        if doc["status"] not in LIVE_RUN_STATUSES:
             return "ignored: run %s is %s" % (run_id, doc["status"])
         if st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "children":
             return "ignored: child event for %s, which is %s" % (sid, st["state"])
@@ -867,7 +930,8 @@ class Engine:
         error = short_error(event.get("short_error") or event.get("status"))
         if rec["state"] in ("completed", "failed"):
             return "ignored: failure of %s[%d], already %s" % (sid, idx, rec["state"])
-        if retryable and is_retryable(retry_policy2(spec, sid), ec, rec["attempt"] - 1):
+        halting = (ws.get_run(self.r, run_id) or {}).get("status") == "halting"  # a halting run does not retry
+        if retryable and not halting and is_retryable(retry_policy2(spec, sid), ec, rec["attempt"] - 1):
             if not ws.scatter_op(self.r, run_id, sid, "retry_mark", idx, rec["job"])[0]:
                 return "failure of %s[%d] ignored" % (sid, idx)
             return "retry %s[%d] (attempt %d, after %s): %s" % (
@@ -938,13 +1002,15 @@ class Engine:
 
         def fn(d):
             st = d["steps"][sid]
-            if d["status"] != "running" or st["state"] in TERMINAL_STEP_STATES or st["scatter"]["phase"] != "children":
+            if d["status"] not in LIVE_RUN_STATUSES or st["state"] in TERMINAL_STEP_STATES \
+                    or st["scatter"]["phase"] != "children":
                 return None
             new = update_scatter(d, sid, n_completed=c, n_failed=f, children=children)
             if passed:
                 return (mark_step_completed(new, sid), None,
                         lambda pipe: ws.record_settle(pipe, run_id, sid, "completed", outputs))
-            new, revoke, cancelled = apply_failure(new, sid, error, ERROR_SCATTER_THRESHOLD)
+            new, revoke, cancelled = apply_failure(new, sid, error, ERROR_SCATTER_THRESHOLD, spec,
+                                                     lambda: ws.settled_map(self.r, run_id))
 
             def extra(pipe):
                 ws.record_done(pipe, run_id, sid)

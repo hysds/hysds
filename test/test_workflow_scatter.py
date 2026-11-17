@@ -434,3 +434,128 @@ def test_keys_get_ttl_when_the_run_ends_and_are_listed():
 def test_two_runs_scatter_independently():
     h = run_scatter(["a"])
     assert ws.scatter_counts(h.r, "other", "s") == {"n": 0, "completed": 0, "failed": 0, "retries": 0}
+
+
+# ---------------------------------------------------------------------------------------- drain / halt (S6 x S5)
+
+
+def drain_run(n=4, threshold=0.5, retries=None, mode="drain", started=(0, 1)):
+    extra = dict(max_retries=retries, retry_on=["worker"]) if retries else {}
+    steps = {"s": _step(ins={"v": _src("$.inputs.items")}, out=("o",), scatter={"input": "v", "threshold": threshold},
+                        **extra),
+             "f": _step(ins={"v": _src("$.inputs.x")})}
+    spec = make_spec(steps, inputs={"items": {"type": "Any?"}, "x": {"type": "string", "default": "d"}},
+                     on_error=mode)
+    h = SH(spec, inputs={"items": list("abcdefgh")[:n]})
+    h.start()
+    for i in started:
+        h.child(i, "job-started")
+    return h
+
+
+def fail_f(h):
+    h.finish("f", status="job-failed", error_class="worker", short_error="boom")
+
+
+def test_drain_revokes_queued_children_and_lets_running_ones_finish():
+    h = drain_run()
+    kids = h.kids()
+    fail_f(h)
+    d = h.doc()
+    assert d["status"] == "halting" and d["steps"]["s"]["state"] == "running"
+    assert set(h.revoked[-1][1]) == {kids[2][0], kids[3][0]}  # queued only; the running ones are left alone
+    assert h.counts()["failed"] == 2 and h.counts()["completed"] == 0
+    assert {i: c["state"] for i, c in ws.scatter_children(h.r, "r1", "s").items()} == {
+        0: "running", 1: "running", 2: "failed", 3: "failed"}
+    h.ok(0)
+    assert h.doc()["status"] == "halting"
+    h.ok(1)  # every child settled: 2 of 4 >= threshold 0.5
+    d = h.doc()
+    assert d["steps"]["s"]["state"] == "completed"
+    assert ws.settled_map(h.r, "r1")["s"]["outputs"] == {"o": ["o0", "o1", None, None]}
+    assert d["status"] == "failed" and d["failed_step"] == "f"
+    assert validate_run_doc(d) == []
+    res = ws.scatter_results(h.r, "r1", "s")
+    assert res[2]["error_class"] == "cancelled" and res[3]["error_class"] == "cancelled"
+
+
+def test_drain_scatter_below_threshold_fails_after_the_running_children_finish():
+    h = drain_run(threshold=1.0)
+    fail_f(h)
+    h.ok(0)
+    h.ok(1)
+    d = h.doc()
+    assert d["steps"]["s"]["state"] == "failed" and d["steps"]["s"]["error_class"] == "scatter_threshold"
+    assert d["status"] == "failed"
+    assert validate_run_doc(d) == []
+
+
+def test_drain_does_not_retry_a_running_child_that_fails():
+    h = drain_run(retries=2)
+    n_jobs = len(h.jobs)
+    fail_f(h)
+    h.bad(0)
+    assert len(h.jobs) == n_jobs  # no resubmission while halting
+    assert ws.scatter_child(h.r, "r1", "s", 0)["state"] == "failed"
+    h.ok(1)
+    assert h.doc()["steps"]["s"]["error_class"] == "scatter_threshold"  # 1 of 4 completed < 0.5
+    assert h.doc()["status"] == "failed"
+
+
+def test_drain_with_no_child_running_settles_the_scatter_at_once():
+    h = drain_run(threshold=0.5, started=())
+    fail_f(h)
+    d = h.doc()
+    assert len(h.revoked[-1][1]) == 4
+    assert d["steps"]["s"]["state"] == "failed" and d["steps"]["s"]["error_class"] == "scatter_threshold"
+    assert d["status"] == "failed" and d["failed_step"] == "f"  # the first failure stays the run's
+    assert ws.n_done(h.r, "r1") == 2
+
+
+def test_drain_cancels_children_the_fanout_never_submitted():
+    h = drain_run(started=())
+    # a fan-out interrupted before the last two children were claimed
+    for i in (2, 3):
+        h.r.hdel(ws.k_sc("r1", "s"), str(i))
+    fail_f(h)
+    d = h.doc()
+    assert d["steps"]["s"]["state"] == "failed" and h.counts()["failed"] == 4
+    assert len(h.revoked[-1][1]) == 2  # only the two submitted ones need revoking
+
+
+def test_halt_under_continue_drains_the_scatter_the_same_way():
+    steps = {"s": _step(ins={"v": _src("$.inputs.items")}, out=("o",), scatter={"input": "v", "threshold": 0.5}),
+             "g": _step(ins={"v": _src("$.inputs.x")}, out=("bad",)),
+             "h": {"halt": {"status": "completed", "reason": "enough"}, "deps": ["g"], "when": "$.g.bad"}}
+    spec = make_spec(steps, inputs={"items": {"type": "Any?"}, "x": {"type": "string", "default": "d"}},
+                     outputs={"res": {"type": "string[]?", "source": ["$.s.o"]}}, on_error="continue")
+    h = SH(spec, inputs={"items": list("abcd")})
+    h.start()
+    h.child(0, "job-started")
+    kids = h.kids()
+    h.finish("g", {"bad": True})
+    d = h.doc()
+    assert d["status"] == "halting" and d["steps"]["s"]["state"] == "running"
+    assert set(h.revoked[-1][1]) == {kids[1][0], kids[2][0], kids[3][0]}
+    h.ok(0)  # 1 of 4 < 0.5: the scatter fails, which outranks the completed halt
+    assert h.doc()["status"] == "failed"
+
+
+def test_connector_finishing_while_halting_cancels_the_step_without_fanning_out():
+    steps = {"s": _step(ins={"v": _src("$.inputs.x")}, out=("o",),
+                        scatter={"input": "v", "connector": {"job_type": CONN, "queue": "qc"}}),
+             "f": _step(ins={"v": _src("$.inputs.x")})}
+    spec = make_spec(steps, inputs={"x": {"type": "string", "default": "d"}}, on_error="drain")
+    h = SH(spec)
+    h.start()
+    pid, _ = h.job_of("s")
+    h.send({"run_id": "r1", "step_id": "s", "status": "job-started", "job_id": pid, "payload_id": pid})
+    fail_f(h)
+    assert h.doc()["status"] == "halting" and h.doc()["steps"]["s"]["state"] == "running"
+    n = len(h.jobs)
+    h.send({"run_id": "r1", "step_id": "s", "status": "job-completed", "job_id": pid, "payload_id": pid,
+            "workflow_outputs": [{"name": "items", "value_s": ["a", "b"]}]})
+    h.pump()
+    d = h.doc()
+    assert len(h.jobs) == n and d["steps"]["s"]["state"] == "cancelled" and d["status"] == "failed"
+    assert ws.n_done(h.r, "r1") == 2
