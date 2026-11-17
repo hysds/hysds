@@ -26,6 +26,19 @@ attempt ``queued``, no job status     after ``WORKFLOW_REAPER_QUEUED_SECONDS``: 
 attempt ``running``, no job status    after ``WORKFLOW_REAPER_VANISHED_SECONDS``: ``job-offline`` event
                                       (error_class ``offline``)
 attempt ``queued``, status started    replay ``job-started``
+scatter step, children phase          each live child (``wf:sc`` record queued/running) is recovered exactly like
+                                      an attempt above (same settings and clocks; the events carry
+                                      ``child_index``, so the engine's retry policy and the scatter threshold
+                                      decide the outcome): missed terminal event (stored event replayed), stuck
+                                      queued (``lost``), vanished (``offline``), missed ``job-started``. Also:
+                                      a child stuck ``retry_wait`` (crash between the retry decision and the
+                                      re-submit) is re-submitted after the event grace; a fan-out interrupted
+                                      before every child was submitted is resumed after the queued age; every
+                                      child settled but the step not (lost finish) is finished. A scatter
+                                      connector job is an ordinary attempt (first rows).
+``halting`` with a scatter in         the engine's drain is re-run (cancels queued / retry_wait / never-submitted
+children phase                        children, revokes the queued ones); the running children are recovered as
+                                      above and the step settles by the threshold rule
 step ``waiting``, every dep settled   re-drive the engine's release (a CAS: already-queued steps are no-ops)
 all steps in the done set, running    finalize
 ====================================  =====================================================================
@@ -95,6 +108,14 @@ def active_attempt(st):
     return att if att is not None and att["status"] in ("queued", "running") else None
 
 
+def _phase(st):
+    return (st.get("scatter") or {}).get("phase")
+
+
+def _in_children(st):
+    return st["state"] == "running" and _phase(st) == "children"
+
+
 class Reaper:
     """``engine`` is a :class:`hysds.workflow_engine.Engine`; ``status_fn(job_id)`` returns the Redis job status
     string or None (production: ``hysds.log_utils.get_job_status``); ``now_fn`` returns epoch seconds."""
@@ -151,7 +172,15 @@ class Reaper:
         if now - heartbeat < self.s["WORKFLOW_STALL_SECONDS"]:
             return []
         if doc["status"] == "halting":
-            if self.engine.finish_halting(run_id):
+            scatters = [sid for sid in sorted(doc["steps"]) if _in_children(doc["steps"][sid])]
+            if scatters:  # a halting run keeps its running scatter children: drain the rest, recover the running
+                revoke = self.engine._drain_scatters(run_id)
+                if revoke:
+                    self.engine._revoke(run_id, revoke, REAPER_USER)
+                    done.append("halting recovery: drained scatter children")
+                for sid in scatters:
+                    done += self._recover_scatter(run_id, spec, sid, now)
+            elif self.engine.finish_halting(run_id):
                 done.append("halting recovery: finished")
             return done
         for sid in sorted(doc["steps"]):
@@ -160,6 +189,8 @@ class Reaper:
                 a = self._recover_attempt(run_id, spec, sid, doc["steps"][sid]["state"], att, now)
                 if a:
                     done.append(a)
+            elif _in_children(doc["steps"][sid]):
+                done += self._recover_scatter(run_id, spec, sid, now)
         doc = ws.get_run(self.r, run_id)
         if doc["status"] == "running":
             settled = ws.settled_map(self.r, run_id)
@@ -174,13 +205,53 @@ class Reaper:
                     done.append("finalize missed: %s" % note)
         return done
 
+    def _recover_scatter(self, run_id, spec, sid, now):
+        """Recover the children of scatter step ``sid`` (children phase). Each action goes through the engine."""
+        s, done = self.s, []
+        cnt = ws.scatter_counts(self.r, run_id, sid)
+        n, recs = cnt["n"], ws.scatter_children(self.r, run_id, sid)
+        halting = (ws.get_run(self.r, run_id) or {}).get("status") == "halting"
+        if n > 0 and cnt["completed"] + cnt["failed"] >= n:  # every child settled, the finish was lost
+            note = self.engine._scatter_finish(run_id, sid)
+            return ["scatter finish missed %s (%s)" % (sid, note)]
+        if len(recs) < n and not halting:  # the fan-out stopped before every child was submitted
+            if self._age(run_id, "fanout", sid, now) >= s["WORKFLOW_REAPER_QUEUED_SECONDS"]:
+                self._forget(run_id, "fanout", sid)
+                try:
+                    done.append("scatter fan-out resumed %s (%s)" % (sid, self.engine._fanout(run_id, sid)))
+                except Exception as e:  # noqa: BLE001
+                    log.warning("run %s: fan-out of %s not resumed: %s", run_id, sid, e)
+                recs = ws.scatter_children(self.r, run_id, sid)
+        else:
+            self._forget(run_id, "fanout", sid)
+        for i in sorted(recs):
+            rec = recs[i]
+            try:
+                if rec["state"] in ("queued", "running"):
+                    a = self._recover_job(run_id, spec, sid, rec["state"], rec["job"], now, child_index=i)
+                    if a:
+                        done.append(a)
+                elif rec["state"] == "retry_wait" and not halting:
+                    if self._age(run_id, "retrywait", rec["job"], now) >= s["WORKFLOW_REAPER_EVENT_GRACE_SECONDS"]:
+                        self._forget(run_id, "retrywait", rec["job"])
+                        done.append("child retry lost %s[%d]: %s" % (
+                            sid, i, self.engine._retry_child(run_id, sid, i, rec["job"], rec["attempt"])))
+            except Exception:  # noqa: BLE001  (one bad child must not stop the others)
+                log.exception("reaper failed on child %s[%d] of run %s", sid, i, run_id)
+        return done
+
     def _recover_attempt(self, run_id, spec, sid, state, att, now):
-        jid = att["job_id"]
+        return self._recover_job(run_id, spec, sid, state, att["job_id"], now,
+                                 connector=_phase(ws.get_run(self.r, run_id)["steps"][sid]) == "connector")
+
+    def _recover_job(self, run_id, spec, sid, state, jid, now, child_index=None, connector=False):
+        """One live job: a step attempt, or (``child_index`` given) one scatter child. ``connector``: the attempt is
+        the step's scatter connector, whose ``items`` output cannot be synthesized."""
         # the Redis job status is keyed by the celery task id of the run_job task (recorded from the job-queued /
         # job-started event), not by the attempt's payload id; without a recorded task id nothing is known yet
         status = self.status_fn(ws.get_task_id(self.r, run_id, jid) or jid)
         s = self.s
-        base = {"run_id": run_id, "step_id": sid, "job_id": jid, "payload_id": jid, "child_index": None,
+        base = {"run_id": run_id, "step_id": sid, "job_id": jid, "payload_id": jid, "child_index": child_index,
                 "workflow_outputs": None, "error_class": None, "replayed": True}
         if status in TERMINAL_JOB_STATUSES:
             if self._age(run_id, "term", jid, now) < s["WORKFLOW_REAPER_EVENT_GRACE_SECONDS"]:
@@ -188,7 +259,7 @@ class Reaper:
             stored = ws.get_stored_event(self.r, jid, status)
             if stored is not None:
                 ev, kind = dict(stored, replayed=True), "missed terminal event (%s): stored event replayed" % status
-            elif status == "job-completed" and spec["steps"][sid].get("out"):
+            elif status == "job-completed" and (connector or spec["steps"][sid].get("out")):
                 ev = dict(base, status="job-failed", error_class="lost",
                           short_error="job completed but its stored event (and so its outputs) is gone")
                 kind = "missed completion with outputs, stored event missing: failed as lost"
@@ -214,7 +285,7 @@ class Reaper:
                 self._forget(run_id, tag, jid)  # healthy: a later condition starts a fresh clock
             return None
         note = self.engine.handle_event(ev)
-        return "%s %s (%s)" % (kind, sid, note)
+        return "%s %s%s (%s)" % (kind, sid, "" if child_index is None else "[%d]" % child_index, note)
 
 
 # --------------------------------------------------------------------------- process entry
