@@ -597,3 +597,33 @@ def test_classify_timeout_not_refined_by_pge(tmp_path):
     from celery.exceptions import SoftTimeLimitExceeded
     (tmp_path / "_error_class.txt").write_text("custom")
     assert _classify(SoftTimeLimitExceeded(), str(tmp_path)) == "timeout"
+
+
+def test_classify_outputs_error_is_outputs(tmp_path):
+    import hysds.job_worker as jw
+    assert _classify(jw.WorkflowOutputsBindError("too large")) == "outputs"
+    # a PGE token does not turn a deterministic outputs failure into a retryable class
+    (tmp_path / "_error_class.txt").write_text("s3_throttle\n")
+    assert _classify(jw.WorkflowOutputsBindError("bad"), str(tmp_path)) == "outputs"
+    assert issubclass(jw.WorkflowOutputsBindError, RuntimeError)
+
+
+def test_bind_invalid_outputs_raises_outputs_error(tmp_path):
+    import hysds.job_worker as jw
+    from hysds_commons.workflow_outputs import get_workflow_outputs_file
+    with open(get_workflow_outputs_file(str(tmp_path)), "w") as f:
+        f.write("{not json")
+    job = {"job_info": {}}
+    from unittest import mock
+    with mock.patch.object(jw, "_workflow_outputs_max_bytes", return_value=1 << 20):
+        with pytest.raises(jw.WorkflowOutputsBindError):
+            jw.bind_workflow_outputs(job, str(tmp_path))
+    assert "workflow_outputs" not in job["job_info"]
+
+
+def test_unresolvable_output_ref_raises_outputs_error(tmp_path):
+    import hysds.job_worker as jw
+    job = {"job_info": {"workflow_outputs": [{"name": "product", "class": "File", "value": "out/x.h5"}],
+                        "metrics": {"products_staged": []}}}
+    with pytest.raises(jw.WorkflowOutputsBindError):
+        jw.resolve_workflow_output_refs(job, str(tmp_path))

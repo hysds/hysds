@@ -93,12 +93,21 @@ class PgeExitCodeError(RuntimeError):
         self.exit_code = exit_code
 
 
+class WorkflowOutputsBindError(RuntimeError):
+    """The job's workflow outputs are invalid, too large, or cannot be resolved to published urls. Re-running the
+    job produces the same outputs, so the attempt is classified ``outputs`` (not retried unless a step lists it in
+    ``retry_on``)."""
+
+
 def classify_error(exc, job_dir=None):
     """Contract 12.1 error class for a failed attempt: ``timeout`` (soft time limit),
-    ``exit_code:<n>`` (PGE non-zero exit), else ``worker``; a valid ``_error_class.txt`` in the job
+    ``outputs`` (invalid / oversized / unresolvable workflow outputs), ``exit_code:<n>`` (PGE non-zero exit),
+    else ``worker``; a valid ``_error_class.txt`` in the job
     dir refines either of the latter to ``pge:<token>`` (a timeout is never refined)."""
     if isinstance(exc, SoftTimeLimitExceeded):
         return "timeout"
+    if isinstance(exc, WorkflowOutputsBindError):
+        return "outputs"
     pge = read_pge_error_class(job_dir) if job_dir else None
     if pge:
         return pge
@@ -379,7 +388,7 @@ def bind_workflow_outputs(job, job_dir):
     """Read the job-scoped ``_workflow_outputs.json`` (ADR-003) into job_info.
 
     No-op (no ``workflow_outputs`` key) when the file is absent. Raises
-    RuntimeError, failing the job, if the file exists but is invalid.
+    WorkflowOutputsBindError (error class ``outputs``), failing the job, if the file exists but is invalid.
     """
 
     if not os.path.exists(get_workflow_outputs_file(job_dir)):
@@ -387,7 +396,7 @@ def bind_workflow_outputs(job, job_dir):
     try:
         outputs = read_workflow_outputs(job_dir, max_bytes=_workflow_outputs_max_bytes())
     except WorkflowOutputsError as e:
-        raise RuntimeError(f"_workflow_outputs.json invalid: {e}") from e
+        raise WorkflowOutputsBindError(f"_workflow_outputs.json invalid: {e}") from e
     job["job_info"]["workflow_outputs"] = outputs
 
 
@@ -432,8 +441,8 @@ def resolve_workflow_output_refs(job, job_dir):
     So matching here uses lexical normalization only (normpath/abspath, never
     realpath).
 
-    Raises RuntimeError (failing the job) if a path cannot be resolved, or the
-    rewritten outputs exceed the size cap.
+    Raises WorkflowOutputsBindError (error class ``outputs``, failing the job) if a path cannot be resolved, or
+    the rewritten outputs exceed the size cap.
     """
     outputs = job.get("job_info", {}).get("workflow_outputs")
     if not outputs:
@@ -447,7 +456,7 @@ def resolve_workflow_output_refs(job, job_dir):
     )
     names = ", ".join(repr(o["name"]) for o in class_entries)
     if not staged:
-        raise RuntimeError(
+        raise WorkflowOutputsBindError(
             f"Workflow output(s) {names} are File/Directory references but no "
             f"products were published (products_staged is empty). The job must "
             f"produce a dataset to reference; post-processing may be disabled "
@@ -469,7 +478,7 @@ def resolve_workflow_output_refs(job, job_dir):
                 if best is None or len(prod_path) > len(best[0]):
                     best = (prod_path, prod)
         if best is None:
-            raise RuntimeError(
+            raise WorkflowOutputsBindError(
                 f"Workflow output {out_name!r}: path {rel_path!r} is not inside "
                 f"any published product. Published: "
                 f"{[p for p, _ in products]}. Only files/directories within a "
@@ -482,7 +491,7 @@ def resolve_workflow_output_refs(job, job_dir):
             if base:
                 break
         if not base:
-            raise RuntimeError(
+            raise WorkflowOutputsBindError(
                 f"Workflow output {out_name!r}: product {prod.get('id')!r} has no "
                 f"s3 url (urls: {prod.get('urls')}); cannot build a reference."
             )
@@ -501,7 +510,7 @@ def resolve_workflow_output_refs(job, job_dir):
     try:
         check_workflow_outputs_size(outputs, max_bytes=_workflow_outputs_max_bytes())
     except WorkflowOutputsError as e:
-        raise RuntimeError(f"Workflow outputs too large after resolving refs: {e}") from e
+        raise WorkflowOutputsBindError(f"Workflow outputs too large after resolving refs: {e}") from e
 
 
 def redelivered_job_dup(job):
@@ -1817,6 +1826,8 @@ def run_job(job, queue_when_finished=True):
                 "traceback": traceback.format_exc(),
                 "celery_hostname": run_job.request.hostname,
             }
+            if isinstance(e, WorkflowOutputsBindError):
+                set_error_class(job_status_json, "outputs")
 
         # overwrite message if _alt_msg.txt was dumped
         msg = list()
