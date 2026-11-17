@@ -238,7 +238,9 @@ TERMINAL_JOB_STATUSES = frozenset(
     {"job-completed", "job-failed", "job-deduped", "job-offline", "job-revoked"}
 )
 # non-terminal statuses also sent to WORKFLOW_QUEUE (v2 engine: step state queued -> running)
-WORKFLOW_PROGRESS_STATUSES = frozenset({"job-started"})
+# job-queued (logged by the orchestrator once the celery run_job task exists) carries the task id the
+# engine needs to revoke a job directly; job-started tells it the job is running.
+WORKFLOW_PROGRESS_STATUSES = frozenset({"job-queued", "job-started"})
 
 
 def is_job_finalized(task_id):
@@ -487,6 +489,7 @@ def publish_workflow_event(job_for_indexing):
         "child_total": workflow.get("child_total"),
         "job_id": job_for_indexing.get("job_id") or job_for_indexing.get("uuid"),
         "payload_id": job_for_indexing.get("payload_id") or job_for_indexing.get("uuid"),
+        "task_id": job_for_indexing.get("uuid"),  # the celery run_job task id (what app.control.revoke takes)
         "status": job_for_indexing.get("status"),
         "short_error": job_for_indexing.get("short_error"),
         "workflow_outputs": job_info.get("workflow_outputs"),

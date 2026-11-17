@@ -133,6 +133,7 @@ def replay_event(doc, now=None):
         "child_total": workflow.get("child_total"),
         "job_id": doc.get("job_id") or doc.get("uuid"),
         "payload_id": doc.get("payload_id") or doc.get("uuid"),
+        "task_id": doc.get("uuid"),
         "status": doc.get("status"),
         "short_error": doc.get("short_error"),
         "workflow_outputs": job_info.get("workflow_outputs"),

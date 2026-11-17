@@ -327,6 +327,7 @@ def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
         "child_total": None,
         "job_id": "uuid-1",
         "payload_id": "uuid-1",
+        "task_id": "uuid-1",
         "status": "job-completed",
         "short_error": "oops",
         "workflow_outputs": None,
@@ -336,8 +337,17 @@ def test_workflow_event_published_for_terminal_workflow_job(monkeypatch):
     assert producer.publish.call_args.kwargs["routing_key"] == "workflow_queue"
 
 
-def test_workflow_event_not_published_for_queued(monkeypatch):
-    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-queued"))
+def test_workflow_event_published_for_queued_with_task_id(monkeypatch):
+    # S6: job-queued tells the engine the celery task id (what a direct revoke needs)
+    job = _workflow_job(status="job-queued")
+    job["uuid"] = "task-1"
+    producer = _run_log_job_status_capturing_publish(monkeypatch, job)
+    payload = producer.publish.call_args.args[0]
+    assert payload["status"] == "job-queued" and payload["task_id"] == "task-1"
+
+
+def test_workflow_event_not_published_for_other_progress(monkeypatch):
+    producer = _run_log_job_status_capturing_publish(monkeypatch, _workflow_job(status="job-offline-pending"))
     producer.publish.assert_not_called()
 
 
@@ -398,6 +408,7 @@ def test_workflow_event_full_payload_shape(monkeypatch):
         "child_total": 5,
         "job_id": "job_id-9",
         "payload_id": "payload-9",
+        "task_id": "uuid-9",
         "status": "job-completed",
         "short_error": None,
         "workflow_outputs": {"mosaic": {"url": "s3://b/m.tif"}},

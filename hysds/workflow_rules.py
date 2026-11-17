@@ -8,11 +8,10 @@ a rejected event (unknown run/step) goes to ``WORKFLOW_DLQ`` and is acked. Sever
 run at once: the engine's state changes are atomic and idempotent (see ``workflow_engine``).
 
 Running workflows do not touch OpenSearch: jobs are submitted from the frozen job definitions straight to
-the orchestrator. The one exception is cancellation/kill, which submits mozart's revoke job over REST
-(the revoke job itself reads job_status).
+the orchestrator, and kill/cancel revoke the attempts directly through the celery control API (see
+:func:`make_revoke_fn`), not through mozart's revoke job (which reads job_status).
 """
 
-import functools
 import json
 import logging
 import socket
@@ -22,6 +21,7 @@ from datetime import datetime, timezone
 from kombu import Exchange, Queue
 from kombu.mixins import ConsumerMixin
 
+from hysds import workflow_state as ws
 from hysds.workflow_engine import Engine, EventRejected
 
 log = logging.getLogger("hysds.workflow_rules")
@@ -121,35 +121,64 @@ class WorkflowRulesConsumer(ConsumerMixin):
         message.ack()
 
 
-def make_revoke_fn(revoke_job_type, submit):
-    """``revoke(run_id, payload_ids, username)``: one mozart revoke job per batch of ids."""
-    from hysds_commons.workflow_cancel import submit_revokes
+def make_revoke_fn(redis_client, control=None, marker_ttl=None, signal="SIGTERM", marker_tmpl=None):
+    """``revoke(run_id, payload_ids, username)``: revoke the attempts directly through celery, with no
+    OpenSearch and no revoke job (mozart's revoke job reads job_status to find the task ids; the engine
+    already knows them). For each attempt (its payload id = the orchestrator task id):
 
+    * the run_job **task id** recorded from the job-queued/job-started event (``wf:task:<run>``) gets what
+      ``lightweight-jobs/utils.revoke`` (mozart's revoke job) does: the Redis marker
+      ``hysds-revoked-task-<task id>`` (TTL ``HYSDS_JOB_STATUS_EXPIRES``; ``job_worker.run_job`` checks it when
+      the task starts, so a task that sat in the broker or on a worker that missed the broadcast still stops),
+      then ``control.revoke(task_id, terminate=True, signal=...)``. The worker's ``task_revoked`` handler
+      (HC-654) then stops the job's containers whether the task was running (signal) or still queued;
+    * the **payload id** itself is revoked without terminating, so an orchestrator task that has not run
+      yet never creates the run_job task. If it is already creating it, the task id arrives later in a
+      job-queued event and the engine revokes it then (the attempt is recorded ``cancelled``).
+
+    Failures are logged per attempt and never raised (the state change is committed)."""
     def revoke(run_id, payload_ids, username):
-        if not revoke_job_type:
-            log.error("WORKFLOW_REVOKE_JOB_TYPE is not set: cannot revoke %d job(s) of run %s",
-                      len(payload_ids), run_id)
-            return
-        submit_revokes(submit, revoke_job_type, payload_ids, run_id, username=username or "workflow-engine")
+        ctl = control
+        if ctl is None:
+            from hysds.celery import app
+            ctl = app.control
+        tmpl = marker_tmpl
+        ttl = marker_ttl
+        if tmpl is None:
+            from hysds.log_utils import REVOKED_TASK_TMPL
+            tmpl = REVOKED_TASK_TMPL
+        if ttl is None:
+            from hysds.celery import app
+            ttl = int(app.conf.get("HYSDS_JOB_STATUS_EXPIRES", 86400))
+        for pid in payload_ids:
+            try:
+                ctl.revoke(pid)  # orchestrator task: only matters while it is still queued
+                tid = ws.get_task_id(redis_client, run_id, pid)
+                if tid:
+                    redis_client.setex(tmpl % tid, ttl, "workflow-revoked")
+                    ctl.revoke(tid, terminate=True, signal=signal)
+                else:
+                    log.info("run %s: attempt %s has no task id yet; revoked the payload id, the job-queued "
+                             "event will revoke the task", run_id, pid)
+            except Exception:  # noqa: BLE001
+                log.exception("run %s: could not revoke attempt %s", run_id, pid)
     return revoke
 
 
 def main():
-    import requests
     from redis import StrictRedis
 
     from hysds.celery import app
     from hysds_commons.workflow_job2 import submit_frozen_job
-    from hysds_commons.workflow_submit import submit_workflow_job
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     queue_name = app.conf.WORKFLOW_QUEUE
     dlq_name = app.conf.get("WORKFLOW_DLQ", DEFAULT_DLQ)
     r = StrictRedis.from_url(app.conf.REDIS_JOB_STATUS_URL, ssl_cert_reqs="none")
-    session = requests.Session()
-    submit = functools.partial(submit_workflow_job, mozart_rest_url=app.conf.MOZART_REST_URL, session=session)
     engine = Engine(r, submit_fn=lambda job, payload_id: submit_frozen_job(job, payload_id),
-                    revoke_fn=make_revoke_fn(app.conf.get("WORKFLOW_REVOKE_JOB_TYPE"), submit),
+                    revoke_fn=make_revoke_fn(r, app.control,
+                                             marker_ttl=int(app.conf.get("HYSDS_JOB_STATUS_EXPIRES", 86400)),
+                                             signal=app.conf.get("WORKFLOW_REVOKE_SIGNAL", "SIGTERM")),
                     list_key=app.conf.get("REDIS_JOB_STATUS_KEY", "logstash"))
     with app.connection() as conn:
         log.info("workflow_rules (v2 engine) consuming %s", queue_name)
