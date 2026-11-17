@@ -95,8 +95,8 @@ class PgeExitCodeError(RuntimeError):
 
 class WorkflowOutputsBindError(RuntimeError):
     """The job's workflow outputs are invalid, too large, or cannot be resolved to published urls. Re-running the
-    job produces the same outputs, so the attempt is classified ``outputs`` (not retried unless a step lists it in
-    ``retry_on``)."""
+    job produces the same outputs, so the attempt is classified ``outputs``, which is never retried (hysds_commons
+    ``NEVER_RETRIED_CLASSES``)."""
 
 
 def classify_error(exc, job_dir=None):
