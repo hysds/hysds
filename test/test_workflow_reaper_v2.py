@@ -244,3 +244,30 @@ def test_lock_prevents_double_action():
 def test_no_opensearch_or_v1_imports():
     src = open(wr.__file__).read()
     assert "elasticsearch" not in src.lower() and "opensearch" not in src.lower() and "es_util" not in src
+
+
+def test_halting_from_a_completed_halt_finishes_completed():
+    """finish_halting goes through the engine's _final_doc: a completed halt ends completed, not failed."""
+    steps = {"g": _step(out=("o",)), "r": _step(out=("o",)),
+             "h": {"halt": {"status": "completed", "reason": "enough"}, "deps": ["g"], "when": "$.g.bad"}}
+    steps["g"] = _step(out=("o", "bad"))
+    spec = make_spec(steps, outputs={"res": {"type": "string?", "source": ["$.g.o"]}}, on_error="drain")
+    g = rig(spec)
+    pid, _ = g.h.job_of("r")
+    g.h.send({"run_id": "r1", "step_id": "r", "status": "job-started", "job_id": pid, "payload_id": pid})
+    g.h.finish("g", {"bad": True, "o": "G"})
+    assert g.h.doc()["status"] == "halting"
+    # the running job's end is lost: its attempt ends without the engine hearing about it
+    ws.update_run(g.h.r, "r1", lambda d: _end_r(d), list_key="logstash")
+    g.h.r.zadd(ws.ACTIVE_KEY, {"r1": T0})
+    g.age(700)
+    acts = g.sweep()
+    assert any("halting recovery" in a for _, a in acts)
+    d = g.h.doc()
+    assert d["status"] == "completed" and d["reason"] == "enough" and d["outputs"] == {"res": "G"}
+    assert d["steps"]["r"]["state"] == "cancelled"
+
+
+def _end_r(d):
+    from hysds_commons.workflow_run2 import end_attempt
+    return end_attempt(d, "r", "cancelled"), None

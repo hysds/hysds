@@ -12,7 +12,9 @@ run older than its time limit         cancel it as a user cancel does (``cancel_
                                       ``defaults.timeout_hours``]
 (the rest only when the heartbeat is  older than ``WORKFLOW_STALL_SECONDS``: a run that is making progress is
 left alone)
-``halting``, no active attempt        finish the halt (run ``failed``, unsettled steps cancelled)
+``halting``, no active attempt        finish the halt: the engine's ``finish_halting`` cancels the unsettled steps
+                                      and ends the run through ``_final_doc`` (``completed`` for a completed
+                                      halt, ``failed`` for a failure)
 active attempt, job status terminal   replay a synthetic job event (engine dedup makes it safe) once the
 in Redis, event not processed         status has stood for ``WORKFLOW_REAPER_EVENT_GRACE_SECONDS``. A
                                       ``job-completed`` whose step declares outputs cannot be replayed (Redis
@@ -92,22 +94,6 @@ def active_attempt(st):
     return att if att is not None and att["status"] in ("queued", "running") else None
 
 
-def finish_halting(engine, run_id):
-    """A ``halting`` run whose running jobs have all settled: end it ``failed`` (keeping the error class and
-    reason recorded when it started halting) and cancel its unsettled steps. Returns True if it acted."""
-    from hysds.workflow_engine import _cancel_rest
-    from hysds_commons.workflow_run2 import set_run_status
-
-    def fn(d):
-        if d["status"] != "halting" or any(active_attempt(s) for s in d["steps"].values()):
-            return None
-        new, revoke, cancelled = _cancel_rest(d, "halt", d.get("failed_step"), d.get("reason"))
-        new = set_run_status(new, "failed", error_class=d.get("error_class") or "halted",
-                             reason=d.get("reason") or "halted", failed_step=d.get("failed_step"))
-        return new, revoke, lambda pipe: [ws.record_done(pipe, run_id, c) for c in cancelled]
-    return engine._update(run_id, fn) is not None
-
-
 class Reaper:
     """``engine`` is a :class:`hysds.workflow_engine.Engine`; ``status_fn(job_id)`` returns the Redis job status
     string or None (production: ``hysds.log_utils.get_job_status``); ``now_fn`` returns epoch seconds."""
@@ -164,7 +150,7 @@ class Reaper:
         if now - heartbeat < self.s["WORKFLOW_STALL_SECONDS"]:
             return []
         if doc["status"] == "halting":
-            if finish_halting(self.engine, run_id):
+            if self.engine.finish_halting(run_id):
                 done.append("halting recovery: finished")
             return done
         for sid in sorted(doc["steps"]):

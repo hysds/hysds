@@ -111,12 +111,19 @@ def _cancel_rest(doc, kind, by_step, reason, keep_running=False):
             continue
         if keep_running and st["attempts"] and st["attempts"][-1]["status"] == "running":
             continue
+        if keep_running and _scatter_in_children(st):  # its children settle it (see Engine._drain_scatters)
+            continue
         if st["attempts"] and _is_active_attempt(st["attempts"][-1]):
             revoke.append(st["attempts"][-1]["job_id"])
             doc = end_attempt(doc, sid, "cancelled")
         doc = mark_step_cancelled(doc, sid, kind, by_step=by_step, reason=reason)
         cancelled.append(sid)
     return doc, revoke, cancelled
+
+
+def _scatter_in_children(st):
+    """True for a scatter step that has fanned out and has not settled (its children are live in Redis)."""
+    return st["state"] == "running" and (st.get("scatter") or {}).get("phase") == "children"
 
 
 def _descendants(spec, sid):
@@ -490,6 +497,22 @@ class Engine:
 
     def _spec_of(self, run_id):
         return ws.get_spec(self.r, run_id)
+
+    def finish_halting(self, run_id):
+        """The reaper's recovery of a ``halting`` run whose running jobs have all settled (the event that would
+        have ended it was lost): cancel what is still unsettled and end the run through :func:`_final_doc`, the
+        same decision every other end of a run makes (a halt that completes ends ``completed``; a failure ends
+        ``failed``). A run with a scatter step still in its children phase is left to its children. Returns
+        True if it acted."""
+        def fn(d):
+            if d["status"] != "halting" or any(_is_active_attempt(s["attempts"][-1]) for s in d["steps"].values()
+                                               if s["attempts"]) \
+                    or any(_scatter_in_children(s) for s in d["steps"].values()):
+                return None
+            new, revoke, cancelled = _cancel_rest(d, "halt", d.get("failed_step"), d.get("reason"))
+            new = _final_doc(new, self._spec_of(run_id), ws.settled_map(self.r, run_id))
+            return new, revoke, lambda pipe: [ws.record_done(pipe, run_id, c) for c in cancelled]
+        return self._update(run_id, fn) is not None
 
     def _live_scatter_children(self, run_id):
         """Job ids of the queued/running children of every scatter step the run doc now says is cancelled or failed
