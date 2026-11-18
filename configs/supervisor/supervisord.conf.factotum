@@ -106,7 +106,8 @@ startsecs=10
 [program:import_prov_es]
 directory={{ code_dir }}/ops/hysds
 environment=HYSDS_WORKER_CFG="{{ OPS_HOME }}/verdi/etc/workers/job_worker.json.import_prov_es",
-            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"{% if SINGLE_MACHINE_CLUSTER %},
+            HYSDS_CELERY_CFG="{{ OPS_HOME }}/verdi/etc/celeryconfig.py"{% endif %}
 command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q import_prov_es -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
@@ -121,7 +122,8 @@ startsecs=10
 [program:system-jobs-queue]
 directory={{ code_dir }}/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
-            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"{% if SINGLE_MACHINE_CLUSTER %},
+            HYSDS_CELERY_CFG="{{ OPS_HOME }}/verdi/etc/celeryconfig.py"{% endif %}
 command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q system-jobs-queue -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
@@ -136,7 +138,8 @@ startsecs=10
 [program:factotum-job_worker-small]
 directory={{ code_dir }}/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
-            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"{% if SINGLE_MACHINE_CLUSTER %},
+            HYSDS_CELERY_CFG="{{ OPS_HOME }}/verdi/etc/celeryconfig.py"{% endif %}
 command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q factotum-job_worker-small -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
@@ -151,7 +154,8 @@ startsecs=10
 [program:factotum-job_worker-large]
 directory={{ code_dir }}/ops/hysds
 environment=HYSDS_ROOT_WORK_DIR="/data/work",
-            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"
+            HYSDS_DATASETS_CFG="{{ OPS_HOME }}/verdi/etc/datasets.json"{% if SINGLE_MACHINE_CLUSTER %},
+            HYSDS_CELERY_CFG="{{ OPS_HOME }}/verdi/etc/celeryconfig.py"{% endif %}
 command=celery --app=hysds worker --concurrency=1 --loglevel=INFO -Q factotum-job_worker-large -n %(program_name)s.%(process_num)02d.%%h -O fair --without-mingle --without-gossip --heartbeat-interval=60
 process_name=%(program_name)s-%(process_num)02d
 priority=1
@@ -162,9 +166,3 @@ stdout_logfile=%(here)s/../log/%(program_name)s-%(process_num)02d.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
-
-{%- if SINGLE_MACHINE_CLUSTER %}
-
-[group:factotum]
-programs=factotum_instance_stats,on_demand_job,on_demand_dataset,user_rules_job,user_rules_dataset,user_rules_trigger,import_prov_es,system-jobs-queue,factotum-job_worker-small,factotum-job_worker-large
-{% endif %}

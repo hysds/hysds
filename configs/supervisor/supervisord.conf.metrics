@@ -63,9 +63,3 @@ stdout_logfile=%(here)s/../log/%(program_name)s.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
-
-{%- if SINGLE_MACHINE_CLUSTER %}
-
-[group:metrics]
-programs=metrics_instance_stats,kibana,metrics_logstash_indexer
-{% endif %}

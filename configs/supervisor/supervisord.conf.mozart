@@ -216,9 +216,3 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 {% endfor %}
-
-{%- if SINGLE_MACHINE_CLUSTER %}
-
-[group:mozart]
-programs=mozart_instance_stats,process_events,process_events_tasks,orchestrator_datasets,orchestrator_jobs,flower,mozart_logstash_indexer,mozart_job_management,watchdog_job_timeouts,reap_orphaned_job_failed,watchdog_task_timeouts,watchdog_worker_timeouts{% for q in QUEUES %},sync_ec2_target_tracking_metric-{{ q['QUEUE_NAME'] | trim }}{% endfor %}
-{% endif %}

@@ -61,9 +61,7 @@ def test_single_machine_render(comp):
     text = render(comp, SINGLE_MACHINE_CLUSTER=True)
     for section in SHARED_SECTIONS:
         assert section not in text
-    groups = re.findall(r"^\[group:([^\]]+)\]\nprograms=(.*)$", text, flags=re.M)
-    assert [g[0] for g in groups] == [comp]
-    assert groups[0][1].split(",") == programs(text)
+    assert "[group:" not in text  # sdscli groups the rendered programs
     # code lives in ~/mozart/ops on a single machine
     for other in ("sciflo", "metrics", "verdi"):
         assert f"/home/ops/{other}/ops/" not in text
@@ -73,6 +71,9 @@ def test_single_machine_keeps_component_config_and_logs():
     """Config stays in the component's own folder (job specs mount ~/verdi/etc); logs follow %(here)s."""
     text = render("factotum", SINGLE_MACHINE_CLUSTER=True)
     assert 'HYSDS_DATASETS_CFG="/home/ops/verdi/etc/datasets.json"' in text
+    # job containers get the worker's celeryconfig; factotum's has real IPs, mozart's loopback ones
+    assert text.count('HYSDS_CELERY_CFG="/home/ops/verdi/etc/celeryconfig.py"') == text.count("HYSDS_DATASETS_CFG") == 4
+    assert "HYSDS_CELERY_CFG" not in render("factotum")
     assert "%(here)s/../log/" in text
     assert "/home/ops/mozart/ops/hysds" in text
 
