@@ -1,3 +1,5 @@
+{% set code_dir = (OPS_HOME ~ '/mozart') if SINGLE_MACHINE_CLUSTER else (OPS_HOME ~ '/metrics') -%}
+{% if not SINGLE_MACHINE_CLUSTER -%}
 [unix_http_server]
 file=%(here)s/../run/supervisor.sock
 
@@ -22,9 +24,10 @@ supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
 [supervisorctl]
 serverurl=unix://%(here)s/../run/supervisor.sock
 
-[program:instance_stats]
-directory={{ OPS_HOME }}/metrics/ops/hysds/scripts
-command={{ OPS_HOME }}/metrics/ops/hysds/scripts/log_instance_stats.py --interval 600
+{% endif -%}
+[program:metrics_instance_stats]
+directory={{ code_dir }}/ops/hysds/scripts
+command={{ code_dir }}/ops/hysds/scripts/log_instance_stats.py --interval 600
 process_name=%(program_name)s
 priority=1
 numprocs=1
@@ -48,7 +51,7 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
-[program:logstash_indexer]
+[program:metrics_logstash_indexer]
 directory={{ OPS_HOME }}/logstash/bin
 command={{ OPS_HOME }}/logstash/bin/logstash -f {{ OPS_HOME }}/metrics/etc/indexer.conf
 process_name=%(program_name)s
@@ -60,3 +63,9 @@ stdout_logfile=%(here)s/../log/%(program_name)s.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
+
+{%- if SINGLE_MACHINE_CLUSTER %}
+
+[group:metrics]
+programs=metrics_instance_stats,kibana,metrics_logstash_indexer
+{% endif %}

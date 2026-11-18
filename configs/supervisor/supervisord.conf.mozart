@@ -1,3 +1,4 @@
+{% if not SINGLE_MACHINE_CLUSTER -%}
 [unix_http_server]
 file=%(here)s/../run/supervisor.sock
 
@@ -22,7 +23,8 @@ supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
 [supervisorctl]
 serverurl=unix://%(here)s/../run/supervisor.sock
 
-[program:instance_stats]
+{% endif -%}
+[program:mozart_instance_stats]
 directory={{ OPS_HOME }}/mozart/ops/hysds/scripts
 command={{ OPS_HOME }}/mozart/ops/hysds/scripts/log_instance_stats.py --interval 600
 process_name=%(program_name)s
@@ -105,7 +107,7 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 
-[program:logstash_indexer]
+[program:mozart_logstash_indexer]
 directory={{ OPS_HOME }}/logstash/bin
 command={{ OPS_HOME }}/logstash/bin/logstash -f {{ OPS_HOME }}/mozart/etc/indexer.conf
 process_name=%(program_name)s
@@ -214,3 +216,9 @@ stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=10
 startsecs=10
 {% endfor %}
+
+{%- if SINGLE_MACHINE_CLUSTER %}
+
+[group:mozart]
+programs=mozart_instance_stats,process_events,process_events_tasks,orchestrator_datasets,orchestrator_jobs,flower,mozart_logstash_indexer,mozart_job_management,watchdog_job_timeouts,reap_orphaned_job_failed,watchdog_task_timeouts,watchdog_worker_timeouts{% for q in QUEUES %},sync_ec2_target_tracking_metric-{{ q['QUEUE_NAME'] | trim }}{% endfor %}
+{% endif %}

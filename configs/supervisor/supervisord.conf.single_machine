@@ -1,0 +1,31 @@
+[unix_http_server]
+file=%(here)s/../run/supervisor.sock
+
+[inet_http_server]
+port = 0.0.0.0:9001
+username = ops
+password = ops
+
+[supervisord]
+pidfile=%(here)s/../run/supervisord.pid
+logfile=%(here)s/../log/supervisord.log
+logfile_maxbytes=50MB
+logfile_backups=10
+loglevel=info
+nodaemon=false
+minfds=1024
+minprocs=200
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix://%(here)s/../run/supervisor.sock
+
+; each component renders its programs to ~/<component>/etc/programs.conf
+; (sds update <component>); files that don't exist yet are skipped
+[include]
+files = {{ OPS_HOME }}/mozart/etc/programs.conf
+        {{ OPS_HOME }}/sciflo/etc/programs.conf
+        {{ OPS_HOME }}/metrics/etc/programs.conf
+        {{ OPS_HOME }}/verdi/etc/programs.conf
