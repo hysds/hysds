@@ -52,5 +52,13 @@ class TestUserRulesSettings(unittest.TestCase):
         self.assertEqual(assigned(rendered, "DATASET_INDEX_PREFIX"), "mygrq")
 
 
+class TestRedisSocketSettings(unittest.TestCase):
+    def test_finite_defaults(self):
+        rendered = render()
+        self.assertEqual(assigned(rendered, "REDIS_SOCKET_TIMEOUT"), 30)
+        self.assertEqual(assigned(rendered, "REDIS_SOCKET_CONNECT_TIMEOUT"), 10)
+        self.assertEqual(assigned(rendered, "REDIS_HEALTH_CHECK_INTERVAL"), 30)
+
+
 if __name__ == "__main__":
     unittest.main()

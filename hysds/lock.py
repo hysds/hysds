@@ -9,7 +9,7 @@ import celery.states
 from pottery import Redlock
 
 from hysds.celery import app
-from hysds.log_utils import logger
+from hysds.log_utils import logger, redis_pool_kwargs
 
 # Standard logger for thread-safe logging (doesn't require Celery task context)
 thread_logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ class JobLock:
             cls._connection_pool = BlockingConnectionPool.from_url(
                 app.conf.REDIS_JOB_STATUS_URL,
                 ssl_cert_reqs="none",
+                **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
             )
         return cls._connection_pool
 
