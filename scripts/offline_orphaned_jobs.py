@@ -26,6 +26,7 @@ from hysds.log_utils import (
     is_job_finalized,
     job_supersession,
     log_job_status,
+    redis_pool_kwargs,
 )
 from hysds.utils import datetime_iso_naive
 
@@ -41,7 +42,10 @@ def set_redis_pool():
 
     global POOL
     if POOL is None:
-        POOL = ConnectionPool.from_url(app.conf.REDIS_UNIX_DOMAIN_SOCKET)
+        POOL = ConnectionPool.from_url(
+            app.conf.REDIS_UNIX_DOMAIN_SOCKET,
+            **redis_pool_kwargs(app.conf.REDIS_UNIX_DOMAIN_SOCKET),
+        )
 
 
 def offline_orphaned_jobs(es_url, dry_run=False):

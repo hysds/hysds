@@ -1,7 +1,12 @@
+import socket
 import sys
+import threading
+import time
+import types
 import unittest.mock as umock
 
 import pytest
+import redis
 
 # hysds.celery searches for configuration on import, so mock it before any
 # hysds import. setdefault to avoid cross-test pollution.
@@ -271,3 +276,154 @@ def test_job_status_homes_shape():
     assert future[:2] == ["job_failed", "job_status-2030.01.01"]
     assert future[-1] == f"job_status-{today.strftime('%Y.%m.%d')}"
     assert len(future) == len(set(future))
+
+
+# --- redis pool socket settings ---------------------------------------------
+
+
+class _Conf(dict):
+    """celery app.conf stand-in: attribute and .get() access."""
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(key)
+
+
+LOG_UTILS_POOLS = {
+    "JOB_STATUS_POOL": "set_redis_job_status_pool",
+    "JOB_INFO_POOL": "set_redis_job_info_pool",
+    "WORKER_STATUS_POOL": "set_redis_worker_status_pool",
+    "EVENT_STATUS_POOL": "set_redis_event_status_pool",
+    "SOCKET_POOL": "set_redis_socket_pool",
+    "REVOKED_TASK_POOL": "set_redis_revoked_task_pool",
+    "PAYLOAD_HASH_POOL": "set_redis_payload_hash_pool",
+}
+TLS_URL = "rediss://:pw@127.0.0.1:6379/?ssl_cert_reqs=none"
+
+
+@pytest.fixture
+def redis_conf(monkeypatch):
+    """The URLs as celeryconfig.py.tmpl renders them, on a conf that both
+    log_utils and lock read, with every pool unset so each is rebuilt."""
+    import hysds.lock as lock
+
+    conf = _Conf(
+        REDIS_JOB_STATUS_URL=TLS_URL,
+        REDIS_JOB_INFO_URL=TLS_URL,
+        REDIS_UNIX_DOMAIN_SOCKET="unix://:pw@/run/redis/redis.sock",
+    )
+    app = types.SimpleNamespace(conf=conf)
+    monkeypatch.setattr(lu, "app", app)
+    monkeypatch.setattr(lock, "app", app)
+    for name in LOG_UTILS_POOLS:
+        monkeypatch.setattr(lu, name, None)
+    monkeypatch.setattr(lock.JobLock, "_connection_pool", None)
+    return conf
+
+
+def _every_pool():
+    from hysds.lock import JobLock
+
+    pools = {}
+    for name, setter in LOG_UTILS_POOLS.items():
+        getattr(lu, setter)()
+        pools[name] = getattr(lu, name)
+    pools["JobLock"] = JobLock._get_connection_pool()
+    return pools
+
+
+def test_every_redis_pool_has_finite_timeouts(redis_conf):
+    """Building each pool's connection object is where redis-py rejects a
+    kwarg its connection class does not take: socket_keepalive on the unix
+    socket pool would raise TypeError there, which backoff does not retry."""
+    pools = _every_pool()
+    for name, pool in pools.items():
+        kw = pool.connection_kwargs
+        assert kw["socket_timeout"] == 30, name
+        assert kw["socket_connect_timeout"] == 10, name
+        assert kw["health_check_interval"] == 30, name
+        pool.make_connection()
+    assert pools["JOB_STATUS_POOL"].connection_kwargs["socket_keepalive"] is True
+    assert "socket_keepalive" not in pools["SOCKET_POOL"].connection_kwargs
+
+
+def test_redis_socket_settings_come_from_celeryconfig(redis_conf):
+    redis_conf.update(
+        REDIS_SOCKET_TIMEOUT=5,
+        REDIS_SOCKET_CONNECT_TIMEOUT=2,
+        REDIS_HEALTH_CHECK_INTERVAL=0,
+    )
+    for name, pool in _every_pool().items():
+        kw = pool.connection_kwargs
+        assert (kw["socket_timeout"], kw["socket_connect_timeout"],
+                kw["health_check_interval"]) == (5, 2, 0), name
+
+
+@pytest.fixture
+def silent_redis():
+    """A server that accepts connections and never reads from them, as
+    mozart's redis did. Yields (port, accepted sockets)."""
+    srv = socket.create_server(("127.0.0.1", 0))
+    srv.settimeout(0.1)
+    accepted, stop = [], threading.Event()
+
+    def accept():
+        while not stop.is_set():
+            try:
+                accepted.append(srv.accept()[0])
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+
+    t = threading.Thread(target=accept, daemon=True)
+    t.start()
+    yield srv.getsockname()[1], accepted
+    stop.set()
+    t.join(1)
+    for s in accepted:
+        s.close()
+    srv.close()
+
+
+def test_stalled_tls_handshake_times_out_and_retries_on_a_new_connection(
+        redis_conf, silent_redis):
+    """Regression: log_job_status() opened a TLS connection that redis never
+    read and blocked in read() forever. It must raise TimeoutError within the
+    socket timeout, and the backoff retry must open a new connection."""
+    port, accepted = silent_redis
+    redis_conf.update(
+        REDIS_JOB_STATUS_URL=f"rediss://:pw@127.0.0.1:{port}/0?ssl_cert_reqs=none",
+        REDIS_JOB_STATUS_KEY="logstash",
+        REDIS_SOCKET_TIMEOUT=0.5,
+        REDIS_SOCKET_CONNECT_TIMEOUT=0.5,
+        BACKOFF_MAX_TRIES=2,
+        BACKOFF_MAX_VALUE=0.01,
+        HYSDS_JOB_STATUS_EXPIRES=86400,
+        HARD_TIME_LIMIT_GAP=300,
+    )
+    start = time.monotonic()
+    try:
+        with pytest.raises(redis.exceptions.TimeoutError):
+            lu.log_job_status(_job(None))
+    finally:
+        lu.JOB_STATUS_POOL.disconnect()
+    assert time.monotonic() - start < 5
+    assert len(accepted) == 2
+
+
+def test_stalled_reply_times_out(redis_conf, silent_redis):
+    """Past the handshake, every wait for a reply runs under the timeout too."""
+    port, _ = silent_redis
+    redis_conf.update(REDIS_SOCKET_TIMEOUT=0.5, REDIS_SOCKET_CONNECT_TIMEOUT=0.5)
+    url = f"redis://:pw@127.0.0.1:{port}/0"
+    pool = redis.BlockingConnectionPool.from_url(url, **lu.redis_pool_kwargs(url))
+    start = time.monotonic()
+    try:
+        with pytest.raises(redis.exceptions.TimeoutError):
+            redis.StrictRedis(connection_pool=pool).get("key")
+    finally:
+        pool.disconnect()
+    assert time.monotonic() - start < 5

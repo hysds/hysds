@@ -16,6 +16,7 @@ import psutil
 from redis import BlockingConnectionPool, StrictRedis
 
 from hysds.celery import app
+from hysds.log_utils import redis_pool_kwargs
 
 log_format = "[%(asctime)s: %(levelname)s/log_instance_stats] %(message)s"
 logging.basicConfig(format=log_format, level=logging.INFO)
@@ -32,7 +33,8 @@ def set_redis_pool(redis_url):
     if POOL is None:
         POOL = BlockingConnectionPool.from_url(
             url=redis_url,
-            ssl_cert_reqs="none"
+            ssl_cert_reqs="none",
+            **redis_pool_kwargs(redis_url),
         )
 
 

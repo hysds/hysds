@@ -74,6 +74,25 @@ def ensure_hard_time_limit_gap(soft_time_limit, time_limit):
     return soft_time_limit, time_limit
 
 
+def redis_pool_kwargs(url):
+    """Socket settings for a HySDS redis connection pool at url.
+
+    redis-py waits forever by default, so a redis that accepts a connection
+    and never answers hangs the caller. With a socket timeout the call raises
+    redis TimeoutError instead, which callers retry via backoff on a fresh
+    connection. socket_keepalive is omitted for unix:// URLs, whose
+    connections reject it.
+    """
+    kwargs = {
+        "socket_timeout": app.conf.get("REDIS_SOCKET_TIMEOUT", 30),
+        "socket_connect_timeout": app.conf.get("REDIS_SOCKET_CONNECT_TIMEOUT", 10),
+        "health_check_interval": app.conf.get("REDIS_HEALTH_CHECK_INTERVAL", 30),
+    }
+    if not url.startswith("unix:"):
+        kwargs["socket_keepalive"] = True
+    return kwargs
+
+
 def set_redis_job_status_pool():
     """Set redis connection pool for job status."""
 
@@ -82,6 +101,7 @@ def set_redis_job_status_pool():
         JOB_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
             ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
         )
 
 
@@ -93,6 +113,7 @@ def set_redis_job_info_pool():
         JOB_INFO_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_INFO_URL,
             ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_INFO_URL),
         )
 
 
@@ -104,6 +125,7 @@ def set_redis_worker_status_pool():
         WORKER_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
             ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
         )
 
 
@@ -114,7 +136,8 @@ def set_redis_event_status_pool():
     if EVENT_STATUS_POOL is None:
         EVENT_STATUS_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
-            ssl_cert_reqs="none"
+            ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
         )
 
 
@@ -123,7 +146,10 @@ def set_redis_socket_pool():
 
     global SOCKET_POOL
     if SOCKET_POOL is None:
-        SOCKET_POOL = BlockingConnectionPool.from_url(app.conf.REDIS_UNIX_DOMAIN_SOCKET)
+        SOCKET_POOL = BlockingConnectionPool.from_url(
+            app.conf.REDIS_UNIX_DOMAIN_SOCKET,
+            **redis_pool_kwargs(app.conf.REDIS_UNIX_DOMAIN_SOCKET),
+        )
 
 
 def set_redis_revoked_task_pool():
@@ -134,6 +160,7 @@ def set_redis_revoked_task_pool():
         REVOKED_TASK_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
             ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
         )
 
 
@@ -144,6 +171,7 @@ def set_redis_payload_hash_pool():
         PAYLOAD_HASH_POOL = BlockingConnectionPool.from_url(
             url=app.conf.REDIS_JOB_STATUS_URL,
             ssl_cert_reqs="none",
+            **redis_pool_kwargs(app.conf.REDIS_JOB_STATUS_URL),
         )
 
 
