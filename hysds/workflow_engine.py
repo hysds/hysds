@@ -329,7 +329,16 @@ class Engine:
         roots = sorted(s for s, step in spec["steps"].items() if not step.get("deps"))
         for sid in roots:
             self._release(run_id, sid)
-        return "run_started: released %s" % roots
+        # A resumed run: steps carried over settled join their dependents now (replay: a redelivered
+        # run_started heals a crash between join and release; _release is state-guarded).
+        reused = sorted(s for s, st in doc["steps"].items() if st.get("reused_from"))
+        if not reused:
+            return "run_started: released %s" % roots
+        deps = dependents_index(spec)
+        for sid in reused:
+            for d in ws.join(self.r, run_id, spec, sid, deps[sid], replay=True):
+                self._release(run_id, d)
+        return "run_started (resume of %s): released %s, reused %s" % (doc.get("resumed_from"), roots, reused)
 
     # ------------------------------------------------------------------ release
     def _release(self, run_id, sid):

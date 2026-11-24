@@ -526,3 +526,77 @@ def test_run_keys_expire_after_end_with_the_configured_ttl(monkeypatch):
     for s in "abc":
         h2.finish(s, {"o": s})
     assert all(0 < h2.r.ttl(k) <= 600 for k in ws.run_keys("r1", h2.spec) if h2.r.exists(k))
+
+
+def _resume(h, old_id, new_id):
+    """Start ``new_id`` as a resume of ``old_id`` the way mozart does (settled results from the old run)."""
+    from hysds_commons.workflow_run2 import resumed_run_doc, reusable_steps
+    old = ws.get_run(h.r, old_id)
+    reused = reusable_steps(h.spec, old)
+    done = ws.settled_map(h.r, old_id)
+    doc = resumed_run_doc(h.spec, old, new_id, reused)
+    assert validate_run_doc(doc) == []
+    ws.init_run(h.r, h.spec, doc, list_key="logstash", settled={s: done[s] for s in reused})
+    h.send({"kind": "run_started", "run_id": new_id})
+    h.pump()
+    return reused
+
+
+def _finish(h, run_id, step, outputs):
+    pid = [p for p, j in h.jobs if j["workflow"]["run_id"] == run_id and j["workflow"]["step_id"] == step][-1]
+    h.send({"run_id": run_id, "step_id": step, "status": "job-completed", "job_id": pid, "payload_id": pid,
+            "workflow_outputs": [{"name": k, "value_s": v} for k, v in outputs.items()], "error_class": None})
+    h.pump()
+
+
+def test_resume_reruns_only_unfinished_steps_and_reuses_outputs():
+    spec = make_spec(PARALLEL, on_error="drain")
+    h = Harness(spec)
+    h.start()
+    h.finish("a", {"o": "A"})
+    h.finish("q", {"o": "Q"})
+    h.finish("r0", {"o": "R"})
+    h.finish("p", status="job-failed", error_class="worker", short_error="boom")
+    old = h.doc()
+    assert old["status"] == "failed" and old["steps"]["j"]["state"] == "cancelled"
+    n_before = len(h.jobs)
+
+    reused = _resume(h, "r1", "r2")
+    assert reused == ["a", "q", "r0"]
+    new = [j for _, j in h.jobs[n_before:]]
+    assert [(j["workflow"]["run_id"], j["workflow"]["step_id"]) for j in new] == [("r2", "p")]
+    assert new[0]["params"] == {"v": "A"}  # input from the reused step a
+    d = ws.get_run(h.r, "r2")
+    assert d["resumed_from"] == "r1" and d["steps"]["a"]["reused_from"] == "r1"
+    assert d["steps"]["a"]["attempts"] == old["steps"]["a"]["attempts"]
+    assert d["steps"]["p"]["state"] == "queued" and d["steps"]["j"]["state"] == "waiting"
+
+    _finish(h, "r2", "p", {"o": "P"})
+    j = [j for _, j in h.jobs if j["workflow"]["run_id"] == "r2" and j["workflow"]["step_id"] == "j"]
+    assert len(j) == 1 and j[0]["params"] == {"l": ["P", "Q"]}  # q joined from the old run
+    _finish(h, "r2", "j", {"o": "J"})
+    d = ws.get_run(h.r, "r2")
+    assert d["status"] == "completed" and validate_run_doc(d) == []
+    assert ws.get_run(h.r, "r1")["status"] == "failed"  # the old run is untouched
+
+    # a redelivered run_started submits nothing new
+    n = len(h.jobs)
+    h.send({"kind": "run_started", "run_id": "r2"})
+    assert len(h.jobs) == n
+
+
+def test_resume_replayed_run_started_heals_lost_release():
+    h = Harness(make_spec(LINEAR))
+    h.start()
+    h.finish("a", {"o": "A"})
+    h.finish("b", status="job-failed", error_class="worker", short_error="boom")
+    assert h.doc()["status"] == "failed"
+    from hysds_commons.workflow_run2 import resumed_run_doc, reusable_steps
+    old = h.doc()
+    doc = resumed_run_doc(h.spec, old, "r2", reusable_steps(h.spec, old))
+    ws.init_run(h.r, h.spec, doc, list_key="logstash", settled={"a": ws.settled_map(h.r, "r1")["a"]})
+    # simulate a crash after the join claimed b's release but before the submit
+    assert ws.join(h.r, "r2", h.spec, "a", ["b"]) == ["b"]
+    h.send({"kind": "run_started", "run_id": "r2"})
+    b = [j for _, j in h.jobs if j["workflow"]["run_id"] == "r2"]
+    assert [j["workflow"]["step_id"] for j in b] == ["b"] and b[0]["params"] == {"v": "A"}

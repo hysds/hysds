@@ -216,10 +216,14 @@ def active_heartbeats(r):
 # --------------------------------------------------------------------------- create
 
 
-def init_run(r, spec, run_doc, list_key=None):
+def init_run(r, spec, run_doc, list_key=None, settled=None):
     """Store the compiled ``spec`` and ``run_doc`` (with its frozen job definitions), register the run as
     active with a heartbeat and queue the first snapshot, all in one transaction. Raises :class:`RunExists`.
-    Returns ``run_doc``. Mozart then sends the ``run_started`` event."""
+    Returns ``run_doc``. Mozart then sends the ``run_started`` event.
+
+    ``settled`` (a resume): ``{step_id: {"state": "completed"|"skipped", "outputs": {...}}}`` of the steps
+    carried over from the resumed run; recorded (results + done set) in the same transaction, so the engine
+    sees them settled from the start."""
     run_id = run_doc["run_id"]
     list_key = list_key or workflow_snapshot.list_key_and_max()[0]
     max_ttl = _ttl("WORKFLOW_RUN_MAX_TTL", DEFAULT_RUN_MAX_TTL)
@@ -232,6 +236,11 @@ def init_run(r, spec, run_doc, list_key=None):
         pipe.set(k_run(run_id), json.dumps(run_doc), ex=max_ttl)
         pipe.set(k_spec(run_id), json.dumps(spec), ex=max_ttl)
         pipe.set(k_ver(run_id), run_doc["version"], ex=max_ttl)
+        if settled:
+            for sid, res in settled.items():
+                record_settle(pipe, run_id, sid, res["state"], res.get("outputs"))
+            pipe.expire(k_out(run_id), max_ttl)
+            pipe.expire(k_done(run_id), max_ttl)
         pipe.zadd(ACTIVE_KEY, {run_id: _now()})
         pipe.rpush(list_key, workflow_snapshot.build_snapshot(run_doc, run_doc["version"]))
         pipe.execute()
